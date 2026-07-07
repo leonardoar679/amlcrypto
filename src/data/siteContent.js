@@ -93,10 +93,10 @@ export const paymentMethods = ['crypto', 'visa', 'mir', 'mastercard'];
 
 export const footerLinks = {
   products: [
-    { label: 'Btrace', href: 'https://amlcrypto.io/products/btrace' },
-    { label: 'Blockchain investigations', href: 'https://amlcrypto.io/products/investigating_stolen_of_cryptoassets' },
-    { label: 'Bholder', href: 'https://amlcrypto.io/products/bholder' },
-    { label: 'Risk score API', href: 'https://amlcrypto.io/products/api' }
+    { label: 'Btrace', href: '/products/btrace' },
+    { label: 'Blockchain investigations', href: '/products/investigating_stolen_of_cryptoassets' },
+    { label: 'Bholder', href: '/products/bholder' },
+    { label: 'Risk score API', href: '/products/api_for_getting_risk-score_for_selected_wallets' }
   ],
   blog: [
     { label: 'Educational materials', href: 'https://amlcrypto.io/blog/education' },

@@ -5,24 +5,32 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-body' });
 const unbounded = Unbounded({ subsets: ['latin'], weight: ['500', '700'], variable: '--font-display' });
 
 export const metadata = {
-  title: 'Btrace 🛡️ | Free AML crypto wallet check for risks',
+  title: 'AML Crypto | Blockchain analysis and crypto incident investigation',
   description:
-    'Check whether a crypto wallet is linked to dirty money, sanctions, darknet activity, fraud or high-risk counterparties. Get a free AML wallet check today with Btrace.',
-  keywords: ['Btrace', 'AML wallet check', 'crypto wallet check', 'wallet risk score', 'AML screening', 'crypto compliance'],
+    'AML Crypto builds tools for analyzing blockchain transactions and investigating crypto incidents: Btrace wallet risk checks, Bholder address graphs, a risk score API, and stolen cryptocurrency recovery.',
+  keywords: [
+    'AML Crypto',
+    'blockchain investigation',
+    'crypto wallet check',
+    'Btrace',
+    'Bholder',
+    'risk score API',
+    'stolen cryptocurrency recovery'
+  ],
   robots: 'index, follow',
   alternates: {
-    canonical: 'https://btrace.amlcrypto.io/'
+    canonical: 'https://amlcrypto.io/'
   },
   openGraph: {
-    title: 'Btrace | AML Cryptocurrency Wallet Check',
-    description: 'Check a crypto wallet for AML risk and uncover suspicious connections before you send funds.',
-    url: 'https://btrace.amlcrypto.io/',
+    title: 'AML Crypto | Blockchain analysis and crypto incident investigation',
+    description: 'Tools for analyzing blockchain transactions and investigating crypto incidents.',
+    url: 'https://amlcrypto.io/',
     type: 'website'
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Btrace | AML Cryptocurrency Wallet Check',
-    description: 'Protect your funds with a free AML wallet check and risk analysis.'
+    title: 'AML Crypto | Blockchain analysis and crypto incident investigation',
+    description: 'Tools for analyzing blockchain transactions and investigating crypto incidents.'
   }
 };
 

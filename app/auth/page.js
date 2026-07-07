@@ -3,7 +3,19 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { clearStoredUser, setStoredQuota, setStoredUser } from '../../src/lib/demoAuth';
+import { clearStoredUser, setStoredQuota, setStoredUser, setStoredWallet } from '../../src/lib/demoAuth';
+
+function demoWalletFor(email) {
+  let full = '';
+  let hash = 0;
+  for (let round = 0; round < 5; round += 1) {
+    for (let i = 0; i < email.length; i += 1) {
+      hash = (hash * 31 + email.charCodeAt(i) + round * 97) >>> 0;
+    }
+    full += hash.toString(16).padStart(8, '0');
+  }
+  return `0x${full.slice(0, 40)}`;
+}
 
 export default function AuthPage() {
   const [email, setEmail] = useState('');
@@ -19,9 +31,10 @@ export default function AuthPage() {
 
     const user = { email: trimmedEmail, name: trimmedEmail.split('@')[0] };
     setStoredUser(user);
-    setStoredQuota(5);
+    setStoredQuota(8);
+    setStoredWallet(demoWalletFor(trimmedEmail));
     setMessage(`Welcome back, ${user.name}!`);
-    router.push('/_authenticated/dashboard');
+    router.push('/check');
   };
 
   const handleGuestMode = () => {

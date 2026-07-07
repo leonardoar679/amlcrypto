@@ -25,6 +25,32 @@ export function clearStoredUser() {
   }
 
   window.localStorage.removeItem('amlcheck-user');
+  window.localStorage.removeItem('amlcheck-wallet');
+}
+
+export function getStoredWallet() {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  return window.localStorage.getItem('amlcheck-wallet') || '';
+}
+
+export function setStoredWallet(address) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem('amlcheck-wallet', address);
+}
+
+export function truncateAddress(address, front = 6, back = 4) {
+  if (!address || address.length <= front + back + 3) {
+    return address || '';
+  }
+
+  const tail = back > 0 ? address.slice(-back) : '';
+  return `${address.slice(0, front)}...${tail}`;
 }
 
 export function getStoredQuota() {
@@ -43,6 +69,7 @@ export function setStoredQuota(value) {
   }
 
   window.localStorage.setItem('amlcheck-quota', String(value));
+  window.dispatchEvent(new CustomEvent('amlcheck-quota-changed'));
 }
 
 export function getStoredHistory() {

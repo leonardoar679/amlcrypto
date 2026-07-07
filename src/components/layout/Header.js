@@ -1,22 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useTheme } from '../../lib/useTheme';
 
 export default function Header({ navItems, menuOpen, setMenuOpen }) {
-  const [theme, setTheme] = useState('light');
-
-  useEffect(() => {
-    const storedTheme = window.localStorage.getItem('aml-theme');
-    if (storedTheme === 'light' || storedTheme === 'dark') {
-      setTheme(storedTheme);
-    }
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem('aml-theme', theme);
-  }, [theme]);
+  const [theme, toggleTheme] = useTheme();
 
   return (
     <header className="site-header">
@@ -42,12 +30,7 @@ export default function Header({ navItems, menuOpen, setMenuOpen }) {
           ))}
         </nav>
         <div className="header-actions">
-          <button
-            className="icon-btn theme-toggle"
-            type="button"
-            aria-label="Toggle color theme"
-            onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
-          >
+          <button className="icon-btn theme-toggle" type="button" aria-label="Toggle color theme" onClick={toggleTheme}>
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
           <Link className="ghost-btn" href="/auth">
