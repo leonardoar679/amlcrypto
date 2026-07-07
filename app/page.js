@@ -5,8 +5,9 @@ import Header from '../src/components/layout/Header';
 import Footer from '../src/components/layout/Footer';
 import {
   HeroSection,
+  TelegramPromoSection,
   IntroSection,
-  WalletCheckSection,
+  CheckBanner,
   ReasonsSection,
   ReportSection,
   PricingSection,
@@ -23,12 +24,14 @@ export default function HomePage() {
 
       <main id="top">
         <HeroSection benefits={heroBullets} />
+        <TelegramPromoSection />
         <IntroSection />
-        <WalletCheckSection />
+        <CheckBanner heading="Check crypto wallet in 3 seconds. Free." />
         <ReasonsSection reasons={reasons} />
         <ReportSection reportItems={reportItems} />
         <PricingSection />
         <FaqSection faqs={faqs} />
+        <CheckBanner heading="One click and 3 seconds separate you from the crypto wallet report" />
       </main>
 
       <Footer />

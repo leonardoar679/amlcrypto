@@ -1,16 +1,19 @@
 export default function ReportSection({ reportItems }) {
   return (
-    <section id="report" className="section section-alt">
+    <section id="report" className="section report-section">
       <div className="container">
-        <div className="section-heading">
-          <p className="eyebrow">Report structure</p>
-          <h2>Receive a full AML view of your wallet, not just a basic score.</h2>
+        <div className="section-heading center">
+          <h2>Report Structure</h2>
         </div>
-        <div className="report-grid">
+        <div className="report-timeline">
           {reportItems.map((item) => (
-            <article className="card report-card" key={item}>
-              <h3>{item}</h3>
-            </article>
+            <div className="report-row" key={item.title}>
+              <div className="report-label">{item.title}</div>
+              <div className="report-line" />
+              <div className="report-image">
+                <img src={item.image} alt={item.title} />
+              </div>
+            </div>
           ))}
         </div>
       </div>
