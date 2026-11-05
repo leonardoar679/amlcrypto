@@ -6,6 +6,9 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 
+# A billionth of a token: far below anything meaningful, and far above floating point noise.
+TOLERANCE = 1e-9
+
 
 class TokenBucket:
     """Allows `rate` requests per second, with bursts up to `capacity`. Waiters go in order."""
@@ -46,7 +49,9 @@ class TokenBucket:
                     delay = self._blocked_until - now
                 else:
                     self._refill()
-                    if self._tokens >= tokens:
+                    # Floating point can leave the bucket a hair under what it needs. Waiting for
+                    # that hair would add less than the clock can represent: no progress, forever.
+                    if self._tokens >= tokens - TOLERANCE:
                         self._tokens -= tokens
                         return waited
                     delay = (tokens - self._tokens) / self.rate

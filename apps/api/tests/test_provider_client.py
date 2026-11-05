@@ -540,3 +540,124 @@ def test_statuses_report_configuration_and_the_last_error():
     assert (by_name["query"].last_error, by_name["query"].consecutive_failures) == ("HTTP 500", 1)
     assert by_name["query"].last_error_at is not None
     assert by_name["header"].last_error is None
+
+
+# --- errors that arrive inside a 200 response --------------------------------------------------
+
+
+def failing_with(*problems):
+    """A body check that reports these problems in turn, then accepts everything."""
+    queue = list(problems)
+
+    def check(provider, data):
+        return queue.pop(0) if queue else None
+
+    return check
+
+
+def test_the_body_check_sees_the_provider_name_and_the_parsed_body():
+    seen = []
+
+    def check(provider, data):
+        seen.append((provider, data))
+
+    rig = make(Reply(json={"status": "1", "result": []}))
+    run(get(rig, body_check=check))
+    assert seen == [("query", {"status": "1", "result": []})]
+
+
+def test_a_rate_limit_reported_in_a_200_body_is_waited_out_and_retried():
+    problem = ProviderRateLimited("query", "rate limit reached")
+    rig = make(Reply(json={"status": "0"}), Reply(json={"ok": True}))
+
+    response = run(get(rig, body_check=failing_with(problem)))
+
+    assert response.attempts == 2 and response.data == {"ok": True}
+    assert [e.outcome for e in rig.usage.events] == ["rate_limited", "success"]
+    assert rig.clock.sleeps == [1.0]  # no Retry-After: the first backoff step, via the throttle
+
+
+def test_a_long_rate_limit_in_a_body_blocks_the_provider_like_a_long_retry_after():
+    problem = ProviderRateLimited("query", "daily pool used up", retry_after=3600)
+    rig = make(Reply(json={"status": "0"}), Reply(json={"ok": True}))
+
+    async def scenario():
+        with pytest.raises(ProviderRateLimited) as first:
+            await get(rig, body_check=failing_with(problem))
+        with pytest.raises(ProviderRateLimited) as second:  # blocked: no request at all
+            await get(rig)
+        return first.value, second.value
+
+    first, second = run(scenario())
+    assert first.retry_after == 3600 and 3590 <= second.retry_after <= 3600
+    assert len(rig.server.requests) == 1
+
+
+def test_a_rejected_key_in_a_body_is_not_retried_and_does_not_open_the_circuit():
+    problem = ProviderAuthError("query", "the API key was rejected")
+    rig = make(Reply(json={"status": "0"}), breaker_threshold=1)
+
+    with pytest.raises(ProviderAuthError):
+        run(get(rig, body_check=failing_with(problem)))
+
+    assert len(rig.server.requests) == 1
+    assert rig.client.statuses()[0].circuit == "closed"
+    assert rig.client.statuses()[0].last_error == "the API key was rejected"
+
+
+def test_a_server_error_in_a_body_is_retried_and_counts_towards_the_breaker():
+    problem = ProviderUnavailable("query", "provider timed out")
+    rig = make(Reply(json={"status": "0"}), Reply(json={"ok": True}), max_retries=2)
+
+    response = run(get(rig, body_check=failing_with(problem)))
+
+    assert response.attempts == 2
+    assert [e.outcome for e in rig.usage.events] == ["error", "success"]
+
+    rig = make(Reply(json={"status": "0"}), breaker_threshold=2, max_retries=1)
+    with pytest.raises(ProviderUnavailable):
+        run(get(rig, body_check=failing_with(problem, problem)))
+    assert rig.client.statuses()[0].circuit == "open"
+
+
+def test_a_request_the_provider_will_never_accept_is_not_retried():
+    problem = ProviderBadResponse("query", "unsupported chain")
+    rig = make(Reply(json={"status": "0"}))
+    with pytest.raises(ProviderBadResponse):
+        run(get(rig, body_check=failing_with(problem)))
+    assert len(rig.server.requests) == 1
+
+
+def test_a_response_that_failed_its_check_is_never_cached():
+    problem = ProviderUnavailable("query", "provider timed out")
+    rig = make(Reply(json={"first": 1}), Reply(json={"second": 2}))
+
+    async def scenario():
+        kwargs = {"cache_ttl": 60, "max_retries": 0}
+        with pytest.raises(ProviderUnavailable):
+            await get(rig, body_check=failing_with(problem), **kwargs)
+        return await get(rig, **kwargs)
+
+    response = run(scenario())
+    assert response.data == {"second": 2} and not response.from_cache
+
+
+def test_a_checker_that_crashes_becomes_a_bad_response_instead_of_an_exception_in_the_caller(
+    caplog,
+):
+    def broken(provider, data):
+        raise KeyError("result")
+
+    rig = make(Reply(json={"x": 1}))
+    with pytest.raises(ProviderBadResponse) as info:
+        run(get(rig, body_check=broken))
+    assert "could not be interpreted" in info.value.reason
+    assert "a response checker failed" in caplog.text
+
+
+def test_the_body_check_is_not_asked_about_responses_the_status_already_condemned():
+    called = []
+    rig = make(Reply(500), max_retries=0)
+    with pytest.raises(ProviderUnavailable):
+        run(get(rig, body_check=lambda provider, data: called.append(1)))
+    assert called == []

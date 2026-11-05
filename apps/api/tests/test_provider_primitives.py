@@ -182,3 +182,42 @@ def test_budget_counts_per_provider_and_refuses_the_request_over_the_limit():
     with pytest.raises(BudgetExceeded):
         budget.consume("etherscan")
     assert budget.used == 3  # the refused request was not counted
+
+
+def test_many_acquisitions_never_stall_on_floating_point_rounding():
+    """Regression: at rate 3 the bucket ended up 1e-16 tokens short and the wait that remained
+    was too small for the clock to register, so the loop made no progress. It used to hang."""
+    bucket, clock = make_bucket(rate=3.0)
+
+    async def scenario():
+        for _ in range(60):
+            await bucket.acquire()
+
+    run(scenario(), timeout=5)
+    assert clock.now == pytest.approx(1000.0 + (60 - 3) / 3, abs=1e-6)  # 3 free, then 3 a second
+
+
+@pytest.mark.parametrize("rate", [0.3, 1.0, 3.0, 7.0, 10.0, 1 / 3, 0.1 + 0.2])
+def test_the_bucket_keeps_the_configured_rate_for_awkward_rates(rate):
+    bucket, clock = make_bucket(rate=rate)
+    count = 40
+
+    async def scenario():
+        for _ in range(count):
+            await bucket.acquire()
+
+    run(scenario(), timeout=5)
+    expected = (count - bucket.capacity) / rate
+    assert clock.now - 1000.0 == pytest.approx(expected, rel=1e-6, abs=1e-6)
+
+
+def test_acquisitions_carry_on_normally_after_a_penalty_with_an_awkward_length():
+    bucket, clock = make_bucket(rate=3.0)
+
+    async def scenario():
+        bucket.penalize(0.1 + 0.2)  # 0.30000000000000004
+        for _ in range(10):
+            await bucket.acquire()
+
+    run(scenario(), timeout=5)
+    assert clock.now > 1000.3

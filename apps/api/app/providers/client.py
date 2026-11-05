@@ -40,6 +40,7 @@ from app.providers.base import (
     CircuitOpen,
     ProviderAuthError,
     ProviderBadResponse,
+    ProviderError,
     ProviderNotConfigured,
     ProviderRateLimited,
     ProviderSpec,
@@ -52,6 +53,9 @@ from app.providers.throttle import TokenBucket
 from app.providers.usage import NullUsageSink, UsageEvent, UsageSink
 
 logger = logging.getLogger(__name__)
+
+# Looks at a successfully received body and returns the error it amounts to, or None.
+BodyCheck = Callable[[str, Any], ProviderError | None]
 
 # A Retry-After longer than this is not slept through inside a request. The provider is marked as
 # blocked instead: every call fails fast with ProviderRateLimited(retry_after=...) until the time
@@ -195,7 +199,13 @@ class ProviderClient:
         budget: RequestBudget | None = None,
         timeout: float | None = None,
         max_retries: int | None = None,
+        body_check: BodyCheck | None = None,
     ) -> ProviderResponse:
+        """One request with all the protections. `body_check` finds errors inside a 200 response.
+
+        It receives the provider name and the parsed body and returns None if the body is fine,
+        or the ProviderError that body amounts to (rate limited, bad key, ...).
+        """
         state = self._state(provider)
         if state.spec.needs_key and state.key is None:
             raise ProviderNotConfigured(provider, "no API key is configured")
@@ -225,55 +235,51 @@ class ProviderClient:
                 state, budget, method, url, query, json, request_headers, timeout
             )
 
+            status: int | None = None
+            data: Any = None
             if response is None:
-                state.breaker.on_failure(failure)
-                await self._record(provider, "error", attempt, None, elapsed_ms)
-                error: Exception = ProviderUnavailable(provider, failure)
-                delay = self._backoff(attempt)
+                problem: ProviderError | None = ProviderUnavailable(provider, failure)
             else:
                 status = response.status_code
                 if 200 <= status < 300:
-                    state.breaker.on_success()
-                    await self._record(provider, "success", attempt, status, elapsed_ms)
-                    result = ProviderResponse(
-                        provider, status, _parse_body(response), elapsed_ms, attempt
-                    )
-                    if cache_key is not None:
-                        self._cache.set(cache_key, result, cache_ttl)
-                    return result
-
-                if status in (401, 403):
-                    state.breaker.note_error(f"HTTP {status}")
-                    await self._record(provider, "error", attempt, status, elapsed_ms)
-                    raise ProviderAuthError(
-                        provider, f"HTTP {status}: the API key was rejected or the plan lacks this"
-                    )
-
-                if status == 429:
-                    retry_after = _retry_after_seconds(response)
-                    state.breaker.note_error("HTTP 429")
-                    await self._record(provider, "rate_limited", attempt, status, elapsed_ms)
-                    error = ProviderRateLimited(provider, "HTTP 429", retry_after=retry_after)
-                    if retry_after is not None and retry_after > MAX_INLINE_RETRY_AFTER:
-                        state.blocked_until = self._clock() + retry_after
-                        raise error
-                    # The next acquire() waits this out, for every caller of this provider.
-                    state.bucket.penalize(
-                        retry_after if retry_after is not None else self._backoff(attempt)
-                    )
-                    delay = 0.0
-                elif status >= 500 or status == 408:
-                    state.breaker.on_failure(f"HTTP {status}")
-                    await self._record(provider, "error", attempt, status, elapsed_ms)
-                    error = ProviderUnavailable(provider, f"HTTP {status}")
-                    delay = self._backoff(attempt)
+                    data = _parse_body(response)
+                    problem = self._check_body(provider, body_check, data)
                 else:
-                    state.breaker.note_error(f"HTTP {status}")
-                    await self._record(provider, "error", attempt, status, elapsed_ms)
-                    raise ProviderBadResponse(provider, f"HTTP {status}")
+                    problem = _problem_for_status(provider, response)
+
+            if problem is None:
+                state.breaker.on_success()
+                await self._record(provider, "success", attempt, status, elapsed_ms)
+                result = ProviderResponse(provider, status, data, elapsed_ms, attempt)
+                if cache_key is not None:
+                    self._cache.set(cache_key, result, cache_ttl)
+                return result
+
+            # A failure is handled the same whether the provider said it with an HTTP status or
+            # inside a 200 body (Etherscan and JSON-RPC both do the latter).
+            if isinstance(problem, ProviderRateLimited):
+                state.breaker.note_error(problem.reason)
+                await self._record(provider, "rate_limited", attempt, status, elapsed_ms)
+                retry_after = problem.retry_after
+                if retry_after is not None and retry_after > MAX_INLINE_RETRY_AFTER:
+                    state.blocked_until = self._clock() + retry_after
+                    raise problem
+                # The next acquire() waits this out, for every caller of this provider.
+                state.bucket.penalize(
+                    retry_after if retry_after is not None else self._backoff(attempt)
+                )
+                delay = 0.0
+            elif isinstance(problem, ProviderUnavailable):
+                state.breaker.on_failure(problem.reason)
+                await self._record(provider, "error", attempt, status, elapsed_ms)
+                delay = self._backoff(attempt)
+            else:  # a rejected key or a request the provider will never accept
+                state.breaker.note_error(problem.reason)
+                await self._record(provider, "error", attempt, status, elapsed_ms)
+                raise problem
 
             if attempt > retries:
-                raise error
+                raise problem
             if delay:
                 await self._sleep(delay)
 
@@ -289,6 +295,16 @@ class ProviderClient:
             return self._states[provider]
         except KeyError:
             raise ValueError(f"unknown provider {provider!r}") from None
+
+    @staticmethod
+    def _check_body(provider: str, body_check: BodyCheck | None, data: Any) -> ProviderError | None:
+        if body_check is None:
+            return None
+        try:
+            return body_check(provider, data)
+        except Exception:  # a faulty checker must not turn into a crash in the caller
+            logger.exception("a response checker failed", extra={"provider": provider})
+            return ProviderBadResponse(provider, "the response could not be interpreted")
 
     async def _send(
         self,
@@ -389,6 +405,19 @@ class ProviderClient:
             )
         except Exception:  # accounting must never break a provider call
             logger.warning("could not record provider usage", extra={"provider": provider})
+
+
+def _problem_for_status(provider: str, response: httpx2.Response) -> ProviderError:
+    status = response.status_code
+    if status in (401, 403):
+        return ProviderAuthError(
+            provider, f"HTTP {status}: the API key was rejected or the plan lacks this"
+        )
+    if status == 429:
+        return ProviderRateLimited(provider, "HTTP 429", retry_after=_retry_after_seconds(response))
+    if status >= 500 or status == 408:
+        return ProviderUnavailable(provider, f"HTTP {status}")
+    return ProviderBadResponse(provider, f"HTTP {status}")
 
 
 def _parse_body(response: httpx2.Response) -> Any:

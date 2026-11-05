@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, TypeVar
 
 import httpx2
@@ -95,3 +97,11 @@ async def wait_until(
         if time.monotonic() > deadline:
             raise AssertionError("the condition was not reached in time")
         await asyncio.sleep(interval)
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def load_fixture(name: str) -> Any:
+    """A JSON file from tests/fixtures (for example "evm/ethereum_native")."""
+    return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
