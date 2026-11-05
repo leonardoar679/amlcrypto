@@ -7,8 +7,8 @@ import AccountAddressCard from '../../src/components/account/AccountAddressCard'
 import AccountRiskPanel from '../../src/components/account/AccountRiskPanel';
 import AccountCounterparties from '../../src/components/account/AccountCounterparties';
 import AccountLastChecks from '../../src/components/account/AccountLastChecks';
-import AccountPromos from '../../src/components/account/AccountPromos';
 import { getStoredWallet } from '../../src/lib/demoAuth';
+import { DEMO_WALLET } from '../../src/lib/demoWallet';
 import { faqs } from '../../src/data/siteContent';
 
 const COUNTERPARTIES = [
@@ -19,12 +19,13 @@ const COUNTERPARTIES = [
   { address: '0xdee52...e8b5e', incoming: 0, outgoing: 5 }
 ];
 
+// Demonstration rows. The addresses are published test vectors, not real customers' wallets.
 const LAST_CHECKS = [
-  { date: '15.06.2026 06:40:59', address: '0xd5f5df7c9588673845ab815c3064c75b945d614a', risk: 'Low', percent: 17, pdf: null },
-  { date: '08.06.2026 04:27:19', address: '0x5d76a92b7cb9e1a81b8eb8c16468f1155b2f64f4', risk: 'Low', percent: 11, pdf: '#result' },
-  { date: '08.06.2026 04:19:03', address: '0xc2a47582215b740734ce1f2342ec7d149143ea61', risk: 'Low', percent: 15, pdf: null },
-  { date: '30.05.2026 19:09:47', address: 'TDGZ4GfvCRe1d8oksj8fBD77ZHw4bkCPBA', risk: 'High', percent: 100, pdf: null },
-  { date: '29.05.2026 22:41:36', address: 'TDGZ4GfvCRe1d8oksj8fBD77ZHw4bkCPBA', risk: 'High', percent: 100, pdf: '#result' }
+  { date: '15.06.2026 06:40:59', address: '0xde709f2102306220921060314715629080e2fb77', risk: 'Low', percent: 17, pdf: null },
+  { date: '08.06.2026 04:27:19', address: '0x27b1fdb04752bbc536007a920d24acb045561c26', risk: 'Low', percent: 11, pdf: '#result' },
+  { date: '08.06.2026 04:19:03', address: '0x52908400098527886e0f7030069857d2e4169ee7', risk: 'Low', percent: 15, pdf: null },
+  { date: '30.05.2026 19:09:47', address: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb', risk: 'High', percent: 100, pdf: null },
+  { date: '29.05.2026 22:41:36', address: 'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb', risk: 'High', percent: 100, pdf: '#result' }
 ];
 
 const FLOWS = {
@@ -48,7 +49,7 @@ export default function AccountPage() {
 
   useEffect(() => {
     const wallet = getStoredWallet();
-    setAddress(wallet || '0x45e51367c4395058c7d30ae40355d7f5bf9de1bd');
+    setAddress(wallet || DEMO_WALLET);
     setCheckDate(formatCheckDate(new Date()));
   }, []);
 
@@ -78,8 +79,6 @@ export default function AccountPage() {
           incomingTotal={{ count: 3, amount: 52 }}
           outgoingTotal={{ count: 3, amount: 27 }}
         />
-
-        <AccountPromos />
 
         <AccountLastChecks items={LAST_CHECKS} />
       </div>

@@ -1,29 +1,21 @@
-import { storyParagraphs } from '../../data/siteContent';
+import { whyScreen } from '../../data/siteContent';
 
 export default function IntroSection() {
   return (
     <section className="section section-intro">
       <div className="container intro-grid">
         <h2>
-          You don&rsquo;t have to do anything <strong>bad</strong> to get blocked.
+          A clean-looking address can still carry <strong>hidden</strong> risk.
         </h2>
         <blockquote className="pull-quote">
-          It is enough not to be interested in the history of the origin of funds of counterparties.
+          Risk is often a few hops away, not at the first counterparty.
         </blockquote>
         <div className="story-paragraphs">
-          {storyParagraphs.map((paragraph) => (
+          {whyScreen.map((paragraph) => (
             <p key={paragraph}>{paragraph}</p>
           ))}
         </div>
-        <p className="story-callout">
-          Don&rsquo;t be like Austin. Check Your Risk Score before interaction with counterparty.
-        </p>
-      </div>
-      <div className="scheme-image">
-        <img
-          src="/img/landing/scheme/scheme-desktop-user-light-en.png"
-          alt="How Austin sees his address compared to how the exchange compliance officer sees it"
-        />
+        <p className="story-callout">Screen the counterparty, and your own address, before you move funds.</p>
       </div>
     </section>
   );

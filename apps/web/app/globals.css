@@ -10,8 +10,6 @@
   --yellow: #d0c018;
   --gradient-brand: linear-gradient(329deg, #ff8562, #d0c018 85.43%);
   --gradient-check: linear-gradient(90deg, #f4cc1c, #ffa600);
-  --telegram-blue-1: #2aabee;
-  --telegram-blue-2: #229ed9;
   --teal: #266763;
   --slate: #4e617d;
   --dark-surface: #50505a;
@@ -210,11 +208,6 @@ img {
   align-items: center;
 }
 
-.brand-logo {
-  height: 1.9rem;
-  width: auto;
-}
-
 .site-nav,
 .header-actions {
   display: flex;
@@ -352,97 +345,6 @@ img {
   font-size: 0.82rem;
 }
 
-.badge-row {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.compliance-badge {
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  background: var(--dark-surface);
-  color: var(--text-on-dark);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.hero-illustration img {
-  width: 100%;
-  height: auto;
-}
-
-/* ---------- Telegram promo banner ---------- */
-
-.telegram-promo {
-  background: linear-gradient(180deg, var(--telegram-blue-1), var(--telegram-blue-2));
-  padding: 2.8rem 0;
-  color: #fff;
-}
-
-.telegram-promo-inner {
-  text-align: center;
-}
-
-.telegram-promo-title {
-  font-size: clamp(1.3rem, 2.6vw, 1.8rem);
-  color: #fff;
-  margin-bottom: 1.6rem;
-}
-
-.telegram-promo-info {
-  display: flex;
-  justify-content: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.8rem;
-}
-
-.telegram-promo-info p {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  max-width: 340px;
-  text-align: left;
-  font-size: 0.9rem;
-  margin: 0;
-  opacity: 0.95;
-}
-
-.telegram-promo-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.telegram-promo-footer p {
-  margin: 0;
-  font-size: 0.95rem;
-}
-
-.telegram-promo-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.7rem;
-  background: var(--gradient-check);
-  color: #fff;
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 0.85rem;
-  padding: 0.5rem 1.5rem 0.5rem 0.5rem;
-  border-radius: 999px;
-}
-
-.telegram-promo-avatar {
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 50%;
-  background: #fff;
-}
-
 /* ---------- Intro / story section ---------- */
 
 .section-intro {
@@ -480,17 +382,6 @@ img {
 .story-callout {
   font-weight: 600;
   color: var(--text);
-}
-
-.scheme-image {
-  margin-top: 2.5rem;
-  background: var(--bg-alt);
-  padding: 1rem 0;
-}
-
-.scheme-image img {
-  max-width: min(1400px, 100%);
-  margin: 0 auto;
 }
 
 /* ---------- Check banner ---------- */
@@ -593,21 +484,9 @@ img {
 .reasons-slide {
   flex: 1;
   display: grid;
-  grid-template-columns: 1.1fr auto 1.4fr;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: 0;
-}
-
-.reasons-slide-image {
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  overflow: hidden;
-  aspect-ratio: 4/3;
-}
-
-.reasons-slide-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .reasons-slide-icon {
@@ -618,22 +497,19 @@ img {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 -1.4rem;
+  margin: 0 -1.4rem 0 0;
   position: relative;
   z-index: 1;
-  padding: 1.1rem;
-}
-
-.reasons-slide-icon img {
-  width: 100%;
-  height: 100%;
-  filter: brightness(0) invert(1);
+  color: var(--text-on-dark);
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 700;
 }
 
 .reasons-slide-card {
   background: var(--dark-surface);
   color: var(--text-on-dark);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  border-radius: var(--radius-md);
   padding: 1.8rem 1.8rem 1.8rem 2.8rem;
   height: 100%;
   display: flex;
@@ -709,118 +585,6 @@ img {
   overflow: hidden;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
-}
-
-/* ---------- Pricing ---------- */
-
-.pricing-panel {
-  background: var(--dark-surface);
-  color: var(--text-on-dark);
-  border-radius: var(--radius-lg);
-  padding: 3rem 2rem;
-  text-align: center;
-}
-
-.pricing-panel h2 {
-  color: var(--text-on-dark);
-  font-weight: 400;
-  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
-  margin-bottom: 2.2rem;
-}
-
-.pricing-tiers {
-  display: flex;
-  justify-content: center;
-  gap: 3.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 2.2rem;
-}
-
-.pricing-tier-name {
-  display: block;
-  text-transform: uppercase;
-  font-size: 0.85rem;
-  color: var(--text-soft);
-  margin-bottom: 0.7rem;
-}
-
-.pricing-tier-range {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-}
-
-.pricing-tier-range strong {
-  background: var(--gradient-brand);
-  padding: 0.3rem 0.6rem;
-  border-radius: 0.3rem;
-  font-size: 1.25rem;
-  font-weight: 300;
-}
-
-.payment-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-  flex-wrap: wrap;
-}
-
-.payment-icon img {
-  height: 1.6rem;
-  width: auto;
-  filter: grayscale(1) brightness(1.8);
-  opacity: 0.85;
-}
-
-.assurance-row {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 2rem;
-  align-items: center;
-  margin-top: 3rem;
-}
-
-.assurance-row-reverse {
-  grid-template-columns: 1fr 1.2fr;
-}
-
-.assurance-row-reverse .assurance-card {
-  order: -1;
-}
-
-.assurance-copy h3 {
-  font-size: 1.4rem;
-}
-
-.assurance-copy p {
-  color: var(--text-soft);
-}
-
-.assurance-card {
-  border-radius: var(--radius-lg);
-  min-height: 200px;
-  display: flex;
-  align-items: flex-end;
-  padding: 1.8rem;
-}
-
-.assurance-card-teal {
-  background: linear-gradient(135deg, var(--teal), var(--slate));
-}
-
-.assurance-card-yellow {
-  background: var(--gradient-brand);
-}
-
-.assurance-title {
-  color: #fff;
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 1.6rem;
-  line-height: 1.25;
 }
 
 /* ---------- FAQ ---------- */
@@ -946,7 +710,7 @@ img {
 
 .footer-main {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 2rem;
 }
 
@@ -973,23 +737,6 @@ img {
 
 .footer-col a:hover {
   color: var(--orange);
-}
-
-.footer-social {
-  display: flex;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-}
-
-.social-icon {
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 50%;
-  background: var(--dark-surface);
-  color: var(--text-on-dark);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .footer-email {
@@ -1023,10 +770,6 @@ img {
     grid-template-columns: 1fr;
   }
 
-  .reasons-slide-image {
-    border-radius: var(--radius-md);
-  }
-
   .reasons-slide-icon {
     margin: -1.4rem auto;
   }
@@ -1044,15 +787,6 @@ img {
   .report-label {
     text-align: left;
     padding-right: 0;
-  }
-
-  .assurance-row,
-  .assurance-row-reverse {
-    grid-template-columns: 1fr;
-  }
-
-  .assurance-row-reverse .assurance-card {
-    order: 0;
   }
 
   .faq-layout {
@@ -1087,10 +821,6 @@ img {
     background: var(--bg);
     padding: 1rem 1.25rem;
     border-bottom: 1px solid var(--border);
-  }
-
-  .pricing-tiers {
-    gap: 1.8rem;
   }
 
   .footer-main {
@@ -1261,19 +991,6 @@ img {
   flex: 1;
 }
 
-.app-header-bot {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: linear-gradient(180deg, var(--telegram-blue-1), var(--telegram-blue-2));
-  color: #fff;
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  font-size: 0.9rem;
-  white-space: nowrap;
-}
-
 .app-header-bell {
   position: relative;
 }
@@ -1294,17 +1011,6 @@ img {
   color: var(--orange);
   font-size: 0.9rem;
   white-space: nowrap;
-}
-
-.app-header-lang {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  font-size: 0.72rem;
-  color: var(--text-soft);
-  border-left: 1px solid var(--border);
-  padding-left: 0.7rem;
-  line-height: 1.2;
 }
 
 .app-shell-body {
@@ -1341,20 +1047,6 @@ img {
 .app-sidebar:not(.is-collapsed) .app-sidebar-brand {
   justify-content: flex-start;
   padding-left: 0.5rem;
-}
-
-.app-sidebar-mascot {
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid var(--border);
-}
-
-.app-sidebar-wordmark {
-  font-family: var(--font-heading);
-  font-weight: 700;
-  font-size: 1.1rem;
 }
 
 .app-sidebar-nav {
@@ -1436,24 +1128,23 @@ img {
   cursor: pointer;
 }
 
-.app-check-hot-event {
+.app-check-note {
   margin-top: 1.6rem;
   font-size: 0.9rem;
   color: var(--text-soft);
 }
 
-.app-check-hot-event strong {
+.app-check-note strong {
   color: var(--orange);
 }
 
-.app-check-hot-event a {
+.app-check-note a {
   color: var(--text);
   text-decoration: underline;
 }
 
 @media (max-width: 780px) {
-  .app-header-more,
-  .app-header-lang {
+  .app-header-more {
     display: none;
   }
 
@@ -1559,11 +1250,11 @@ img {
   justify-content: center;
 }
 
-.account-address-mascot img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.7;
+.account-address-mascot svg {
+  width: 4.5rem;
+  height: 4.5rem;
+  color: var(--orange);
+  opacity: 0.8;
 }
 
 .account-address-mascot span {
@@ -1958,126 +1649,6 @@ img {
   color: var(--text);
 }
 
-.account-promos {
-  display: flex;
-  flex-direction: column;
-  gap: 1.8rem;
-}
-
-.account-promo-grid {
-  display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: 1.8rem;
-  align-items: center;
-}
-
-.account-promo-mock {
-  background: var(--bg-alt);
-  border-radius: var(--radius-sm);
-  padding: 1rem;
-  border: 1px solid var(--border);
-}
-
-.account-promo-mock-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  padding: 0.6rem 0.8rem;
-  font-size: 0.78rem;
-  color: var(--text-soft);
-  margin-bottom: 0.8rem;
-}
-
-.account-promo-mock-bar span {
-  flex: 1;
-}
-
-.account-promo-mock-btn {
-  background: var(--yellow);
-  color: var(--dark-surface);
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-sm);
-  font-weight: 700;
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  flex: none !important;
-}
-
-.account-promo-mock-cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.7rem;
-}
-
-.account-promo-mock-cards > div {
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  padding: 0.7rem;
-  font-size: 0.75rem;
-  color: var(--text-soft);
-}
-
-.account-promo-mock-cards strong {
-  display: block;
-  color: var(--text);
-  margin: 0.3rem 0;
-  font-size: 0.82rem;
-}
-
-.account-promo-mock-mint {
-  background: #e7f3e8;
-  border-color: #cfe6d1;
-}
-
-.account-promo-mock-risk {
-  font-weight: 700;
-  color: var(--teal);
-}
-
-.account-promo-mock-trace {
-  font-size: 0.78rem;
-  color: var(--slate);
-}
-
-.account-promo-copy p {
-  margin: 0 0 0.8rem;
-}
-
-.account-promo-risk-pills {
-  display: flex;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
-}
-
-.account-promo-label {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  font-weight: 700;
-  color: var(--text-soft);
-  margin-bottom: 0.5rem !important;
-}
-
-.account-promo-works {
-  display: flex;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.2rem;
-}
-
-.account-promo-works span {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.4rem 0.7rem;
-  font-size: 0.78rem;
-}
-
-.account-promo-bot-link {
-  width: 100%;
-  justify-content: center;
-}
-
 .account-last-checks-search {
   display: flex;
   gap: 0.6rem;
@@ -2124,8 +1695,7 @@ img {
 }
 
 @media (max-width: 900px) {
-  .account-risk-panel,
-  .account-promo-grid {
+  .account-risk-panel {
     grid-template-columns: 1fr;
   }
 
@@ -2546,18 +2116,6 @@ img {
   white-space: nowrap;
 }
 
-.settings-telegram-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  background: linear-gradient(180deg, var(--telegram-blue-1), var(--telegram-blue-2));
-  color: #fff;
-  padding: 0.85rem;
-  border-radius: var(--radius-sm);
-  font-weight: 700;
-}
-
 .settings-connected-card {
   padding: 1.8rem;
   display: flex;
@@ -2584,10 +2142,6 @@ img {
   align-items: center;
   gap: 0.6rem;
   font-weight: 700;
-}
-
-.settings-wallet-icon {
-  font-size: 1.3rem;
 }
 
 .settings-wallet-icon-glyph {
@@ -2639,10 +2193,6 @@ img {
 
 .product-hero-icon {
   color: var(--text);
-  margin-bottom: 0.5rem;
-}
-
-.product-hero-icon-img {
   margin-bottom: 0.5rem;
 }
 
@@ -2743,27 +2293,12 @@ img {
   color: var(--text-soft);
 }
 
-.product-video-card {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 22rem;
-  border-radius: var(--radius-md);
-  background: var(--gradient-brand);
-  color: #fff;
-}
-
 .product-intro-row {
   position: relative;
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 2rem;
   align-items: center;
-}
-
-.product-intro-watermark {
-  width: 100%;
-  opacity: 0.7;
 }
 
 .product-banner-text {
@@ -2786,40 +2321,35 @@ img {
   }
 }
 
-/* ---------- Stolen crypto / blockchain investigation page ---------- */
+/* ---------- Investigations page ---------- */
 
-.stolen-hero {
+.case-hero {
   padding: 3rem 0 4rem;
   background: var(--bg-alt);
 }
 
-.stolen-breadcrumb {
+.case-breadcrumb {
   color: var(--text-soft);
   font-size: 0.85rem;
   margin-bottom: 1.5rem !important;
 }
 
-.stolen-hero-grid {
+.case-hero-grid {
   display: grid;
   grid-template-columns: 1.1fr 1fr;
   gap: 2rem;
   align-items: center;
 }
 
-.stolen-hero-grid h1 {
+.case-hero-grid h1 {
   font-size: clamp(1.9rem, 3.2vw, 2.6rem);
 }
 
-.stolen-hero-grid hr {
+.case-hero-grid hr {
   border: none;
   border-top: 1px solid var(--border);
   margin: 1.2rem 0;
   width: 3rem;
-}
-
-.stolen-hero-image img {
-  width: 100%;
-  border-radius: var(--radius-md);
 }
 
 .why-grid {
@@ -2835,10 +2365,6 @@ img {
   padding: 1.8rem;
 }
 
-.why-card img {
-  margin-bottom: 0.8rem;
-}
-
 .why-card strong {
   display: block;
   margin-bottom: 0.6rem;
@@ -2847,34 +2373,6 @@ img {
 
 .why-card p {
   color: var(--text-soft);
-  margin: 0;
-}
-
-.why-cta-banner {
-  background: var(--yellow);
-  color: #fff;
-  text-align: center;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  padding: 1.2rem;
-  border-radius: var(--radius-sm);
-}
-
-.examples-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1.5rem;
-}
-
-.example-card img {
-  width: 100%;
-  border-radius: var(--radius-md);
-  margin-bottom: 0.8rem;
-}
-
-.example-card p {
-  color: var(--text-soft);
-  font-size: 0.9rem;
   margin: 0;
 }
 
@@ -2934,174 +2432,14 @@ img {
   text-decoration: underline;
 }
 
-.todo-accordion {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.todo-item {
-  background: var(--bg);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.todo-item-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.1rem 1.3rem;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.todo-number {
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--text-soft);
-  opacity: 0.5;
-  width: 1.6rem;
-  flex-shrink: 0;
-}
-
-.todo-title {
-  flex: 1;
-  font-weight: 600;
-}
-
-.todo-toggle {
-  color: var(--yellow);
-  font-size: 1.1rem;
-  flex-shrink: 0;
-}
-
-.todo-item-body {
-  padding: 0 1.3rem 1.3rem 4.3rem;
-  color: var(--text-soft);
-}
-
-.todo-item-body p {
-  margin: 0;
-}
-
-.todo-item.is-alert .todo-title {
-  color: var(--orange);
-  text-transform: uppercase;
-}
-
-.fraud-ticker {
-  background: var(--dark-surface);
-  color: var(--text-on-dark);
-  overflow: hidden;
-  padding: 1rem 0;
-}
-
-.fraud-ticker-track {
-  display: flex;
-  gap: 3rem;
-  white-space: nowrap;
-  width: max-content;
-  animation: fraud-ticker-scroll 40s linear infinite;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-@keyframes fraud-ticker-scroll {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-.fraud-cta-banner {
-  position: relative;
-  background: var(--dark-surface) url('/img/products/stolen/fraud-banner.png') center / cover no-repeat;
-  padding: 4rem 0;
-}
-
-.fraud-cta-inner {
-  max-width: 640px;
-  color: #fff;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1.5rem;
-}
-
-.fraud-cta-inner p {
-  font-size: 1.2rem;
-  margin: 0;
-}
-
-.incident-form-section {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3rem;
-  align-items: start;
-  background: url('/img/products/stolen/bg-form.svg') center / contain no-repeat;
-}
-
-.incident-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.incident-form input,
-.incident-form textarea {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.8rem 1rem;
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  resize: vertical;
-}
-
-.incident-form-agree {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-  font-size: 0.85rem;
-  color: var(--text-soft);
-}
-
-.incident-form-agree a {
-  text-decoration: underline;
-}
-
-.incident-form-submit {
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 0.9rem;
-  background: var(--dark-surface);
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
-}
-
 @media (max-width: 900px) {
-  .stolen-hero-grid,
+  .case-hero-grid,
   .why-grid,
-  .examples-row,
-  .process-row,
-  .incident-form-section {
+  .process-row {
     grid-template-columns: 1fr;
   }
 
   .why-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .examples-row {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -3177,18 +2515,6 @@ img {
   margin: 0;
 }
 
-.home-hero-form input {
-  padding: 0.85rem 1rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(240, 244, 247, 0.2);
-  background: rgba(240, 244, 247, 0.06);
-  color: var(--text-on-dark);
-}
-
-.home-hero-form input::placeholder {
-  color: var(--text-soft);
-}
-
 .home-hero-form-fineprint {
   font-size: 0.78rem;
   color: var(--text-soft);
@@ -3212,8 +2538,9 @@ img {
   text-align: center;
 }
 
-.home-benefit img {
+.home-benefit svg {
   margin: 0 auto 1rem;
+  color: var(--orange);
 }
 
 .home-benefit p {
@@ -3234,8 +2561,9 @@ img {
   gap: 0.4rem;
 }
 
-.home-product-card img {
+.home-product-card svg {
   margin-bottom: 0.8rem;
+  color: var(--orange);
 }
 
 .home-product-card p {
@@ -3248,36 +2576,36 @@ img {
   color: var(--text);
 }
 
-.home-btrace-strip {
+.home-screening-strip {
   background: #050505;
   color: #fff;
   padding: 4rem 0;
 }
 
-.home-btrace-strip-grid {
+.home-screening-strip-grid {
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   gap: 3rem;
   align-items: center;
 }
 
-.home-btrace-strip-eyebrow {
+.home-screening-strip-eyebrow {
   font-family: var(--font-heading);
   font-size: 1.5rem;
   color: var(--text-soft);
 }
 
-.home-btrace-strip p {
+.home-screening-strip p {
   color: var(--text-soft);
 }
 
-.home-btrace-strip-list {
+.home-screening-strip-list {
   display: flex;
   flex-direction: column;
   gap: 1.4rem;
 }
 
-.home-btrace-strip-item {
+.home-screening-strip-item {
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -3287,186 +2615,34 @@ img {
   letter-spacing: 0.02em;
 }
 
-.home-events-carousel {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.home-bholder-carousel {
-  position: relative;
-  width: 100%;
-}
-
-.home-bholder-carousel img {
-  border-radius: var(--radius-md);
-  width: 100%;
-}
-
-.home-carousel-arrow {
-  flex-shrink: 0;
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--orange);
-  font-size: 1.4rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.home-bholder-carousel .home-carousel-arrow {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 2;
-  box-shadow: var(--shadow);
-}
-
-.home-bholder-carousel .home-carousel-arrow-left {
-  left: 0.7rem;
-}
-
-.home-bholder-carousel .home-carousel-arrow-right {
-  right: 0.7rem;
-}
-
-.home-company-heading {
+.home-principles-heading {
   text-align: center;
   font-size: clamp(1.6rem, 2.6vw, 2.1rem);
 }
 
-.home-company-sub,
-.home-company-compliance {
+.home-principles-sub {
   text-align: center;
   max-width: 720px;
   margin-left: auto;
   margin-right: auto;
 }
 
-.home-company-compliance {
-  color: var(--text-soft);
-}
-
-.home-company-cards {
+.home-principles-cards {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 2rem;
   margin: 2.5rem 0;
 }
 
-.home-company-card {
+.home-principles-card {
   border: 1px solid var(--border);
   padding: 2.4rem;
   text-align: center;
 }
 
-.home-company-card a {
-  font-weight: 600;
-  color: var(--yellow);
-}
-
-.home-advantages-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2rem;
-  text-align: center;
-  margin-top: 2rem;
-}
-
-.home-advantage img {
-  margin: 0 auto 1rem;
-}
-
-.home-advantage p {
-  color: var(--text-soft);
-}
-
-.home-blog-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.7rem;
-  margin-bottom: 2.5rem;
-}
-
-.home-blog-tag {
-  padding: 0.5rem 1.1rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-}
-
-.home-blog-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1.3rem;
-  margin-bottom: 2.5rem;
-}
-
-.home-blog-card {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.home-blog-card-image {
-  height: 130px;
-  background: var(--gradient-brand);
-  opacity: 0.85;
-}
-
-.home-blog-card p {
-  padding: 1rem;
-  font-size: 0.9rem;
-  margin: 0;
-}
-
-.home-media-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 1.3rem;
-}
-
-.home-media-card {
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  border: 1px solid var(--border);
-}
-
-.home-media-card-swatch {
-  height: 90px;
-}
-
-.home-media-card p {
-  padding: 0.8rem 1rem;
-  margin: 0;
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
-.home-event-card {
-  flex: 1;
-  text-align: center;
-}
-
-.home-event-title {
-  font-weight: 700;
-  color: var(--orange);
-}
-
-.home-event-date {
-  color: var(--text-soft);
-}
-
 @media (max-width: 900px) {
   .home-hero-grid,
-  .home-btrace-strip-grid {
+  .home-screening-strip-grid {
     grid-template-columns: 1fr;
   }
 
@@ -3475,19 +2651,78 @@ img {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .home-company-cards {
+  .home-principles-cards {
     grid-template-columns: 1fr;
   }
+}
 
-  .home-advantages-row {
-    grid-template-columns: 1fr;
-  }
+/* ---------- Brand mark, placeholders and small additions ---------- */
 
-  .home-blog-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--text);
+}
 
-  .home-media-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.brand-mark-glyph {
+  flex-shrink: 0;
+  color: var(--orange);
+}
+
+.brand-mark-name {
+  font-size: 1.05rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.image-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: repeating-linear-gradient(135deg, transparent 0 14px, var(--border) 14px 15px), var(--bg-alt);
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.report-text {
+  margin: 0;
+  padding: 1.2rem 1.4rem;
+  background: var(--bg);
+}
+
+.footer-note {
+  margin-top: 2rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
+.footer-note p {
+  margin: 0;
+}
+
+.pricing-demo-note {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--text-soft);
 }

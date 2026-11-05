@@ -13,8 +13,8 @@ export default function SettingsConnectedAddresses({ address }) {
 
       <div className="settings-wallet-block">
         <div className="settings-wallet-label">
-          <span className="settings-wallet-icon">🦊</span>
-          MetaMask
+          <WalletGlyphIcon width={20} height={20} className="settings-wallet-icon-glyph" />
+          Browser wallet
         </div>
         <div className="settings-wallet-value-row">
           <span>{truncateAddress(address, 7, 5)}</span>
@@ -30,7 +30,7 @@ export default function SettingsConnectedAddresses({ address }) {
       <div className="settings-wallet-block">
         <div className="settings-wallet-label">
           <WalletGlyphIcon width={20} height={20} className="settings-wallet-icon-glyph" />
-          EverWallet
+          Another wallet
         </div>
         <button type="button" className="settings-connect-btn">
           Connect wallet

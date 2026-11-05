@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { TelegramIcon } from '../icons/Icons';
 
 function SettingsField({ label, type = 'text', placeholder, value, onSave }) {
   const [editing, setEditing] = useState(false);
@@ -49,14 +48,6 @@ export default function SettingsForm() {
         onSave={setPassword}
       />
       <SettingsField label="Phone" placeholder="No linked phone" value={phone} onSave={setPhone} />
-
-      <div className="settings-field">
-        <label>Telegram</label>
-        <a className="settings-telegram-btn" href="https://t.me/AMLCrypto" target="_blank" rel="noreferrer">
-          <TelegramIcon width={18} height={18} />
-          Connect Telegram account
-        </a>
-      </div>
     </div>
   );
 }

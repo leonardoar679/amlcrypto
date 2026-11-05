@@ -1,7 +1,7 @@
 'use client';
 
 import { truncateAddress } from '../../lib/demoAuth';
-import { ProfileIcon, EditIcon, MailIcon, TelegramIcon } from '../icons/Icons';
+import { ProfileIcon, EditIcon, MailIcon, WalletGlyphIcon } from '../icons/Icons';
 
 export default function SettingsProfileCard({ address, lastAuthorization }) {
   return (
@@ -30,10 +30,9 @@ export default function SettingsProfileCard({ address, lastAuthorization }) {
         <span className="settings-auth-method-icon">
           <MailIcon width={16} height={16} />
         </span>
-        <span className="settings-auth-method-icon">
-          <TelegramIcon width={16} height={16} />
+        <span className="settings-auth-method-icon is-active">
+          <WalletGlyphIcon width={16} height={16} />
         </span>
-        <span className="settings-auth-method-icon is-active">🦊</span>
       </div>
     </div>
   );

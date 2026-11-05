@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { TelegramIcon, WhatsappIcon, VkIcon, ChatBubbleIcon, DocumentIcon } from '../icons/Icons';
+import { brand, supportMailto } from '../../config/brand';
+import { DocumentIcon } from '../icons/Icons';
 
 export default function PricingCheckout({ onCheckout }) {
   const [agreement, setAgreement] = useState(false);
@@ -21,26 +22,14 @@ export default function PricingCheckout({ onCheckout }) {
     <>
       <div className="pricing-contact-box">
         <p className="pricing-contact-heading">Want more checks?</p>
-        <p>Contact us — we&apos;ll put together a personalized offer on favorable terms.</p>
+        <p>Contact us and we will put together an offer for your volume.</p>
         <div className="pricing-contact-links">
-          <a href="mailto:info@amlcrypto.io">info@amlcrypto.io</a>
-          <a href="https://t.me/AMLCrypto" aria-label="Telegram" target="_blank" rel="noreferrer">
-            <TelegramIcon width={16} height={16} />
-          </a>
-          <a href="https://wa.me/" aria-label="WhatsApp" target="_blank" rel="noreferrer">
-            <WhatsappIcon width={16} height={16} />
-          </a>
-          <a href="https://vk.com/" aria-label="VK" target="_blank" rel="noreferrer">
-            <VkIcon width={16} height={16} />
-          </a>
-          <a href="mailto:info@amlcrypto.io" aria-label="Chat">
-            <ChatBubbleIcon width={16} height={16} />
-          </a>
+          <a href={supportMailto}>{brand.supportEmail}</a>
         </div>
       </div>
 
       <div className="pricing-checkout-row">
-        <p className="pricing-checkout-note">The purchased checks are valid for one year.</p>
+        <p className="pricing-checkout-note">Demo checkout: no payment is taken and nothing is purchased.</p>
 
         <div className="pricing-agreements">
           <label>

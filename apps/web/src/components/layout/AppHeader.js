@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '../../lib/useTheme';
 import { clearStoredUser, truncateAddress } from '../../lib/demoAuth';
-import { SearchIcon, ChevronDownIcon, MenuIcon, BellIcon, TelegramIcon } from '../icons/Icons';
+import { SearchIcon, ChevronDownIcon, MenuIcon, BellIcon } from '../icons/Icons';
+import BrandMark from './BrandMark';
 
 export default function AppHeader({ collapsed, onToggleSidebar, quota, wallet }) {
   const [theme, toggleTheme] = useTheme();
@@ -23,7 +24,7 @@ export default function AppHeader({ collapsed, onToggleSidebar, quota, wallet })
 
       {collapsed ? (
         <Link className="brand" href="/check">
-          <img src="/logo.svg" alt="AMLCrypto logo" className="brand-logo" />
+          <BrandMark />
         </Link>
       ) : null}
 
@@ -39,11 +40,6 @@ export default function AppHeader({ collapsed, onToggleSidebar, quota, wallet })
 
       <div className="app-header-spacer" />
 
-      <a className="app-header-bot" href="https://t.me/AMLCrypto" target="_blank" rel="noreferrer">
-        <TelegramIcon width={16} height={16} />
-        AMLCrypto Bot
-      </a>
-
       <button className="icon-btn" type="button" aria-label="Toggle color theme" onClick={toggleTheme}>
         {theme === 'dark' ? '☀️' : '🌙'}
       </button>
@@ -57,11 +53,6 @@ export default function AppHeader({ collapsed, onToggleSidebar, quota, wallet })
       <button className="primary-btn" type="button" onClick={handleLogout}>
         Logout
       </button>
-
-      <div className="app-header-lang">
-        <span>EN</span>
-        <span>RU</span>
-      </div>
     </header>
   );
 }

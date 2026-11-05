@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { MailIcon, TelegramIcon, WhatsappIcon, VkIcon } from '../icons/Icons';
+import { supportMailto } from '../../config/brand';
+import { MailIcon } from '../icons/Icons';
 
 export default function FaqSection({ faqs }) {
   const [openFaq, setOpenFaq] = useState(0);
@@ -40,20 +41,11 @@ export default function FaqSection({ faqs }) {
             <span className="faq-support-icon">
               <MailIcon width={30} height={30} />
             </span>
-            <h3>Did you not understand something?</h3>
-            <p>You can ask any question of interest to our caring technical support</p>
+            <h3>Still have a question?</h3>
+            <p>Write to us and we will help.</p>
             <div className="faq-support-links">
-              <a href="mailto:info@amlcrypto.io" aria-label="Email">
+              <a href={supportMailto} aria-label="Email">
                 <MailIcon width={18} height={18} />
-              </a>
-              <a href="https://t.me/AMLCrypto" aria-label="Telegram" target="_blank" rel="noreferrer">
-                <TelegramIcon width={18} height={18} />
-              </a>
-              <a href="https://wa.me/" aria-label="WhatsApp" target="_blank" rel="noreferrer">
-                <WhatsappIcon width={18} height={18} />
-              </a>
-              <a href="https://vk.com/" aria-label="VK" target="_blank" rel="noreferrer">
-                <VkIcon width={18} height={18} />
               </a>
             </div>
           </div>

@@ -5,12 +5,7 @@ import { useRouter } from 'next/navigation';
 import AppShell from '../../src/components/layout/AppShell';
 import { getStoredQuota, setStoredQuota } from '../../src/lib/demoAuth';
 import { SearchIcon } from '../../src/components/icons/Icons';
-
-const HOT_EVENT = {
-  label: 'Bybit Exploiter',
-  address: '0x47666...486e2',
-  fullAddress: '0x47666a35ba0c3d5b4f8e2f8e5b8e3f1a2c3d4e5f486e2'
-};
+import { supportedChains } from '../../src/data/siteContent';
 
 export default function CheckPage() {
   const [walletAddress, setWalletAddress] = useState('');
@@ -44,11 +39,8 @@ export default function CheckPage() {
             Check
           </button>
         </div>
-        <p className="app-check-hot-event">
-          👉 <strong>RECENT HOT EVENT:</strong>{' '}
-          <a href={`/check/${encodeURIComponent(HOT_EVENT.fullAddress)}`}>
-            {HOT_EVENT.label} ({HOT_EVENT.address})
-          </a>
+        <p className="app-check-note">
+          Paste an address from {supportedChains.join(', ')}. Results in this build are demonstration data.
         </p>
       </div>
     </AppShell>

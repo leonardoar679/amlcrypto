@@ -7,6 +7,7 @@ import AccountAddressCard from '../../src/components/account/AccountAddressCard'
 import AccountRiskPanel from '../../src/components/account/AccountRiskPanel';
 import AccountCounterparties from '../../src/components/account/AccountCounterparties';
 import { getStoredWallet } from '../../src/lib/demoAuth';
+import { DEMO_WALLET } from '../../src/lib/demoWallet';
 
 const COUNTERPARTIES = [
   { address: '0x0f7ae...13a0e', incoming: 32, outgoing: 0 },
@@ -37,7 +38,7 @@ export default function AddressesPage() {
 
   useEffect(() => {
     const wallet = getStoredWallet();
-    setAddress(wallet || '0x45e51367c4395058c7d30ae40355d7f5bf9de1bd');
+    setAddress(wallet || DEMO_WALLET);
     setCheckDate(formatCheckDate(new Date()));
   }, []);
 

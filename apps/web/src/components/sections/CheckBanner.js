@@ -2,6 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { brand } from '../../config/brand';
+import { supportedChains } from '../../data/siteContent';
 import { getStoredQuota, setStoredQuota } from '../../lib/demoAuth';
 
 export default function CheckBanner({ heading }) {
@@ -30,11 +32,11 @@ export default function CheckBanner({ heading }) {
 
   return (
     <section id="check" className="check-banner">
-      <span className="check-banner-watermark">Btrace</span>
+      <span className="check-banner-watermark">{brand.name}</span>
       <div className="container check-banner-inner">
         <h2>{heading}</h2>
         <p className="check-banner-sub">
-          Works with <strong>Ethereum</strong>, <strong>Bitcoin</strong>, <strong>Tron</strong>
+          Recognises addresses on <strong>{supportedChains.join(', ')}</strong>
         </p>
         <div className="check-banner-form">
           <input

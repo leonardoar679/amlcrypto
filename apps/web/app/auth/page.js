@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { brand } from '../../src/config/brand';
 import { clearStoredUser, setStoredQuota, setStoredUser, setStoredWallet } from '../../src/lib/demoAuth';
 
 function demoWalletFor(email) {
@@ -47,9 +48,12 @@ export default function AuthPage() {
     <main className="result-shell">
       <div className="container">
         <div className="card result-card">
-          <p className="eyebrow">Btrace auth</p>
+          <p className="eyebrow">{brand.name} demo sign-in</p>
           <h1>Sign in or create an account</h1>
-          <p>Unlock saved history, daily quota, and faster repeat checks.</p>
+          <p>
+            This build uses a demo session kept in your browser: any email address works and nothing is verified.
+            Real accounts arrive with the API integration.
+          </p>
 
           <div className="search-card card" style={{ marginTop: '1.5rem' }}>
             <div style={{ flex: 1 }}>

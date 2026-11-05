@@ -139,115 +139,12 @@ export function ArrowRightIcon(props) {
   );
 }
 
-export function EthIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...props}>
-      <path fill="currentColor" d="M12 1.5 5.5 12.6 12 16l6.5-3.4L12 1.5Z" opacity="0.75" />
-      <path fill="currentColor" d="M12 17.3 5.5 13.9 12 22.5l6.5-8.6-6.5 3.4Z" />
-    </svg>
-  );
-}
-
-export function BtcIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...props}>
-      <circle cx="12" cy="12" r="10.5" fill="currentColor" opacity="0.16" />
-      <path
-        fill="currentColor"
-        d="M11.2 6.4h1.5v1.5c1.6.2 2.9 1 2.9 2.6 0 .9-.5 1.6-1.2 2 .9.3 1.6 1.1 1.6 2.3 0 1.9-1.5 2.7-3.3 2.9v1.5h-1.5v-1.5h-.9v1.5H8.9v-1.5H6.8v-1.5h1c.4 0 .6-.2.6-.6v-5.7c0-.4-.2-.6-.6-.6h-1V8.1h2.1V6.4h1.5v1.5h.9V6.4Zm-.4 3.1v2.1h1.3c.8 0 1.4-.4 1.4-1.1 0-.7-.6-1-1.4-1h-1.3Zm0 3.5v2.3h1.5c.9 0 1.6-.4 1.6-1.2 0-.8-.7-1.1-1.6-1.1h-1.5Z"
-      />
-    </svg>
-  );
-}
-
-export function TronIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...props}>
-      <path fill="currentColor" d="M3 4.8 13.6 3l7.4 6.8-9.4 11.2L3 4.8Zm3 .9 8 12.4 6.2-9.5-5.4-5-8.8 2.1Z" />
-    </svg>
-  );
-}
-
-export function VisaIcon(props) {
-  return (
-    <svg viewBox="0 0 36 22" width="36" height="22" {...props}>
-      <rect width="36" height="22" rx="4" fill="currentColor" opacity="0.12" />
-      <text x="18" y="15" textAnchor="middle" fontSize="9" fontWeight="700" fontFamily="Arial, sans-serif" fill="currentColor">
-        VISA
-      </text>
-    </svg>
-  );
-}
-
-export function MastercardIcon(props) {
-  return (
-    <svg viewBox="0 0 36 22" width="36" height="22" {...props}>
-      <rect width="36" height="22" rx="4" fill="currentColor" opacity="0.12" />
-      <circle cx="15" cy="11" r="6" fill="currentColor" opacity="0.55" />
-      <circle cx="22" cy="11" r="6" fill="currentColor" opacity="0.35" />
-    </svg>
-  );
-}
-
-export function MirIcon(props) {
-  return (
-    <svg viewBox="0 0 36 22" width="36" height="22" {...props}>
-      <rect width="36" height="22" rx="4" fill="currentColor" opacity="0.12" />
-      <text x="18" y="15" textAnchor="middle" fontSize="8" fontWeight="700" fontFamily="Arial, sans-serif" fill="currentColor">
-        MIR
-      </text>
-    </svg>
-  );
-}
-
-export function CryptoIcon(props) {
-  return (
-    <svg viewBox="0 0 36 22" width="36" height="22" {...props}>
-      <rect width="36" height="22" rx="4" fill="currentColor" opacity="0.12" />
-      <path fill="currentColor" d="M18 5l4.5 3v6L18 17l-4.5-3V8L18 5Z" opacity="0.7" />
-    </svg>
-  );
-}
-
-export function TelegramIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...props}>
-      <path
-        fill="currentColor"
-        d="M21.5 3.5 2.8 10.9c-1.1.4-1.1 1 0 1.4l4.8 1.5 1.9 5.9c.2.6.5.7 1 .3l2.6-2.1 4.7 3.5c.6.4 1.1.2 1.3-.6l3.6-16.6c.2-.8-.3-1.2-1.2-.7Z"
-      />
-    </svg>
-  );
-}
-
-export function WhatsappIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...props}>
-      <path
-        fill="currentColor"
-        d="M12 2.5A9.5 9.5 0 0 0 3.6 16.9L2.5 21.5l4.7-1.2A9.5 9.5 0 1 0 12 2.5Zm5.4 13.5c-.2.6-1.3 1.2-1.9 1.3-.5.1-1.1.1-1.8-.1-.4-.1-1-.3-1.7-.6-2.9-1.3-4.8-4.2-4.9-4.4-.1-.2-1.2-1.6-1.2-3 0-1.4.7-2.1 1-2.4.3-.3.6-.4.8-.4h.6c.2 0 .4 0 .6.5.2.5.7 1.8.8 1.9.1.2.1.3 0 .5-.1.2-.2.3-.3.5-.2.2-.3.3-.5.5-.2.2-.3.4-.1.7.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.4.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3Z"
-      />
-    </svg>
-  );
-}
-
 export function MailIcon(props) {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" {...props}>
       <path
         fill="currentColor"
         d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1.4 2 7.6 5.6L19.6 7H4.4ZM4 8.3V18h16V8.3l-8 5.9-8-5.9Z"
-      />
-    </svg>
-  );
-}
-
-export function VkIcon(props) {
-  return (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...props}>
-      <path
-        fill="currentColor"
-        d="M13.4 17.4c-5.3 0-8.4-3.7-8.5-9.8h2.7c.1 4.4 2 6.3 3.5 6.7V7.6h2.5v3.9c1.5-.2 3-1.9 3.6-3.9h2.5c-.4 2.5-2.2 4.2-3.5 4.9 1.3.6 3.3 2.1 4.1 4.9h-2.8c-.6-2-2.4-3.6-4.4-3.8v3.8h-.3Z"
       />
     </svg>
   );
@@ -519,15 +416,6 @@ export function GroupShapesIcon(props) {
       <path d="M6 13.5 8.3 17H3.7Z" />
       <path d="m12 13.5 2.3 3.5H9.7Z" />
       <path d="m18 13.5 2.3 3.5h-4.6Z" />
-    </svg>
-  );
-}
-
-export function PlayIcon(props) {
-  return (
-    <svg {...base} {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M10 8.5v7l6-3.5Z" fill="currentColor" stroke="none" />
     </svg>
   );
 }

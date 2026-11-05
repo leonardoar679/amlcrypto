@@ -6,6 +6,7 @@ import AppHeader from './AppHeader';
 import AppSidebar from './AppSidebar';
 import Footer from './Footer';
 import { getStoredQuota, getStoredUser, getStoredWallet } from '../../lib/demoAuth';
+import { QUOTA_CHANGED_EVENT, STORAGE_KEYS } from '../../lib/storageKeys';
 
 export default function AppShell({ children }) {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function AppShell({ children }) {
       return;
     }
 
-    const storedCollapsed = window.localStorage.getItem('aml-sidebar-collapsed');
+    const storedCollapsed = window.localStorage.getItem(STORAGE_KEYS.sidebarCollapsed);
     setCollapsed(storedCollapsed === 'true');
     setQuota(getStoredQuota());
     setWallet(getStoredWallet());
@@ -29,14 +30,14 @@ export default function AppShell({ children }) {
 
   useEffect(() => {
     const handleQuotaChange = () => setQuota(getStoredQuota());
-    window.addEventListener('amlcheck-quota-changed', handleQuotaChange);
-    return () => window.removeEventListener('amlcheck-quota-changed', handleQuotaChange);
+    window.addEventListener(QUOTA_CHANGED_EVENT, handleQuotaChange);
+    return () => window.removeEventListener(QUOTA_CHANGED_EVENT, handleQuotaChange);
   }, []);
 
   const toggleSidebar = () => {
     setCollapsed((value) => {
       const next = !value;
-      window.localStorage.setItem('aml-sidebar-collapsed', String(next));
+      window.localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, String(next));
       return next;
     });
   };

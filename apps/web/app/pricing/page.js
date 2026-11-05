@@ -9,8 +9,8 @@ import PaymentHistoryTable from '../../src/components/pricing/PaymentHistoryTabl
 import { getStoredQuota, setStoredQuota } from '../../src/lib/demoAuth';
 
 const INITIAL_HISTORY = [
-  { invoiceId: 'INV-KIPD37TK', date: '08.06.2026 11:19:40', checks: 10, price: '5 USD', status: 'Complete' },
-  { invoiceId: 'c3e046bb-c501-4da7-8181-ec0d1a9118a8', date: '30.05.2026 05:41:26', checks: 3, price: '0 USD', status: 'Complete' }
+  { invoiceId: 'INV-DEMO0001', date: '08.06.2026 11:19:40', checks: 10, price: '10 USD', status: 'Complete' },
+  { invoiceId: 'INV-DEMO0002', date: '30.05.2026 05:41:26', checks: 3, price: '0 USD', status: 'Complete' }
 ];
 
 function formatNow() {

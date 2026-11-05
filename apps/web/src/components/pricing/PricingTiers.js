@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { SearchIcon, PercentIcon } from '../icons/Icons';
 
+// Placeholder values for the demo checkout. Real pricing has not been decided.
 export const PRICING_TIERS = [
-  { count: '10', price: '$5', perCheck: '$0.5', checks: 10 },
-  { count: '100', price: '$39', perCheck: '$0.39', checks: 100 },
-  { count: '500', price: '$150', perCheck: '$0.3', checks: 500 },
-  { count: '1K', price: '$290', perCheck: '$0.29', checks: 1000 },
-  { count: '5K', price: '$1.3K', perCheck: '$0.26', checks: 5000 },
-  { count: '10K', price: '$2.5K', perCheck: '$0.25', checks: 10000 }
+  { count: '10', price: '$10', perCheck: '$1.00', checks: 10 },
+  { count: '100', price: '$80', perCheck: '$0.80', checks: 100 },
+  { count: '500', price: '$350', perCheck: '$0.70', checks: 500 },
+  { count: '1K', price: '$600', perCheck: '$0.60', checks: 1000 },
+  { count: '5K', price: '$2.5K', perCheck: '$0.50', checks: 5000 },
+  { count: '10K', price: '$4.5K', perCheck: '$0.45', checks: 10000 }
 ];
 
 export default function PricingTiers({ selected, onSelect, unit, onUnitChange, promoCode, onPromoCodeChange, onApplyPromo, promoStatus }) {
@@ -44,6 +45,8 @@ export default function PricingTiers({ selected, onSelect, unit, onUnitChange, p
           </button>
         </div>
       </div>
+
+      <p className="pricing-demo-note">Demo pricing: these values are placeholders and no payment is processed.</p>
 
       {promoStatus ? <p className="status-text">{promoStatus}</p> : null}
 

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { appNavItems } from '../../data/appNav';
+import BrandMark from './BrandMark';
 import {
   SearchIcon,
   AccountIcon,
@@ -31,8 +32,7 @@ export default function AppSidebar({ collapsed }) {
   return (
     <aside className={`app-sidebar${collapsed ? ' is-collapsed' : ''}`}>
       <div className="app-sidebar-brand">
-        <img src="/img/landing/beast-animation/beast-light.webp" alt="" className="app-sidebar-mascot" />
-        {!collapsed ? <span className="app-sidebar-wordmark">AMLCrypto</span> : null}
+        <BrandMark showName={!collapsed} />
       </div>
       <nav className="app-sidebar-nav">
         {appNavItems.map((item) => {

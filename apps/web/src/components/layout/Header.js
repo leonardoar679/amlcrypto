@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useTheme } from '../../lib/useTheme';
+import BrandMark from './BrandMark';
 
 export default function Header({ navItems, menuOpen, setMenuOpen }) {
   const [theme, toggleTheme] = useTheme();
@@ -10,7 +11,7 @@ export default function Header({ navItems, menuOpen, setMenuOpen }) {
     <header className="site-header">
       <div className="container nav-bar">
         <Link className="brand" href="#top">
-          <img src="/logo.svg" alt="AMLCrypto logo" className="brand-logo" />
+          <BrandMark />
         </Link>
         <button
           className="menu-toggle"

@@ -15,18 +15,15 @@ export default function ReasonsSection({ reasons }) {
     <section className="section reasons-section">
       <div className="container">
         <div className="section-heading center">
-          <h2>Why is it important to check?</h2>
+          <h2>Why screen before you transact?</h2>
         </div>
         <div className="reasons-slider">
           <button className="slider-arrow" type="button" aria-label="Previous reason" onClick={() => go(-1)}>
             ‹
           </button>
           <div className="reasons-slide">
-            <div className="reasons-slide-image">
-              <img src={current.image} alt="" />
-            </div>
-            <div className="reasons-slide-icon">
-              <img src={current.icon} alt="" />
+            <div className="reasons-slide-icon" aria-hidden="true">
+              {index + 1}
             </div>
             <div className="reasons-slide-card">
               <h3>{current.title}</h3>

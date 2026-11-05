@@ -1,13 +1,8 @@
 'use client';
 
-import { complianceBadges } from '../../data/siteContent';
-import { CheckCircleIcon, EthIcon, BtcIcon, TronIcon } from '../icons/Icons';
-
-const chains = [
-  { label: 'Ethereum', Icon: EthIcon },
-  { label: 'Bitcoin', Icon: BtcIcon },
-  { label: 'Tron', Icon: TronIcon }
-];
+import { supportedChains } from '../../data/siteContent';
+import { CheckCircleIcon } from '../icons/Icons';
+import ImagePlaceholder from '../ui/ImagePlaceholder';
 
 export default function HeroSection({ benefits }) {
   return (
@@ -15,8 +10,7 @@ export default function HeroSection({ benefits }) {
       <div className="container hero-grid">
         <div className="hero-copy-block">
           <h1>
-            Checking a crypto wallet for connection with <span className="hero-highlight">“dirty”</span> money will
-            allow:
+            Screening a crypto address <span className="hero-highlight">before</span> you transact lets you:
           </h1>
           <ul className="benefit-list">
             {benefits.map((item) => (
@@ -31,28 +25,20 @@ export default function HeroSection({ benefits }) {
           </ul>
           <div className="hero-actions">
             <a className="btn btn-gradient" href="#check">
-              Check crypto wallet
+              Screen an address
             </a>
           </div>
           <div className="chain-row">
-            {chains.map(({ label, Icon }) => (
+            {supportedChains.map((label) => (
               <span className="chain-chip" key={label}>
-                <Icon />
                 {label}
-              </span>
-            ))}
-          </div>
-          <div className="badge-row">
-            {complianceBadges.map((badge) => (
-              <span className="compliance-badge" key={badge}>
-                {badge}
               </span>
             ))}
           </div>
         </div>
 
         <div className="hero-illustration">
-          <img src="/img/landing/beast-animation/beast-light.webp" alt="" />
+          <ImagePlaceholder label="Risk report preview" ratio="4 / 3" />
         </div>
       </div>
     </section>

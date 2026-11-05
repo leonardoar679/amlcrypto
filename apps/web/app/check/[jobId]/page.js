@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo } from 'react';
+import { brand } from '../../../src/config/brand';
 import { getStoredHistory, setStoredHistory } from '../../../src/lib/demoAuth';
+import { historyMarkerKey } from '../../../src/lib/storageKeys';
 
 const demoResults = {
   low: {
@@ -43,7 +45,7 @@ export default function CheckResultPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const historyKey = `amlcheck-history:${address}`;
+    const historyKey = historyMarkerKey(address);
     if (window.localStorage.getItem(historyKey)) {
       return;
     }
@@ -64,7 +66,9 @@ export default function CheckResultPage() {
     <main className="result-shell">
       <div className="container">
         <div className="card result-card">
-          <p className="eyebrow">Btrace result • {source === 'wallet' ? 'Instant scan' : 'Saved report'}</p>
+          <p className="eyebrow">
+            {brand.name} result • {source === 'wallet' ? 'Instant scan' : 'Saved report'} • Demo data
+          </p>
           <h1>Wallet review completed</h1>
           <p>{result.summary}</p>
 

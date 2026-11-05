@@ -1,10 +1,12 @@
+import { QUOTA_CHANGED_EVENT, STORAGE_KEYS } from './storageKeys';
+
 export function getStoredUser() {
   if (typeof window === 'undefined') {
     return null;
   }
 
   try {
-    const user = window.localStorage.getItem('amlcheck-user');
+    const user = window.localStorage.getItem(STORAGE_KEYS.user);
     return user ? JSON.parse(user) : null;
   } catch {
     return null;
@@ -16,7 +18,7 @@ export function setStoredUser(user) {
     return;
   }
 
-  window.localStorage.setItem('amlcheck-user', JSON.stringify(user));
+  window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
 }
 
 export function clearStoredUser() {
@@ -24,8 +26,8 @@ export function clearStoredUser() {
     return;
   }
 
-  window.localStorage.removeItem('amlcheck-user');
-  window.localStorage.removeItem('amlcheck-wallet');
+  window.localStorage.removeItem(STORAGE_KEYS.user);
+  window.localStorage.removeItem(STORAGE_KEYS.wallet);
 }
 
 export function getStoredWallet() {
@@ -33,7 +35,7 @@ export function getStoredWallet() {
     return '';
   }
 
-  return window.localStorage.getItem('amlcheck-wallet') || '';
+  return window.localStorage.getItem(STORAGE_KEYS.wallet) || '';
 }
 
 export function setStoredWallet(address) {
@@ -41,7 +43,7 @@ export function setStoredWallet(address) {
     return;
   }
 
-  window.localStorage.setItem('amlcheck-wallet', address);
+  window.localStorage.setItem(STORAGE_KEYS.wallet, address);
 }
 
 export function truncateAddress(address, front = 6, back = 4) {
@@ -58,7 +60,7 @@ export function getStoredQuota() {
     return getStoredUser() ? 5 : 1;
   }
 
-  const storedQuota = window.localStorage.getItem('amlcheck-quota');
+  const storedQuota = window.localStorage.getItem(STORAGE_KEYS.quota);
   const fallbackQuota = getStoredUser() ? 5 : 1;
   return storedQuota ? Number(storedQuota) : fallbackQuota;
 }
@@ -68,8 +70,8 @@ export function setStoredQuota(value) {
     return;
   }
 
-  window.localStorage.setItem('amlcheck-quota', String(value));
-  window.dispatchEvent(new CustomEvent('amlcheck-quota-changed'));
+  window.localStorage.setItem(STORAGE_KEYS.quota, String(value));
+  window.dispatchEvent(new CustomEvent(QUOTA_CHANGED_EVENT));
 }
 
 export function getStoredHistory() {
@@ -78,7 +80,7 @@ export function getStoredHistory() {
   }
 
   try {
-    const history = window.localStorage.getItem('amlcheck-history');
+    const history = window.localStorage.getItem(STORAGE_KEYS.history);
     return history ? JSON.parse(history) : [];
   } catch {
     return [];
@@ -90,5 +92,5 @@ export function setStoredHistory(history) {
     return;
   }
 
-  window.localStorage.setItem('amlcheck-history', JSON.stringify(history));
+  window.localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
 }

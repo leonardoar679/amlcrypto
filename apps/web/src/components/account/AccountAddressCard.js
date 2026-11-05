@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { truncateAddress } from '../../lib/demoAuth';
-import { CopyIcon, RefreshIcon, ChevronDownIcon } from '../icons/Icons';
+import { CopyIcon, RefreshIcon, ChevronDownIcon, WalletGlyphIcon } from '../icons/Icons';
 
 export default function AccountAddressCard({ address, checkDate, onUpdate }) {
   const [copied, setCopied] = useState(false);
@@ -27,7 +27,7 @@ export default function AccountAddressCard({ address, checkDate, onUpdate }) {
 
       <div className="card account-address-card">
         <div className="account-address-mascot">
-          <img src="/img/landing/beast-animation/beast-light.webp" alt="" />
+          <WalletGlyphIcon width={56} height={56} />
           <span>Connect address</span>
         </div>
 
