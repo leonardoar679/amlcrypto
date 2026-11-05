@@ -70,22 +70,25 @@ Things to know:
 * Any authenticated user can read provider status and trigger a probe (one request of quota) until
   roles arrive in M13.
 
-## Reading address histories (Ethereum, BNB Smart Chain, TRON and Bitcoin)
+## Reading address histories (Ethereum, BNB Smart Chain, TRON, Bitcoin and Solana)
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.cli history ethereum 0xYourAddress --max-items 20
 .\.venv\Scripts\python.exe -m app.cli history bsc 0xYourAddress --json
 .\.venv\Scripts\python.exe -m app.cli history tron TYourAddress --from-block 87700000
 .\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress
+.\.venv\Scripts\python.exe -m app.cli history solana YourWalletAddress
 .\.venv\Scripts\python.exe -m app.cli tx ethereum 0xTransactionHash
 .\.venv\Scripts\python.exe -m app.cli tx tron TransactionId
 .\.venv\Scripts\python.exe -m app.cli tx bitcoin TransactionId
+.\.venv\Scripts\python.exe -m app.cli tx solana TransactionSignature
 .\.venv\Scripts\python.exe -m app.cli enqueue FETCH_ADDRESS_HISTORY --set chain=ethereum --set address=0xYourAddress
 ```
 
 Keys (in `.env`): Ethereum needs `ETHERSCAN_API_KEY` or `ALCHEMY_API_KEY`, BNB Smart Chain needs
 `ALCHEMY_API_KEY` (an Etherscan key helps there only with `ETHERSCAN_PAID_PLAN=true`), TRON needs
-`TRONGRID_API_KEY`, Bitcoin needs no key (it uses a public Esplora endpoint, blockstream.info by
+`TRONGRID_API_KEY`, Solana needs `HELIUS_API_KEY`, Bitcoin needs no key (it uses a public
+Esplora endpoint, blockstream.info by
 default; set `ESPLORA_BASE_URL` for mempool.space or your own instance). `history` exits with 0 when
 the read is complete, 2 when a limit stopped it, 1 on errors.
 
@@ -102,6 +105,12 @@ Verified against the live services on 2026-11-05, with a real key for each:
   spent from it, and its balance (the one output inferred unspent was worth the node's balance to
   the satoshi). mempool.space could not be reached from the development machine, so no second
   Esplora instance cross-checked it.
+* **Solana, Helius**: a wallet with 291 transactions (legacy, version 0 and the new version 1, one
+  failed) was read in three pages and **its balance changes added up to the chain's SOL balance to
+  the lamport, and to all 11 of its token balances**. Decoded independently by us, its transfers
+  reproduced **all 924 rows** of Helius's own `getTransfersByAddress` for the same wallet, and also
+  showed what that list omits: rent deposits and refunds, closed accounts, and the 14 transactions
+  where a program paid SOL by editing lamports.
 * **BNB Smart Chain: not verified live.** Alchemy answered that the network is not enabled for the
   app. Switch on "BNB Smart Chain Mainnet" in the app's Networks tab in the Alchemy dashboard (free) and
   run `history bsc` once.
@@ -198,6 +207,57 @@ satoshis, and what the address did in each (`received`, `sent`, `net`).
   Esplora publishes no limits, so the default is one request a second; a history of 5,000
   transactions costs about 200 requests, which is the default `HISTORY_REQUEST_BUDGET`.
 
+### Solana
+
+Value on Solana moves between **token accounts**, each owned by a wallet; most of it moves inside
+instructions that other programs call (a swap is a dozen of them); and a program can change an
+account's SOL balance without any instruction saying so. A wallet's history is one feed of
+transactions, each carrying every kind of movement. So a read gives `SolanaTransaction` records
+(`app/chains/solana/`), each with three views of the same event:
+
+* **`transfers`**: what the instructions say moved, as the usual `Transfer` records between
+  *wallets* (a token transfer names the owners of the token accounts, read from the transaction's
+  own balances), with the token accounts, the program and the exact position of the instruction
+  (`"3"` is the fourth instruction, `"3.1"` the second instruction it called) kept alongside. A
+  zero-amount transfer is kept: it can be an address-poisoning trace.
+* **`sol_changes` and `token_changes`**: what the chain says every balance did. This is the ground
+  truth: a wallet's net change in a transaction comes from here, not from instructions.
+* **`unattributed`**: SOL or token changes no instruction explains, because lamports are replayed
+  through the instructions in the order they ran (a transfer between wrapped-SOL token accounts
+  moves lamports too, and closing a token account moves everything it holds) and whatever differs
+  from the chain's after-balances is listed instead of hidden. In the live wallet below, 14 of 291
+  transactions are programs paying out SOL by editing lamports; in each, the unexplained changes
+  sum to zero, so the account that lost it is visible next to the wallet that gained it.
+
+How it is read (`app/providers/helius.py`):
+
+* **Final data only.** Everything is read at the `finalized` commitment, which cannot be rolled
+  back, so a transaction appears in a history about 13 seconds after it happens, an update needs no
+  reorganisation margin, and "block" means slot (`--from-block` and `--to-block` are slots).
+* **Token accounts are followed.** A token *received* lands in the wallet's token account and does
+  not mention the wallet at all, so `getSignaturesForAddress` never lists it. The reader uses
+  Helius's `getTransactionsForAddress` with `tokenAccounts: balanceChanged`, which also returns the
+  transactions that changed the balance of a token account the wallet owns.
+* **Version 1 transactions.** Solana now has version 1 transactions, and a node answers a request
+  that only allows version 0 with error -32015. Every request here says `maxSupportedTransactionVersion: 1`.
+* Newest first, 100 transactions a page, `paginationToken` as the cursor (checked before use).
+
+A **whole-history read is checked against the chain**: the wallet's balance changes, added up over
+its history, must be exactly what the chain says it holds now, in SOL and in every token (Token and
+Token-2022 are read apart). A transaction that was missed breaks the sum, however it was missed.
+Each balance is compared only up to the slot it was read at, so a wallet that transacts while it is
+being read is not wrongly accused. A mismatch gives a `MISMATCH` note and the read is not called
+complete. Not checked: ranges and resumed reads, and stake or vote accounts, whose rewards are
+credited without a transaction.
+
+Not done here, and said so: Helius is the only Solana source (`getTransactionsForAddress` is a
+Helius method; Alchemy's Solana network is not switched on for the current key); token symbols and
+names are not in a transaction, so tokens are identified by mint; Token-2022 transfers with fees
+(`transferCheckedWithFee`) are counted as unreadable rather than guessed; wrapped SOL is a token
+in `transfers` (mint `So111...112`); NFTs are not modelled. The free plan allows 10 requests a
+second and a page of 100 transactions costs 10 credits, so a 5,000-transaction history is about
+500 credits of the million a month.
+
 Known limits, deliberately not hidden:
 
 * Two identical movements inside one transaction (same token, parties and amount) are told apart by
@@ -248,10 +308,10 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/database/` | engine/session setup, models, programmatic Alembic access |
 | `app/api/v1/` | HTTP routes under `/api/v1` |
 | `app/chains/` | per-chain address validation and the chain registry |
-| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan, Alchemy, TronGrid and Esplora sources |
+| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan, Alchemy, TronGrid, Esplora and Helius sources |
 | `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter base (`SourceAdapter`) and the account-model adapter on top of it, and the lookup from a chain name to its adapter |
-| `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis |
-| `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `read`), the history job, the text views for the CLI |
+| `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/`, `app/chains/solana/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis; Solana its own transaction record, the instruction decoder checked against balance changes, and a wallet's per-transaction activity |
+| `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), the history job, the text views for the CLI |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
 | `app/database/repositories/` | job queue and usage counters |
 | `migrations/` | Alembic environment and versions |

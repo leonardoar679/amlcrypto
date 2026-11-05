@@ -12,7 +12,7 @@ risk engine. Built as a modular monolith.
 | `apps/web` | Next.js frontend (plain JavaScript). Still runs on mock data; wired to the API in milestone M12 |
 | `shared/documentation` | [Frontend integration map](shared/documentation/frontend-integration-map.md), [branding and IP register](shared/documentation/branding-ip-register.md) |
 | `deployment` | `docker-compose.yml`: the API and the worker from one image. CI builds the image and checks the file parses; it has not been started on a development machine |
-| `.github/workflows` | CI on GitHub Actions: backend on SQLite and on MySQL 8.0 and 8.4, frontend build, Docker image build and smoke test. All five jobs passed for the last verified commit (`0e0d323`). Failed tests are also written as annotations, because the logs need a login |
+| `.github/workflows` | CI on GitHub Actions: backend on SQLite and on MySQL 8.0 and 8.4, frontend build, Docker image build and smoke test. All five jobs passed for the last verified commit (`b9ec00e`). Failed tests are also written as annotations, because the logs need a login |
 
 ## Status
 
@@ -23,9 +23,10 @@ risk engine. Built as a modular monolith.
 | M2 chain registry and address validation | done; verified the same way |
 | M3 provider infrastructure and job queue | done; verified in CI on SQLite, MySQL 8.0 and 8.4, and in the Docker image (including a worker run inside it), plus a live run against a public Bitcoin endpoint and a clean Ctrl+Break shutdown of the worker on Windows. Its first MySQL run found two real concurrency bugs, both fixed |
 | M4 Ethereum and BNB connectors | done: normalized records, Etherscan and Alchemy sources with fallback, address histories with pagination and incremental sync, transaction details decoded from receipts (checked against 12 real transactions from public nodes). CI green on SQLite, MySQL 8.0 and 8.4 and in Docker. Tried live on Ethereum with real keys: Etherscan and Alchemy returned the same 106 transfers for one address (the run found and fixed one real difference). **BNB Smart Chain is not yet tried live**: switch the network on in the Alchemy app first, see "Reading address histories" in apps/api/README.md |
-| M5 TRON connector | built (903 tests; CI has not run on it yet): the adapter code that Ethereum, BNB and TRON share, a TronGrid source, normalizers checked against real TRON data, histories (TRX, TRC-10, TRC-20, internal) and transaction details. Tried live with a real TronGrid key: feed rows and the same transactions decoded from their own details agreed on every transfer checked |
-| M6 Bitcoin connector | built: Bitcoin is read as inputs and outputs, not as transfers between accounts; spend links between transactions; change, CoinJoin and shared-ownership are inferences, labelled as such and withheld when nothing supports them; histories newest first, checked against the node's own count and totals. Tried live through a public Esplora: a 90-transaction address agreed with the node to the satoshi. Alchemy's Bitcoin API (the blueprint's first choice) is not used yet: its network is not switched on for the key. CI has not run on it yet |
-| M7 and later | not started |
+| M5 TRON connector | done (903 tests; CI green on SQLite, MySQL 8.0 and 8.4 and in Docker): the adapter code that Ethereum, BNB and TRON share, a TronGrid source, normalizers checked against real TRON data, histories (TRX, TRC-10, TRC-20, internal) and transaction details. Tried live with a real TronGrid key: feed rows and the same transactions decoded from their own details agreed on every transfer checked |
+| M6 Bitcoin connector | done (1,103 tests; CI green on all five jobs): Bitcoin is read as inputs and outputs, not as transfers between accounts; spend links between transactions; change, CoinJoin and shared-ownership are inferences, labelled as such and withheld when nothing supports them; histories newest first, checked against the node's own count and totals. Tried live through a public Esplora: a 90-transaction address agreed with the node to the satoshi. Alchemy's Bitcoin API (the blueprint's first choice) is not used yet: its network is not switched on for the key |
+| M7 Solana connector | built (1,282 tests; CI has not run on it yet): a wallet's transactions decoded by us into transfers between wallets (token accounts resolved to their owners, exact instruction positions), checked against what the chain says every balance did, with anything no instruction explains reported instead of hidden. Tried live with a real Helius key: a 291-transaction wallet (including the new version 1 transactions) added up to its SOL balance to the lamport and to all 11 token balances, and our decoder reproduced all 924 rows of Helius's own transfer list for it. Helius is the only Solana source for now |
+| M8 and later | not started |
 
 ## Prerequisites
 
@@ -53,6 +54,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m app.cli history ethereum 0xYourAddress --max-items 20   # needs a key
 .\.venv\Scripts\python.exe -m app.cli history tron TYourAddress --max-items 20       # needs a TronGrid key
 .\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress --max-items 50      # no key needed
+.\.venv\Scripts\python.exe -m app.cli history solana YourWallet --max-items 100         # needs a Helius key
 .\.venv\Scripts\python.exe -m app.worker
 ```
 
