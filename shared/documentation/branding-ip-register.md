@@ -91,7 +91,11 @@ rg -i "btrace|bholder|bitok|amlcrypto|amlcheck|willkie|everscan|freeton|skolkovo
   wanted, the colours are CSS variables at the top of `app/globals.css`.
 * **Repository folder name and remote.** The local folder is `amlcrypto` and `origin` is
   `leonardoar679/amlcrypto`. The folder name appears inside Next's build metadata. Neither is code.
-* **Git history.** The original assets and copy are still in earlier commits.
+* **Git history, and the repository is public.** The original assets and copy are still in earlier commits, and
+  `github.com/leonardoar679/amlcrypto` is a **public** repository (checked 2026-11-05) that these commits have
+  been pushed to. Anyone can read that history, including the pre-rebrand frontend and the earlier version of
+  this register. Whether that matters is a decision for the repository owner; removing the material from
+  history would need a history rewrite and a force push, which this project has not done.
 * **Legal pages.** There is no Terms of Use or Privacy Policy; the footer has none. A compliance product
   needs both before launch.
 

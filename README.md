@@ -12,15 +12,15 @@ risk engine. Built as a modular monolith.
 | `apps/web` | Next.js frontend (plain JavaScript). Still runs on mock data; wired to the API in milestone M12 |
 | `shared/documentation` | [Frontend integration map](shared/documentation/frontend-integration-map.md), [branding and IP register](shared/documentation/branding-ip-register.md) |
 | `deployment` | `docker-compose.yml` (written, not yet run) |
-| `.github/workflows` | CI: backend on SQLite and on MySQL 8 |
+| `.github/workflows` | CI on GitHub Actions: backend on SQLite (passing) and on MySQL 8.0 (failing), frontend build (passing). Failed tests are also written as annotations, because the logs need a login |
 
 ## Status
 
 | Milestone | State |
 |---|---|
 | M0 audit, restructure, rebrand | done: moved to `apps/web`, upgraded to Next.js 16.4.5 (0 audit vulnerabilities), fully rebranded to the placeholder "AML Platform", build and a headless-browser run verified |
-| M1 backend foundation | done and verified on SQLite; MySQL covered offline only |
-| M2 chain registry and address validation | done and verified on SQLite |
+| M1 backend foundation | done; verified on SQLite locally and in Linux CI. **The MySQL CI job fails** (cause not yet diagnosed) |
+| M2 chain registry and address validation | done; verified on SQLite locally and in Linux CI |
 | M3 and later | not started |
 
 ## Prerequisites

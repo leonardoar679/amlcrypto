@@ -76,4 +76,8 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 * No login rate limiting or lockout yet.
 * `Dockerfile` and `deployment/docker-compose.yml` have not been built or run (no Docker on the
   development machine).
-* The MySQL path is covered offline (DDL generation) but only CI or `TEST_DATABASE_URL` executes it.
+* **The suite fails on MySQL 8.0 in CI** (GitHub Actions job `api-mysql`; first seen 2026-11-05, every run
+  since). The SQLite job passes on Linux. The failing tests have not been identified yet: the workflow now
+  writes failed tests as run annotations (`scripts/annotate_junit.py`), or reproduce locally with
+  `TEST_DATABASE_URL`. Until that is fixed, MySQL support is unverified, whatever the offline DDL tests say.
+* MySQL 8.0 reached end of life in April 2026; once the suite passes, test 8.4 LTS as well.
