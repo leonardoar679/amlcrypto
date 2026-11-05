@@ -18,7 +18,7 @@ risk engine. Built as a modular monolith.
 
 | Milestone | State |
 |---|---|
-| M0 audit, restructure, rebrand | audit and move to `apps/web` done; **rebrand, Next.js upgrade and build check pending (need Node)** |
+| M0 audit, restructure, rebrand | done: moved to `apps/web`, upgraded to Next.js 16.4.5 (0 audit vulnerabilities), fully rebranded to the placeholder "AML Platform", build and a headless-browser run verified |
 | M1 backend foundation | done and verified on SQLite; MySQL covered offline only |
 | M2 chain registry and address validation | done and verified on SQLite |
 | M3 and later | not started |
@@ -44,13 +44,17 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Frontend (not yet built on a machine with Node; commands are the standard ones):
+Frontend (verified with Node 22; `next build` fetches Google Fonts, so it needs internet):
 
 ```powershell
 cd apps\web
 npm ci
-npm run dev
+npm run dev        # http://localhost:3000
+npm run build      # production build
 ```
+
+The frontend still runs entirely on demonstration data kept in the browser; it is wired to the API in
+milestone M12. Optional settings are in `apps/web/.env.example`.
 
 ## Principles
 

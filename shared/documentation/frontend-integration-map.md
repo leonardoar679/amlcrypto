@@ -1,9 +1,14 @@
 # Frontend integration map
 
 What `apps/web` does today, what data it expects, and where the real API plugs in (milestone M12).
-Source: an audit of commit `ad35ac5` (before the move to `apps/web` and before the rebrand), 2026-11-04.
-Line numbers refer to that commit and will drift; file and function names will not. Nothing here has
-been run in a browser: the audit was a code read, and this machine had no Node when it was written.
+Written from an audit of commit `ad35ac5` (before the move to `apps/web` and before the rebrand) and updated
+after the rebrand on 2026-11-04: route names, storage keys and removed components describe the current
+tree, while data shapes, seams and defects are unchanged by the rebrand. Line numbers in the defect list
+refer to the audited commit and will drift; file and function names will not.
+
+The audit was a code read. After the rebrand all 15 reachable pages were also loaded in headless Edge
+(Next.js 16.4.5, production build): no console errors, no failed requests, no broken images. Behaviour was
+not otherwise exercised.
 
 **Headline:** every screen runs on hardcoded data or `localStorage`. There is not a single network
 call, no `next.config.js`, no middleware, no environment variable. The only "auth" is a forgeable
@@ -13,18 +18,18 @@ client-side check.
 
 | Route | File (under `apps/web/app/`) | Kind | Shows | Data today | Real source (M12) |
 |---|---|---|---|---|---|
-| `/` | `page.js` | client | marketing home, consultation form | static; form is local-only | optional lead endpoint |
-| `/auth` | `auth/page.js` | client | email-only fake sign-in, "continue as guest" | `localStorage` | `POST /api/v1/auth/login` (exists) |
-| `/check` | `check/page.js` | client + AppShell | address input, "hot event" link | local quota | `POST /api/v1/address/validate` (exists), then screening (M4+) |
-| `/check/[jobId]` | `check/[jobId]/page.js` | client, **no shell, ungated** | result card | `demoResults`; `jobId` **is the address** | `GET /api/v1/screen/{screening_id}` |
-| `/account` | `account/page.js` | client + AppShell | address card, risk panel, counterparties, promos, last checks, FAQ | hardcoded arrays | address risk, labels, counterparties |
-| `/addresses` | `addresses/page.js` | client + AppShell | `/account` minus promos, last checks, FAQ, plus a check bar | hardcoded (duplicates `/account`) | same as `/account` |
+| `/` | `page.js` | client | marketing home with a "write to us" card | static (the old local-only consultation form became a `mailto:` link) | none needed |
+| `/auth` | `auth/page.js` | client | email-only demo sign-in, "continue as guest" | `localStorage` | `POST /api/v1/auth/login` (exists) |
+| `/check` | `check/page.js` | client + AppShell | address input and a note (the "hot event" link was removed) | local quota | `POST /api/v1/address/validate` (exists), then screening (M4+) |
+| `/check/[jobId]` | `check/[jobId]/page.js` | client, **no shell, ungated** | result card, labelled "Demo data" | `demoResults`; `jobId` **is the address** | `GET /api/v1/screen/{screening_id}` |
+| `/account` | `account/page.js` | client + AppShell | address card, risk panel, counterparties, last checks, FAQ (the Chrome-extension and bot promos were removed) | hardcoded arrays | address risk, labels, counterparties |
+| `/addresses` | `addresses/page.js` | client + AppShell | `/account` minus last checks and FAQ, plus a check bar | hardcoded (duplicates `/account`) | same as `/account` |
 | `/history` | `history/page.js` | client + AppShell | "My checks" table | hardcoded `LAST_CHECKS` | paginated screenings list |
 | `/pricing` | `pricing/page.js` | client + AppShell | tiers, promo, fake checkout, payment history | hardcoded; random invoice ids | billing, if it stays (see 6) |
 | `/settings` | `settings/page.js` | client + AppShell | profile, email/password/phone form, connected wallets | local state | users/me endpoints |
 | `/rating`, `/achievements` | one file each | client + AppShell | "coming soon" | none | candidates for removal (consumer features) |
-| `/faq` | `faq/page.js` | **server** | three FAQs from a local array | static | static |
-| `/products/*` (4 pages) | `products/**/page.js` | client | marketing pages | static | static |
+| `/faq` | `faq/page.js` | **server** | the shared FAQ list (`siteContent.faqs`) | static | static |
+| `/products/screening`, `/graph`, `/risk-api`, `/investigations` | `products/*/page.js` | client | marketing pages for the four platform modules (renamed from vendor-named routes) | static | static |
 
 Not present: `not-found`, `error` or `loading` boundaries, route handlers, server actions.
 
@@ -32,7 +37,7 @@ Not present: `not-found`, `error` or `loading` boundaries, route handlers, serve
 
 * The one gate is `AppShell.js` (`if (!getStoredUser()) router.replace('/auth')`). It covers the 8
   AppShell pages only, renders `null` until mounted, and is **forgeable**: any truthy JSON in
-  `localStorage['…-user']` passes.
+  `localStorage['aml-user']` passes.
 * `/auth` accepts any non-empty string; there is no password.
 * Ungated: `/`, `/auth`, `/faq`, `/check/[jobId]`, `/products/*`.
 * `AppShell` is instantiated inside each page rather than in a layout, so every navigation remounts
@@ -40,17 +45,20 @@ Not present: `not-found`, `error` or `loading` boundaries, route handlers, serve
 
 ## 3. Client-side state to replace
 
-All in `localStorage`, helpers in `src/lib/demoAuth.js` (the whole module is a seam).
+All in `localStorage`. Helpers are in `src/lib/demoAuth.js` (the whole module is a seam); every key and
+the quota event name are defined in `src/lib/storageKeys.js` from `brand.storagePrefix` (`aml`).
 
-| Key (before rebrand) | Shape | Written by | Replacement |
+| Key | Shape | Written by | Replacement |
 |---|---|---|---|
-| `amlcheck-user` | `{"email","name"}` | `/auth` | session cookie + `GET /auth/me` |
-| `amlcheck-wallet` | `0x` + 40 hex derived from the email | `/auth` | user's connected addresses |
-| `amlcheck-quota` | number string; 5 (user) / 1 (guest) | check handlers | server-side usage limits |
-| `amlcheck-history` | up to 6 × `{id,address,risk,date}` | `/check/[jobId]` | `GET` screenings; **nothing reads it today** |
-| `amlcheck-history:<address>` | marker `'saved'`, grows unbounded | `/check/[jobId]` | delete |
+| `aml-user` | `{"email","name"}` | `/auth` | session cookie + `GET /auth/me` |
+| `aml-wallet` | `0x` + 40 hex derived from the email | `/auth` | user's connected addresses |
+| `aml-quota` | number string; 5 (user) / 1 (guest) | check handlers | server-side usage limits |
+| `aml-history` | up to 6 × `{id,address,risk,date}` | `/check/[jobId]` | `GET` screenings; **nothing reads it today** |
+| `aml-history:<address>` | marker `'saved'`, grows unbounded | `/check/[jobId]` | delete |
 | `aml-theme` | `'light'` / `'dark'` | `src/lib/useTheme.js` | keep (per-viewer convenience) |
 | `aml-sidebar-collapsed` | `'true'` / `'false'` | `AppShell` | keep |
+
+(Before the rebrand the first five were `amlcheck-*`; existing demo sessions in a browser are simply ignored.)
 
 ## 4. Data shapes the UI expects
 
@@ -106,8 +114,9 @@ Achievements · Pricing · Checks history · Settings.
 | API Management | missing |
 | System Settings | partial (`/settings` is per-user only; no roles or organization config) |
 
-Consumer-only features with no equivalent in the platform: pricing top-up, social rating,
-achievements, Chrome-extension and Telegram promos. Whether they stay is a product decision for M12.
+Consumer-only features with no equivalent in the platform: pricing top-up (now labelled demo), social
+rating, achievements. (The Chrome-extension and Telegram promos were removed with the rebrand.) Whether
+the rest stay is a product decision for M12.
 
 ## 6. Integration seams (M12)
 
@@ -125,7 +134,8 @@ achievements, Chrome-extension and Telegram promos. Whether they stay is a produ
    "Check again" are dead controls): need address-profile, counterparty and flow endpoints and a
    paginated screenings list with one risk enum.
 7. `app/pricing/page.js` and `PricingTiers.js`: plans, checkout, invoices, if kept.
-8. Lead forms (home, investigations) and `SettingsForm` / `SettingsConnectedAddresses`.
+8. `SettingsForm` / `SettingsConnectedAddresses` (the home and investigations lead forms were replaced by
+   `mailto:` links because they discarded what was typed; add a real endpoint if a form is wanted).
 
 Infrastructure for the integration: add `next.config.js` `rewrites()` so the browser talks to one origin
 (no CORS), keep the session in an httpOnly cookie, and never put a provider key in a `NEXT_PUBLIC_*`
@@ -141,12 +151,16 @@ variable. New sections also need entries in `appNav.js` and in the `iconMap` in 
 * `SettingsField` initialises its draft once from `value`, so a server-loaded value shows empty.
 * `decodeURIComponent` on the result page is unguarded: a bare `%` can throw `URIError`, and there is no
   `error.js`.
-* `Number(localStorage.getItem('…-quota'))` can become `NaN`; storage reads are not wrapped in
+* `Number(localStorage.getItem('aml-quota'))` can become `NaN`; storage reads are not wrapped in
   try/catch, so blocked storage throws.
-* The home page and root layout metadata (`robots: index, follow`) apply to every route, including
-  `/account` and `/check/<address>`, because client components cannot export `metadata`.
+* Root layout metadata applies to every route, including `/account` and `/check/<address>`, because client
+  components cannot export `metadata`. It is `noindex` site-wide for now; at launch the marketing routes need
+  their own metadata (route-group layouts) while the signed-in routes stay `noindex`.
 * `href={item.pdf}` is unvalidated; a `javascript:` URL from an API would pass through.
-* 25 plain `<img>` tags and no `next/image`; some PNGs are large (3 MB).
+* **Horizontal overflow** (found by the headless-browser check, present before the rebrand too): the page
+  scrolls sideways at 390 px wide on `/`, and at 1280 px wide on `/account`, `/history` and `/settings`
+  (cards and buttons are cut off at the right edge). Not investigated.
+* There are no images left (all artwork was removed in the rebrand); add `next/image` when real artwork exists.
 * `app/layout.js` loads Google Fonts through `next/font/google`, so `next build` needs internet.
 * Deep relative imports everywhere; add a `@/*` alias in `jsconfig.json` before moving pages into route
   groups (16+ imports).
