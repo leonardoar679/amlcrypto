@@ -14,14 +14,26 @@ from app.api.errors import APIError
 from app.core.config import Settings
 from app.core.security import decode_access_token
 from app.database.models import Organization, User
+from app.providers.service import ProviderService
 
 
 def get_settings_dep(request: Request) -> Settings:
     return request.app.state.settings
 
 
+def get_providers(request: Request) -> ProviderService:
+    return request.app.state.providers
+
+
 def get_session(request: Request) -> Iterator[Session]:
+    """A read-only session. Writing through it fails on SQLite by design."""
     with request.app.state.session_factory() as session:
+        yield session
+
+
+def get_write_session(request: Request) -> Iterator[Session]:
+    """A session that may write. Keep its transaction short: it holds the write lock."""
+    with request.app.state.write_session_factory() as session:
         yield session
 
 

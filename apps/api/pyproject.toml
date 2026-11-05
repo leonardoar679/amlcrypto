@@ -16,13 +16,15 @@ dependencies = [
     "PyJWT>=2.9",
     "pwdlib[argon2]>=0.2.1",
     "pycryptodome>=3.20",  # keccak-256 for EIP-55 (hashlib's sha3_256 is not keccak)
+    # The HTTP client for provider calls. Also what Starlette's TestClient needs now that its
+    # fallback to plain httpx is deprecated.
+    "httpx2>=2.16",
 ]
 
 [project.optional-dependencies]
 # MySQL 8 authenticates with caching_sha2_password, which PyMySQL only supports through "cryptography".
 mysql = ["pymysql>=1.1", "cryptography>=42"]
-# httpx2: Starlette's TestClient requires it (the plain httpx fallback is deprecated).
-dev = ["pytest>=8", "httpx2>=2.16", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

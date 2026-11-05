@@ -13,37 +13,35 @@ from __future__ import annotations
 import os
 import shutil
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine, delete
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
+from app.core.redaction import secrets
 from app.database import migrations
-from app.database.connection import create_db_engine
+from app.database.connection import create_db_engine, create_session_factory
+from app.database.models import ApiUsage, FetchJob
 from app.main import create_app
 
 TEST_SECRET = "test-secret-key-that-is-comfortably-over-32-characters"
 MYSQL_URL = os.environ.get("TEST_DATABASE_URL")
 
-_ENV_VARS = (
-    "ENVIRONMENT",
-    "DATABASE_URL",
-    "DATABASE_TYPE",
-    "DATA_DIR",
-    "SECRET_KEY",
-    "JWT_ALGORITHM",
-    "ACCESS_TOKEN_TTL_MINUTES",
-    "LOG_LEVEL",
-)
+# Every setting can come from the environment; none of the developer's may leak into a test.
+_ENV_VARS = tuple(name.upper() for name in Settings.model_fields)
 
 
 @pytest.fixture(autouse=True)
-def _isolate_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolate_environment(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for name in _ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+    yield
+    secrets.clear()  # provider keys registered by one test must not leak into the next
 
 
 @pytest.fixture(scope="session")
@@ -93,9 +91,11 @@ def app(settings: Settings) -> Iterator[FastAPI]:
     if MYSQL_URL:
         connection = engine.connect()
         outer = connection.begin()
-        application.state.session_factory = sessionmaker(
+        joined = sessionmaker(
             bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
         )
+        application.state.session_factory = joined
+        application.state.write_session_factory = joined
         try:
             yield application
         finally:
@@ -115,7 +115,35 @@ def client(app: FastAPI) -> Iterator[TestClient]:
         yield test_client
 
 
+@dataclass
+class CommittingDb:
+    engine: Engine
+    read: sessionmaker[Session]
+    write: sessionmaker[Session]
+
+
+@pytest.fixture
+def committing_db(database_url: str) -> Iterator[CommittingDb]:
+    """Real engines whose commits are durable, for tests that need genuinely separate transactions
+    (races between threads). Not rolled back, so on MySQL the rows it wrote are deleted afterwards;
+    on SQLite every test already has its own database file."""
+    engine = create_db_engine(database_url)
+    handle = CommittingDb(
+        engine, create_session_factory(engine), create_session_factory(engine, write=True)
+    )
+    try:
+        yield handle
+    finally:
+        if MYSQL_URL:
+            with handle.write() as session:
+                for model in (FetchJob, ApiUsage):
+                    session.execute(delete(model))
+                session.commit()
+        engine.dispose()
+
+
 @pytest.fixture
 def db_session(app: FastAPI) -> Iterator[Session]:
-    with app.state.session_factory() as session:
+    """A session tests may write through (setting up users, flipping flags)."""
+    with app.state.write_session_factory() as session:
         yield session

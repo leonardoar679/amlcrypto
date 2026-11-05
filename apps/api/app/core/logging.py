@@ -1,4 +1,4 @@
-"""JSON logging with a per-request id."""
+"""JSON logging with a per-request id. Known secrets are scrubbed from every line before writing."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import logging
 import logging.config
 from contextvars import ContextVar
 from datetime import UTC, datetime
+
+from app.core.redaction import secrets
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
@@ -29,7 +31,7 @@ class JsonFormatter(logging.Formatter):
                 payload[key] = value
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
-        return json.dumps(payload, default=str)
+        return secrets.scrub(json.dumps(payload, default=str))
 
 
 def configure_logging(level: str = "INFO") -> None:
@@ -51,6 +53,14 @@ def configure_logging(level: str = "INFO") -> None:
                 "uvicorn": {"handlers": [], "propagate": True},
                 "uvicorn.error": {"handlers": [], "propagate": True},
                 "uvicorn.access": {"handlers": [], "propagate": True},
+                # The HTTP client logs each request URL at INFO and some providers put the API key
+                # in the URL. Scrubbing covers it, but there is no reason to emit those lines.
+                # Reading the current revision (the /version endpoint, the worker's start-up check)
+                # makes Alembic log two lines each time.
+                "alembic": {"level": "WARNING", "handlers": [], "propagate": True},
+                "httpx2": {"level": "WARNING", "handlers": [], "propagate": True},
+                "httpx": {"level": "WARNING", "handlers": [], "propagate": True},
+                "httpcore": {"level": "WARNING", "handlers": [], "propagate": True},
             },
         }
     )

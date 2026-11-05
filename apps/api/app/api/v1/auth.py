@@ -5,10 +5,10 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_session, get_settings_dep
+from app.api.deps import get_session, get_settings_dep, get_write_session
 from app.api.errors import APIError
 from app.core.config import Settings
 from app.core.security import burn_password_check, create_access_token, verify_password
@@ -37,6 +37,7 @@ def _invalid_credentials() -> APIError:
 def login(
     body: LoginRequest,
     session: Session = Depends(get_session),
+    write_session: Session = Depends(get_write_session),
     settings: Settings = Depends(get_settings_dep),
 ) -> TokenResponse:
     user = session.scalar(select(User).where(User.email == body.email.strip().lower()))
@@ -50,8 +51,12 @@ def login(
     if not user.is_active or organization is None or not organization.is_active:
         raise _invalid_credentials()
 
-    user.last_login_at = datetime.now(UTC)
-    session.commit()
+    # Authenticating (including the slow password hash) used the read session; the write lock is
+    # held only for this single statement.
+    write_session.execute(
+        update(User).where(User.id == user.id).values(last_login_at=datetime.now(UTC))
+    )
+    write_session.commit()
 
     token, expires_in = create_access_token(
         settings, user_id=user.id, organization_id=user.organization_id

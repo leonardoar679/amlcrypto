@@ -7,7 +7,7 @@ from logging.config import fileConfig
 from alembic import context
 
 from app.core.config import get_settings
-from app.database.connection import create_db_engine
+from app.database.connection import create_db_engine, for_writing
 from app.database.models import Base
 
 config = context.config
@@ -42,7 +42,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     engine = create_db_engine(_database_url())
     try:
-        with engine.connect() as connection:
+        with for_writing(engine).connect() as connection:  # migrations write
             # SQLite cannot ALTER most things in place, so batch mode rebuilds the table.
             _configure(connection=connection, render_as_batch=connection.dialect.name == "sqlite")
             with context.begin_transaction():

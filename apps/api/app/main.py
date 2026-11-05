@@ -18,6 +18,8 @@ from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.database.connection import create_db_engine, create_session_factory
+from app.providers.service import ProviderService
+from app.providers.usage import DbUsageSink
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,6 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
+        await app.state.providers.aclose()
         app.state.engine.dispose()
 
     is_prod = settings.environment == "prod"
@@ -46,7 +49,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.engine = engine
+    # Reads and writes use separate session factories (see app.database.connection).
     app.state.session_factory = create_session_factory(engine)
+    app.state.write_session_factory = create_session_factory(engine, write=True)
+    # Provider calls are counted in api_usage, through whichever write factory is current.
+    app.state.providers = ProviderService.from_settings(
+        settings, usage=DbUsageSink(lambda: app.state.write_session_factory)
+    )
 
     app.add_middleware(RequestIdMiddleware)
     register_exception_handlers(app)

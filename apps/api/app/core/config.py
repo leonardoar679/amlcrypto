@@ -39,11 +39,60 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
-    @field_validator("secret_key", "database_type", mode="before")
+    # Data providers. A provider whose key is blank is "not configured" and is skipped.
+    etherscan_api_key: SecretStr | None = None
+    alchemy_api_key: SecretStr | None = None
+    trongrid_api_key: SecretStr | None = None
+    helius_api_key: SecretStr | None = None
+    # An Esplora-compatible Bitcoin API; None means the default in app.providers.registry.
+    esplora_base_url: str | None = None
+    # Requests per second per provider, as JSON: {"etherscan": 3, "trongrid": 5}. The defaults in
+    # app.providers.registry are conservative free-plan values.
+    provider_rate_limits: dict[str, float] = Field(default_factory=dict)
+    provider_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    provider_max_retries: int = Field(default=3, ge=0, le=10)
+    provider_breaker_threshold: int = Field(default=5, ge=1, le=100)
+    provider_breaker_cooldown_seconds: float = Field(default=30.0, ge=1, le=3600)
+
+    # The background worker (python -m app.worker).
+    worker_concurrency: int = Field(default=4, ge=1, le=64)
+    worker_poll_interval_seconds: float = Field(default=2.0, ge=0.05, le=60)
+    # On SIGTERM / Ctrl+C running jobs get this long to finish before they are handed back.
+    worker_shutdown_grace_seconds: float = Field(default=20.0, ge=0)
+    # A handler running longer than this is cancelled and the attempt counts as failed ...
+    job_timeout_seconds: float = Field(default=300.0, ge=1)
+    # ... and a RUNNING job untouched for this long is assumed to belong to a dead worker.
+    job_lock_timeout_seconds: float = Field(default=900.0, ge=30)
+
+    @field_validator(
+        "secret_key",
+        "database_type",
+        "etherscan_api_key",
+        "alchemy_api_key",
+        "trongrid_api_key",
+        "helius_api_key",
+        "esplora_base_url",
+        mode="before",
+    )
     @classmethod
     def _blank_means_unset(cls, value: object) -> object:
         # "SECRET_KEY=" in a copied .env.example must not become an empty signing key.
         return None if isinstance(value, str) and not value.strip() else value
+
+    @field_validator("provider_rate_limits")
+    @classmethod
+    def _rates_are_positive(cls, value: dict[str, float]) -> dict[str, float]:
+        for name, rate in value.items():
+            if rate <= 0:
+                raise ValueError(f"the rate limit for {name!r} must be greater than zero")
+        return value
+
+    @field_validator("esplora_base_url")
+    @classmethod
+    def _esplora_url_is_http(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith(("http://", "https://")):
+            raise ValueError("ESPLORA_BASE_URL must start with http:// or https://")
+        return value
 
     @model_validator(mode="after")
     def _check_consistency(self) -> Settings:
@@ -58,6 +107,9 @@ class Settings(BaseSettings):
                 f"DATABASE_TYPE={self.database_type} does not match the DATABASE_URL backend "
                 f"({backend})"
             )
+        if self.job_lock_timeout_seconds <= self.job_timeout_seconds:
+            # Otherwise a slow-but-alive job would be handed to a second worker.
+            raise ValueError("JOB_LOCK_TIMEOUT_SECONDS must be greater than JOB_TIMEOUT_SECONDS")
         if self.environment != "dev":
             secret = self.secret_key.get_secret_value() if self.secret_key else ""
             if len(secret) < MIN_SECRET_LENGTH:
