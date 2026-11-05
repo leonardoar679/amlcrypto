@@ -661,3 +661,46 @@ def test_the_body_check_is_not_asked_about_responses_the_status_already_condemne
     with pytest.raises(ProviderUnavailable):
         run(get(rig, body_check=lambda provider, data: called.append(1)))
     assert called == []
+
+
+# --- a 4xx whose body explains itself ----------------------------------------------------------
+
+
+def explain(provider, data):
+    if isinstance(data, dict) and "explanation" in data:
+        return ProviderAuthError(provider, data["explanation"])
+    return None
+
+
+def test_a_4xx_with_a_json_explanation_shows_that_explanation_instead_of_the_bare_status():
+    rig = make(Reply(403, json={"explanation": "the network is switched off for your key"}))
+    with pytest.raises(ProviderAuthError) as info:
+        run(get(rig, body_check=explain))
+    assert info.value.reason == "the network is switched off for your key"
+    assert len(rig.server.requests) == 1
+
+
+def test_a_4xx_with_a_body_the_checker_cannot_read_keeps_the_status_message():
+    for reply in (Reply(403, text="<html>Forbidden</html>"), Reply(403, json={"unrelated": 1})):
+        rig = make(reply)
+        with pytest.raises(ProviderAuthError) as info:
+            run(get(rig, body_check=explain))
+        assert info.value.reason.startswith("HTTP 403")
+
+
+def test_a_429_and_a_5xx_are_never_second_guessed_by_the_body_check():
+    asked = []
+
+    def spy(provider, data):
+        asked.append(1)
+        return ProviderBadResponse(provider, "should not be used")
+
+    rig = make(Reply(429, json={"x": 1}, headers={"Retry-After": "120"}))
+    with pytest.raises(ProviderRateLimited) as info:
+        run(get(rig, body_check=spy))
+    assert info.value.retry_after == 120  # Retry-After still honoured
+
+    rig = make(Reply(500, json={"x": 1}), max_retries=0)
+    with pytest.raises(ProviderUnavailable):
+        run(get(rig, body_check=spy))
+    assert asked == []

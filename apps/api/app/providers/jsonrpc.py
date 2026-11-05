@@ -29,6 +29,13 @@ def jsonrpc_error(provider: str, error: Any) -> ProviderError:
     message = str(error.get("message", "")) if isinstance(error, dict) else str(error)
     lowered = message.lower()
 
+    if "not enabled for this app" in lowered:
+        # Alchemy: each app lists the networks it may use. The provider's message carries a link to
+        # the app's dashboard page; ours says what to do without repeating it.
+        return ProviderAuthError(
+            provider,
+            "this network is not enabled for the API key: switch it on in the provider's dashboard",
+        )
     if code == 429 or any(phrase in lowered for phrase in _RATE_PHRASES):
         return ProviderRateLimited(provider, "rate limit reached")
     if code in (401, 403) or any(phrase in lowered for phrase in _AUTH_PHRASES):

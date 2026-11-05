@@ -83,7 +83,7 @@ def test_the_request_asks_for_ascending_nonzero_transfers_of_one_category_in_hex
     request = fake.payloads[0]["params"][0]
     assert fake.payloads[0]["method"] == "alchemy_getAssetTransfers"
     assert request["category"] == ["erc20"] and request["order"] == "asc"
-    assert request["excludeZeroValue"] is True
+    assert request["excludeZeroValue"] is False  # token transfers keep zero-value events
     assert (request["fromBlock"], request["toBlock"], request["maxCount"]) == (
         "0x64",
         "0x384",
@@ -316,3 +316,51 @@ def test_unknown_and_unmined_transactions_are_distinguished():
     fake.transactions[TX_HASH] = {"hash": TX_HASH, "blockNumber": None}
     tx, receipt, when = run(source.transaction(BSC, TX_HASH))
     assert tx is not None and receipt is None and when is None
+
+
+def test_zero_value_coin_transfers_are_left_out_but_zero_value_token_events_are_kept():
+    fake = FakeAlchemy()
+    source, _ = make(fake)
+
+    run(source.transfer_page(ETHEREUM, ME, TransferType.NATIVE))
+    run(source.transfer_page(ETHEREUM, ME, TransferType.INTERNAL))
+    run(source.transfer_page(ETHEREUM, ME, TransferType.ERC20))
+
+    flags = {
+        p["params"][0]["category"][0]: p["params"][0]["excludeZeroValue"] for p in fake.payloads
+    }
+    assert flags == {"external": True, "internal": True, "erc20": False}
+
+
+NOT_ENABLED = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+        "code": -32600,
+        "message": (
+            "BNB_MAINNET is not enabled for this app. Visit this page to enable the network: "
+            "https://dashboard.alchemy.com/apps/abc123/networks"
+        ),
+    },
+}
+
+
+def test_a_network_not_enabled_for_the_app_is_explained_not_called_a_bad_key():
+    fake = FakeAlchemy()
+    fake.queued = [(403, NOT_ENABLED)]
+    source, _ = make(fake)
+
+    with pytest.raises(ProviderAuthError) as info:
+        run(source.transfer_page(BSC, ME, TransferType.NATIVE))
+
+    assert "not enabled for the API key" in info.value.reason
+    assert "dashboard.alchemy.com" not in str(info.value)  # our words, not the app-specific link
+    assert not info.value.retryable and len(fake.requests) == 1
+
+
+def test_the_same_message_in_a_200_body_is_explained_too():
+    fake = FakeAlchemy()
+    fake.queued = [NOT_ENABLED]
+    source, _ = make(fake)
+    with pytest.raises(ProviderAuthError, match="not enabled for the API key"):
+        run(source.block_height(BSC))

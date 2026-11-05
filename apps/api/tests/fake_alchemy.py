@@ -81,6 +81,8 @@ class FakeAlchemy:
             item = self.queued.pop(0)
             if isinstance(item, Exception):
                 raise item
+            if isinstance(item, tuple):  # (status, body)
+                return httpx2.Response(item[0], json=item[1])
             return httpx2.Response(200, json=item)
         if isinstance(payload, list):
             return httpx2.Response(200, json=[self.call(item) for item in payload])

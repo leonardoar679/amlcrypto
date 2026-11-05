@@ -246,6 +246,13 @@ class ProviderClient:
                     problem = self._check_body(provider, body_check, data)
                 else:
                     problem = _problem_for_status(provider, response)
+                    if body_check is not None and 400 <= status < 500 and status != 429:
+                        # The provider often says exactly what is wrong in the body ("this network
+                        # is not enabled for your key"). Prefer that to a bare status, but only
+                        # for a JSON body: an HTML error page tells us nothing.
+                        body = _parse_body(response)
+                        if isinstance(body, dict | list):
+                            problem = self._check_body(provider, body_check, body) or problem
 
             if problem is None:
                 state.breaker.on_success()

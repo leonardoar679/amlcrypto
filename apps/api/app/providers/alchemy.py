@@ -136,7 +136,10 @@ class AlchemySource:
             "category": [_CATEGORY[kind]],
             "order": "asc",
             "maxCount": hex(max(1, min(limit, MAX_COUNT))),
-            "excludeZeroValue": True,
+            # Zero-value coin transfers are calls, not movements. Zero-value token transfers are
+            # kept: planting one from a lookalike address is how address poisoning works, and
+            # Etherscan lists them too, so both sources agree.
+            "excludeZeroValue": kind is not TransferType.ERC20,
             "withMetadata": chain.alchemy_timestamps,
             "fromAddress" if direction == "out" else "toAddress": address,
         }
