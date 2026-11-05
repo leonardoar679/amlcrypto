@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
-import random
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects import mysql, sqlite
-from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.models import ApiUsage
 from app.database.models.base import utcnow
+from app.database.retry import RETRIES, commit_with_retry
 
-# MySQL picks a victim when two transactions wait on each other, and gives up on a lock that stays
-# held too long. Both are safe to repeat: the victim's work was rolled back.
-MYSQL_RETRYABLE_ERRORS = frozenset({1205, 1213})  # lock wait timeout, deadlock
-RETRIES = 4
+__all__ = [
+    "RETRIES",
+    "UsageTotals",
+    "hour_start",
+    "record_usage",
+    "upsert_statement",
+    "usage_since",
+]
 
 
 def hour_start(moment: datetime) -> datetime:
@@ -51,21 +54,7 @@ def record_usage(
         "rate_limited": rate_limited,
         "retries": retries,
     }
-    for attempt in range(RETRIES + 1):
-        try:
-            _add(session, provider, period, deltas)
-            session.commit()
-            return
-        except OperationalError as error:
-            session.rollback()
-            if attempt == RETRIES or not _worth_repeating(error):
-                raise
-            time.sleep(random.uniform(0, 0.02) * (attempt + 1))
-
-
-def _worth_repeating(error: DBAPIError) -> bool:
-    arguments = getattr(error.orig, "args", ())
-    return bool(arguments) and arguments[0] in MYSQL_RETRYABLE_ERRORS
+    commit_with_retry(session, lambda: _add(session, provider, period, deltas))
 
 
 def upsert_statement(dialect: str, provider: str, period: datetime, deltas: dict[str, int]):

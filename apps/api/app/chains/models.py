@@ -43,6 +43,24 @@ class TxStatus(StrEnum):
     FAILED = "failed"
 
 
+class StreamStatus(StrEnum):
+    """How much of one stream of an address's history a read got."""
+
+    COMPLETE = "complete"  # read to its end
+    PARTIAL = "partial"  # a limit stopped the read; it can carry on from its cursor
+    TRUNCATED = "truncated"  # the provider's window ran out before the history did
+    UNAVAILABLE = "unavailable"  # no configured source provides it at all
+
+
+@dataclass(frozen=True, slots=True)
+class StreamState:
+    status: StreamStatus
+    # Complete or truncated: the height up to which the stream was read.
+    synced_through: int | None = None
+    # Partial: where to carry on. An empty string means the stream has not begun.
+    cursor: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class Asset:
     symbol: str | None

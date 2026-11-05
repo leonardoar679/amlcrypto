@@ -26,11 +26,40 @@ from app.core.config import Settings
 from app.core.redaction import secrets
 from app.database import migrations
 from app.database.connection import create_db_engine, create_session_factory
-from app.database.models import ApiUsage, FetchJob
+from app.database.models import (
+    AddressTransaction,
+    ApiUsage,
+    DataCoverage,
+    FetchJob,
+    FetchRun,
+    RawResponse,
+    StoredBalanceChange,
+    StoredInput,
+    StoredOutput,
+    StoredTransaction,
+    StoredTransfer,
+    StoredUnattributed,
+)
 from app.main import create_app
 
 TEST_SECRET = "test-secret-key-that-is-comfortably-over-32-characters"
 MYSQL_URL = os.environ.get("TEST_DATABASE_URL")
+
+# What tests that commit for real write, children first; MySQL's shared database must be left empty.
+WRITTEN_BY_TESTS = (
+    RawResponse,
+    FetchRun,
+    DataCoverage,
+    FetchJob,
+    ApiUsage,
+    AddressTransaction,
+    StoredUnattributed,
+    StoredBalanceChange,
+    StoredOutput,
+    StoredInput,
+    StoredTransfer,
+    StoredTransaction,
+)
 
 # Every setting can come from the environment; none of the developer's may leak into a test.
 _ENV_VARS = tuple(name.upper() for name in Settings.model_fields)
@@ -142,7 +171,7 @@ def committing_db(database_url: str) -> Iterator[CommittingDb]:
     finally:
         if MYSQL_URL:
             with handle.write() as session:
-                for model in (FetchJob, ApiUsage):
+                for model in WRITTEN_BY_TESTS:
                     session.execute(delete(model))
                 session.commit()
         engine.dispose()
