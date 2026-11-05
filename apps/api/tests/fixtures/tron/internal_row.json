@@ -1,0 +1,17 @@
+{
+ "_note": "Real recent data from TronGrid; signature and raw_data_hex removed to keep the file small.",
+ "row": {
+  "internal_tx_id": "367e031d87f7ecd53ae9a0ddf39eeef1f38850ce65721ce166723d88ecd1df94",
+  "data": {
+   "note": "call",
+   "rejected": false,
+   "call_value": {
+    "_": 120510775
+   }
+  },
+  "block_timestamp": 1793868927000,
+  "to_address": "4138666085bb44c4fa35a0bdfc24c8a46db6b5cc66",
+  "tx_id": "4b5c54492d04ee7d2145cb6ff27cd0fc80306fb007c059b254eb4b149668c270",
+  "from_address": "4118ff186cb1973d4b29700f2aac6b1eec9e55ffbd"
+ }
+}

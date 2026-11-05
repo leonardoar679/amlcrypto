@@ -42,7 +42,7 @@ def test_amounts_are_shown_exactly_in_the_assets_own_units(raw, decimals, expect
 
 
 def test_long_values_are_shortened_in_the_middle_and_short_ones_left_alone():
-    assert short("0x" + "ab" * 20) == "0xababab…ababab"  # 8 characters, …, 6 characters
+    assert short("0x" + "ab" * 20) == "0xababab..ababab"  # 8 characters, "..", 6 characters
     assert short("0x1234") == "0x1234" and short(None) == "-" and short("") == "-"
 
 
@@ -144,3 +144,50 @@ def test_a_contract_creation_shows_the_created_contract():
     text = render_transaction(run(rig.adapter().get_transaction(data["tx"]["hash"])))
 
     assert "(contract creation)" in text and data["receipt"]["contractAddress"] in text
+
+
+def test_value_and_fee_are_shown_in_the_chains_own_coin():
+    rig = Rig()
+    data = load_fixture("evm/ethereum_native")
+    tx, receipt = data["tx"], data["receipt"]
+    rig.etherscan.transactions[tx["hash"]] = tx
+    rig.etherscan.receipts[tx["hash"]] = receipt
+
+    text = render_transaction(run(rig.adapter().get_transaction(tx["hash"])))
+
+    value = format_amount(str(int(tx["value"], 16)), 18)
+    fee = format_amount(
+        str(int(receipt["gasUsed"], 16) * int(receipt["effectiveGasPrice"], 16)), 18
+    )
+    assert f"value         {value} ETH" in text and f"fee           {fee} ETH" in text
+
+
+def test_a_tron_transaction_shows_trx_not_sun():
+    rig = Rig()
+    data = load_fixture("tron/detail_trx")
+    txid = data["info"]["id"]
+    rig.trongrid.transactions[txid], rig.trongrid.infos[txid] = data["tx"], data["info"]
+
+    text = render_transaction(run(rig.tron_adapter().get_transaction(txid)))
+
+    amount = data["tx"]["raw_data"]["contract"][0]["parameter"]["value"]["amount"]
+    assert f"value         {format_amount(str(amount), 6)} TRX" in text
+    assert f"fee           {format_amount(str(data['info']['fee']), 6)} TRX" in text
+    assert "(raw" not in text.split("Movements")[0]
+
+
+def test_an_amount_on_a_chain_nobody_reads_is_shown_raw_and_says_so():
+    from app.ingestion.render import _native
+
+    assert _native("123", "bip122:000000000019d6689c085ae165831e93") == "123 (raw, smallest unit)"
+    assert _native("1500000", "tron:728126428") == "1.5 TRX"
+
+
+def test_lookalike_token_symbols_are_spelled_out_so_they_cannot_pass_for_the_real_one():
+    from app.ingestion.render import printable
+
+    assert printable("USDC") == "USDC"
+    # The right-hand sides are raw strings: a literal backslash followed by the code point.
+    assert printable("US\u0421") == r"US\u0421"  # a Cyrillic capital Es, not a Latin C
+    assert printable("U\u17b5S\u17b5D") == r"U\u17b5S\u17b5D"  # invisible characters made visible
+    assert printable("\u0116T\u1e28") == r"\u0116T\u1e28"

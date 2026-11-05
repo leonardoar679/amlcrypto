@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.chains.models import TransactionDetail, Transfer
+from app.chains.support import find_chain
 from app.ingestion.fetcher import History
 
 
@@ -17,10 +18,20 @@ def format_amount(amount_raw: str, decimals: int | None) -> str:
     return f"{whole}.{fraction:0{decimals}d}".rstrip("0").rstrip(".")
 
 
+def printable(text: str) -> str:
+    """Provider-controlled text with every non-ASCII character spelled out as a backslash escape.
+
+    A scam token can name itself "USDT" using a Cyrillic letter that looks exactly like the Latin
+    one. Showing the escape makes such a lookalike visible instead of letting it pass for the real
+    thing, and it can never fail to print on a console that cannot encode the character.
+    """
+    return text.encode("ascii", "backslashreplace").decode("ascii")
+
+
 def short(value: str | None, head: int = 8, tail: int = 6) -> str:
     if not value:
         return "-"
-    return value if len(value) <= head + tail + 1 else f"{value[:head]}…{value[-tail:]}"
+    return value if len(value) <= head + tail + 2 else f"{value[:head]}..{value[-tail:]}"
 
 
 def direction(transfer: Transfer, address: str) -> str:
@@ -28,19 +39,43 @@ def direction(transfer: Transfer, address: str) -> str:
     return "self" if sent and received else "out" if sent else "in"
 
 
+def _asset_label(transfer: Transfer) -> str:
+    """What to call the asset: its symbol, else its contract, else (TRC-10) its id."""
+    asset = transfer.asset
+    if asset.symbol:
+        return printable(asset.symbol)
+    if asset.contract_address:
+        return short(asset.contract_address)
+    if asset.asset_id:
+        return printable(f"#{asset.asset_id}")
+    return "?"
+
+
+def _block(transfer: Transfer) -> str:
+    return "-" if transfer.block_number is None else str(transfer.block_number)
+
+
 def _when(transfer: Transfer) -> str:
     return "-" if transfer.timestamp is None else transfer.timestamp.strftime("%Y-%m-%d %H:%M")
 
 
 def _line(transfer: Transfer, address: str) -> str:
-    asset = transfer.asset.symbol or short(transfer.asset.contract_address) or "?"
+    asset = _asset_label(transfer)
     other = transfer.to_address if transfer.from_address == address else transfer.from_address
     return (
-        f"{transfer.block_number:>10}  {_when(transfer):<16}  {transfer.transfer_type.value:<8}"
+        f"{_block(transfer):>10}  {_when(transfer):<16}  {transfer.transfer_type.value:<8}"
         f"  {direction(transfer, address):<4}  "
         f"{format_amount(transfer.amount_raw, transfer.asset.decimals):>28} {asset:<10}"
         f"  {short(other):<15}  {short(transfer.transaction_hash, 10, 6)}"
     )
+
+
+def _native(amount_raw: str, chain_id: str) -> str:
+    """An amount of the chain's own coin, in whole units when the chain is known."""
+    chain = find_chain(chain_id)
+    if chain is None:
+        return f"{amount_raw} (raw, smallest unit)"
+    return f"{format_amount(amount_raw, chain.native.decimals)} {chain.native.symbol}"
 
 
 def render_history(history: History) -> str:
@@ -92,9 +127,9 @@ def render_transaction(detail: TransactionDetail) -> str:
     ]
     if tx.created_contract:
         lines.append(f"  created       {tx.created_contract}")
-    lines.append(f"  value         {tx.value_raw} (raw, smallest unit)")
+    lines.append(f"  value         {_native(tx.value_raw, tx.chain_id)}")
     if tx.fee_raw is not None:
-        lines.append(f"  fee           {tx.fee_raw} (raw, smallest unit)")
+        lines.append(f"  fee           {_native(tx.fee_raw, tx.chain_id)}")
     if tx.method_id:
         lines.append(f"  method        {tx.method_id}")
     lines.append(f"  source        {tx.provider} ({tx.data_quality.value})")
@@ -103,7 +138,7 @@ def render_transaction(detail: TransactionDetail) -> str:
     if detail.transfers:
         lines.append("Movements proven by the receipt:")
         for transfer in detail.transfers:
-            asset = transfer.asset.symbol or short(transfer.asset.contract_address)
+            asset = _asset_label(transfer)
             lines.append(
                 f"  {transfer.transfer_type.value:<7} {short(transfer.from_address, 10, 6)} -> "
                 f"{short(transfer.to_address, 10, 6)}  "

@@ -1,0 +1,17 @@
+{
+ "_note": "Real recent data from TronGrid; signature and raw_data_hex removed to keep the file small.",
+ "row": {
+  "transaction_id": "b3e4dea8c1c86a4f4c18b31c35179005b3a578dc3407b1ecfa8fee71566e703c",
+  "token_info": {
+   "symbol": "USDT",
+   "address": "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+   "decimals": 6,
+   "name": "Tether USD"
+  },
+  "block_timestamp": 1793868879000,
+  "from": "TAncZzY2aUkgyyiWM71g3bhMRdT7HW3XXF",
+  "to": "TSWsmaEDgWaE2VsP9tCBGh5GbBRbrdHSuZ",
+  "type": "Transfer",
+  "value": "1648986"
+ }
+}

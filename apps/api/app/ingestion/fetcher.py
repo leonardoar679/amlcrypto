@@ -25,16 +25,25 @@ from app.chains.models import (
 from app.providers.base import BudgetExceeded, ProviderError
 
 ACCOUNT = "account"  # normal transactions, and the coin they sent
-_KIND_STREAM = {TransferType.INTERNAL: "internal", TransferType.ERC20: "erc20"}
-_KIND_ORDER = {TransferType.NATIVE: 0, TransferType.INTERNAL: 1, TransferType.ERC20: 2}
+INTERNAL = "internal"
+# Within one transaction: the coin sent first, then what contracts moved, then token events.
+_KIND_ORDER = {
+    TransferType.NATIVE: 0,
+    TransferType.TRC10: 0,
+    TransferType.INTERNAL: 1,
+    TransferType.ERC20: 2,
+    TransferType.TRC20: 2,
+}
 ALL_KINDS = frozenset(TransferType)
 _UNSET_POSITION = 10**9
 
 
 class HistorySource(Protocol):
     chain_id: str
+    # The kind of token event this chain has (ERC-20, TRC-20): its stream is named after it.
+    token_kind: TransferType
 
-    async def get_block_height(self) -> int: ...
+    async def get_heights(self) -> tuple[int, int]: ...
 
     async def get_account_page(
         self,
@@ -70,7 +79,8 @@ class History:
     complete: bool
     head_block: int | None  # the chain's height when the read began
     # When complete: every block up to here has been read, so an update can start from here
-    # (minus the chain's reorganisation margin).
+    # (minus the chain's reorganisation margin). On a chain whose feeds only show final data this
+    # is a little below the head.
     synced_through_block: int | None
     resume: dict[str, str] = field(default_factory=dict)
     unavailable: list[str] = field(default_factory=list)  # streams no source provides
@@ -78,7 +88,7 @@ class History:
     def summary(self, *, latest: int = 5) -> dict[str, Any]:
         """A compact, JSON-ready description (a job result must not hold the whole history)."""
         by_type = Counter(transfer.transfer_type.value for transfer in self.transfers)
-        blocks = [transfer.block_number for transfer in self.transfers]
+        blocks = [t.block_number for t in self.transfers if t.block_number is not None]
         return {
             "chain_id": self.chain_id,
             "address": self.address,
@@ -111,12 +121,16 @@ async def fetch_history(
 ) -> History:
     coverage: list[str] = []
     try:
-        head: int | None = await source.get_block_height()
+        head, settled = await source.get_heights()
     except ProviderError as error:
-        head = None
+        head = settled = None
         coverage.append(f"the chain's current height is unknown ({error.reason})")
 
-    streams = [ACCOUNT] + [name for kind, name in _KIND_STREAM.items() if kind in kinds]
+    streams = [ACCOUNT]
+    if TransferType.INTERNAL in kinds:
+        streams.append(INTERNAL)
+    if source.token_kind in kinds:
+        streams.append(source.token_kind.value)
     if resume is not None:
         streams = [stream for stream in streams if stream in resume]
 
@@ -157,7 +171,7 @@ async def fetch_history(
                         )
                     keep(page.native_transfers)
                 else:
-                    kind = next(k for k, name in _KIND_STREAM.items() if name == stream)
+                    kind = TransferType.INTERNAL if stream == INTERNAL else source.token_kind
                     page = await source.get_transfers(
                         address,
                         kind,
@@ -179,7 +193,13 @@ async def fetch_history(
                 if len(transfers) >= max_items:
                     unfinished[stream] = cursor
                     complete, stopped = False, True
-                    _remember(coverage, (f"stopped after {max_items} transfers; resume to go on",))
+                    _remember(
+                        coverage,
+                        (
+                            f"stopped after {max_items} transfers; resume to go on. The streams "
+                            "are read one after another, so this is not a time-ordered prefix",
+                        ),
+                    )
                     break
         except BudgetExceeded:
             # The page that was refused has not been read: resume from the cursor that asked for it.
@@ -195,7 +215,10 @@ async def fetch_history(
             positions.setdefault(
                 (record.chain_id, record.transaction_hash), record.transaction_index
             )
-    ordered = sorted(transfers.values(), key=lambda transfer: _order(transfer, positions))
+    # Where blocks are known they order a history; where a feed carries only a time (TRON's token
+    # and internal feeds), the time does.
+    by_time = any(transfer.block_number is None for transfer in transfers.values())
+    ordered = sorted(transfers.values(), key=lambda transfer: _order(transfer, positions, by_time))
     return History(
         chain_id=source.chain_id,
         address=address,
@@ -204,7 +227,7 @@ async def fetch_history(
         coverage=coverage,
         complete=complete,
         head_block=head,
-        synced_through_block=(to_block if to_block is not None else head) if complete else None,
+        synced_through_block=(to_block if to_block is not None else settled) if complete else None,
         resume=unfinished,
         unavailable=unavailable,
     )
@@ -217,16 +240,23 @@ def _remember(coverage: list[str], notes: tuple[str, ...]) -> None:
 
 
 def _order(
-    transfer: Transfer, positions: dict[tuple[str, str], int]
-) -> tuple[int, int, int, int, str]:
+    transfer: Transfer, positions: dict[tuple[str, str], int], by_time: bool
+) -> tuple[float | int | str, ...]:
     position = positions.get((transfer.chain_id, transfer.transaction_hash))
-    return (
-        transfer.block_number,
+    tail = (
         _UNSET_POSITION if position is None else position,
+        # Where no position is known, at least keep one transaction's movements together.
+        transfer.transaction_hash,
         _KIND_ORDER[transfer.transfer_type],
         transfer.log_index or 0,
         transfer.event_key,
     )
+    if by_time:
+        # Records of one block share its time. A block number would only split a transaction's own
+        # records, since some of them (token and internal rows) have none and would come first.
+        stamp = 0.0 if transfer.timestamp is None else transfer.timestamp.timestamp()
+        return (stamp, *tail)
+    return (transfer.block_number or 0, *tail)
 
 
 def _transaction_order(transaction: Transaction) -> tuple[int, int, str]:

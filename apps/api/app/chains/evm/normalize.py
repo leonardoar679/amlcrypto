@@ -23,9 +23,6 @@ when a page boundary falls between two identical movements of one transaction, w
 from __future__ import annotations
 
 import re
-from collections import Counter
-from collections.abc import Iterable
-from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,10 +36,17 @@ from app.chains.models import (
     TransferType,
     TxStatus,
 )
+from app.chains.values import (
+    MalformedRow,
+    assign_occurrences,
+    clean_text,
+    raw_amount,
+    to_int,
+)
+from app.chains.values import optional_int as _optional_int
 
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 NATIVE_KEY = "native"
-MAX_TEXT = 64
 
 _ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _HASH = re.compile(r"^0x[0-9a-fA-F]{64}$")
@@ -51,34 +55,7 @@ _LOG_ID = re.compile(r":log:(\d+)$")
 _TRACE_ID = re.compile(r":internal:(\d+)$")
 
 
-class MalformedRow(ValueError):
-    """A provider row is missing something, or holds a value that cannot be what it claims."""
-
-
 # --- scalars -----------------------------------------------------------------------------------
-
-
-def to_int(value: Any) -> int:
-    """An integer from a decimal string, a 0x hex string, or an int."""
-    if isinstance(value, bool) or value is None:
-        raise MalformedRow(f"expected a number, got {value!r}")
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        text = value.strip()
-        try:
-            return int(text, 16) if text.lower().startswith("0x") else int(text, 10)
-        except ValueError:
-            pass
-    raise MalformedRow(f"expected a number, got {str(value)[:40]!r}")
-
-
-def raw_amount(value: Any) -> str:
-    """The integer string for an amount; never negative."""
-    number = to_int(value)
-    if number < 0:
-        raise MalformedRow("negative amount")
-    return str(number)
 
 
 def address_of(value: Any, *, optional: bool = False) -> str | None:
@@ -100,17 +77,6 @@ def hash_of(value: Any) -> str:
     return text.lower()
 
 
-def clean_text(value: Any) -> str | None:
-    """Provider-controlled text (token names) with control characters removed and length capped.
-
-    Scam tokens put anything in their name; it must not reach logs or a UI unbounded.
-    """
-    if value is None:
-        return None
-    text = _CONTROL.sub("", str(value)).strip()[:MAX_TEXT]
-    return text or None
-
-
 def moment(seconds: Any) -> datetime:
     try:
         return datetime.fromtimestamp(to_int(seconds), UTC)
@@ -128,10 +94,6 @@ def confirmation_of(confirmations: int | None, chain: EvmChain) -> Confirmation:
     )
 
 
-def _optional_int(value: Any) -> int | None:
-    return None if value in (None, "") else to_int(value)
-
-
 # --- identity ----------------------------------------------------------------------------------
 
 
@@ -141,20 +103,6 @@ def internal_key(from_address: str | None, to_address: str | None, amount_raw: s
 
 def erc20_key(contract: str, from_address: str | None, to_address: str | None, amount: str) -> str:
     return f"erc20:{contract}:{from_address}:{to_address}:{amount}"
-
-
-def assign_occurrences(transfers: Iterable[Transfer]) -> list[Transfer]:
-    """Tell apart identical movements of one transaction by their order in `transfers`."""
-    seen: Counter[tuple[str, str]] = Counter()
-    result = []
-    for transfer in transfers:
-        marker = (transfer.transaction_hash, transfer.event_key)
-        count = seen[marker]
-        seen[marker] += 1
-        result.append(
-            replace(transfer, event_key=f"{transfer.event_key}#{count}") if count else transfer
-        )
-    return result
 
 
 # --- Etherscan ---------------------------------------------------------------------------------

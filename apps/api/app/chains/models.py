@@ -22,6 +22,8 @@ class TransferType(StrEnum):
     NATIVE = "native"  # the chain's own coin, sent by a transaction
     INTERNAL = "internal"  # the chain's own coin, moved by a contract during a transaction
     ERC20 = "erc20"  # a fungible token event (BEP-20 on BNB Smart Chain)
+    TRC20 = "trc20"  # a fungible token event on TRON
+    TRC10 = "trc10"  # a TRON token that is not a contract, moved by a plain transfer
 
 
 class DataQuality(StrEnum):
@@ -46,12 +48,15 @@ class Asset:
     contract_address: str | None  # None for the chain's native coin
     decimals: int | None  # None when the provider did not say
     name: str | None = None
+    # For an asset that has an id instead of a contract (a TRC-10 token).
+    asset_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "symbol": self.symbol,
             "name": self.name,
             "contract_address": self.contract_address,
+            "asset_id": self.asset_id,
             "decimals": self.decimals,
         }
 
@@ -67,7 +72,8 @@ class Transfer:
     # is the deduplication key.
     event_key: str
     transfer_type: TransferType
-    block_number: int
+    # None when the provider does not say (TRON's token and internal feeds carry only a time).
+    block_number: int | None
     timestamp: datetime | None
     from_address: str | None
     to_address: str | None  # None only when a transaction creates a contract with no value

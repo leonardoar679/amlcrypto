@@ -137,6 +137,14 @@ def test_internal_transfers_on_bnb_without_a_source_for_them_are_reported_missin
     assert rig.alchemy.requests == [] and rig.etherscan.requests == []
 
 
+@pytest.mark.parametrize("kind", [TransferType.TRC20, TransferType.TRC10])
+def test_a_kind_the_chain_does_not_have_is_refused_clearly_and_costs_nothing(kind):
+    rig = Rig()
+    with pytest.raises(ValueError, match=f"ethereum has no {kind.value} transfers"):
+        run(rig.adapter().get_transfers(ME, kind))
+    assert rig.alchemy.requests == [] and rig.etherscan.requests == []
+
+
 # --- one transaction ---------------------------------------------------------------------------
 
 

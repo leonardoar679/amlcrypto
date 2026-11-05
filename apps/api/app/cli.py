@@ -10,9 +10,9 @@ import sys
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from app.chains.evm.adapter import EvmAdapter, build_evm_adapter
-from app.chains.evm.chains import EvmChain, get_evm_chain
+from app.chains.adapter import AccountAdapter
 from app.chains.registry import get_chain
+from app.chains.support import SUPPORTED, ReadableChain, build_adapter, find_chain, keys_needed
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.database import migrations
@@ -112,29 +112,29 @@ def _cmd_probe(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
-def _evm_chain(name: str) -> EvmChain:
-    chain = get_evm_chain(name)
+def _chain(name: str) -> ReadableChain:
+    chain = find_chain(name)
     if chain is None:
-        raise UserError(f"{name!r} is not an EVM chain this platform reads (try ethereum or bsc)")
+        raise UserError(f"{name!r} is not a chain this platform reads (try {', '.join(SUPPORTED)})")
     return chain
 
 
-def _adapter(chain: EvmChain, settings: Settings, service: ProviderService) -> EvmAdapter:
+def _adapter(chain: ReadableChain, settings: Settings, service: ProviderService) -> AccountAdapter:
     budget = RequestBudget(settings.history_request_budget)
-    adapter = build_evm_adapter(
+    adapter = build_adapter(
         chain, service, etherscan_paid_plan=settings.etherscan_paid_plan, budget=budget
     )
     if not adapter.source_names:
         raise UserError(
             f"no data provider is configured for {chain.slug}: "
-            "set ETHERSCAN_API_KEY or ALCHEMY_API_KEY in apps/api/.env"
+            f"set {keys_needed(chain)} in apps/api/.env"
         )
     return adapter
 
 
 def _cmd_history(args: argparse.Namespace) -> int:
     """An address's normalized history. Costs provider requests, up to HISTORY_REQUEST_BUDGET."""
-    chain = _evm_chain(args.chain)
+    chain = _chain(args.chain)
     check = get_chain(chain.chain_id).validator.check(args.address)
     if not check.valid:
         raise UserError(f"not a valid {chain.slug} address: {check.message}")
@@ -165,7 +165,7 @@ def _cmd_history(args: argparse.Namespace) -> int:
 
 def _cmd_tx(args: argparse.Namespace) -> int:
     """One transaction, decoded from its receipt. Costs two or three provider requests."""
-    chain = _evm_chain(args.chain)
+    chain = _chain(args.chain)
 
     async def read(settings: Settings, service: ProviderService):
         try:
@@ -233,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     history = commands.add_parser(
         "history", help="read an address's normalized transfers (uses your provider keys)"
     )
-    history.add_argument("chain", help="ethereum or bsc")
+    history.add_argument("chain", help="ethereum, bsc or tron")
     history.add_argument("address")
     history.add_argument("--from-block", type=int, help="start at this block (default: the first)")
     history.add_argument("--to-block", type=int, help="stop at this block (default: the latest)")
@@ -242,7 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     history.set_defaults(run=_cmd_history)
 
     tx = commands.add_parser("tx", help="decode one transaction from its receipt")
-    tx.add_argument("chain", help="ethereum or bsc")
+    tx.add_argument("chain", help="ethereum, bsc or tron")
     tx.add_argument("hash")
     tx.add_argument("--json", action="store_true", help="print JSON instead of text")
     tx.set_defaults(run=_cmd_tx)
@@ -272,6 +272,12 @@ def main(argv: list[str] | None = None) -> int:
     create.set_defaults(run=_cmd_create_user)
 
     args = parser.parse_args(argv)
+    for stream in (
+        sys.stdout,
+        sys.stderr,
+    ):  # a console that cannot encode a character must not crash us
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     try:
         return args.run(args)
     except (UserError, ProviderError) as exc:  # provider errors are written to be shown

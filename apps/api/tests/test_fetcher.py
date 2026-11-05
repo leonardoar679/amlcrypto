@@ -154,14 +154,15 @@ def test_running_out_of_request_budget_ends_the_read_politely_and_resuming_finis
 
 class StubSource:
     chain_id = "eip155:1"
+    token_kind = TransferType.ERC20
 
     def __init__(self, *, height=None, account=None, transfers=None):
         self._height, self._account, self._transfers = height, account, transfers
 
-    async def get_block_height(self):
+    async def get_heights(self):
         if isinstance(self._height, Exception):
             raise self._height
-        return self._height
+        return self._height, self._height
 
     async def get_account_page(self, address, **kwargs):
         return self._account

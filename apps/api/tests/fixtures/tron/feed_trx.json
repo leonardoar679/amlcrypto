@@ -1,0 +1,39 @@
+{
+ "_note": "Real recent data from TronGrid; signature and raw_data_hex removed to keep the file small.",
+ "row": {
+  "ret": [
+   {
+    "contractRet": "SUCCESS",
+    "fee": 267000
+   }
+  ],
+  "txID": "3156ec4c69bcabff4ab366a88a57c77e633aa79e881235320fae9e45e307eaf9",
+  "net_usage": 0,
+  "net_fee": 267000,
+  "energy_usage": 0,
+  "blockNumber": 87731736,
+  "block_timestamp": 1793868867000,
+  "energy_fee": 0,
+  "energy_usage_total": 0,
+  "raw_data": {
+   "contract": [
+    {
+     "parameter": {
+      "value": {
+       "amount": 1000000,
+       "owner_address": "411663dda3239f527b0d16ef7b83b482c1ee6b8578",
+       "to_address": "414cf9e8b8478c5304cd711757cc61eee834cf558f"
+      },
+      "type_url": "type.googleapis.com/protocol.TransferContract"
+     },
+     "type": "TransferContract"
+    }
+   ],
+   "ref_block_bytes": "ae02",
+   "ref_block_hash": "707b6c4bd152fe9d",
+   "expiration": 1793868915000,
+   "timestamp": 1793868856447
+  },
+  "internal_transactions": []
+ }
+}

@@ -154,7 +154,7 @@ def test_a_read_that_stops_early_exits_with_status_two_so_scripts_can_tell(provi
 
 def test_history_refuses_what_cannot_work_before_spending_any_request(providers, capsys):
     assert cli.main(["history", "bitcoin", ME]) == 1
-    assert "not an EVM chain" in capsys.readouterr().err
+    assert "not a chain this platform reads" in capsys.readouterr().err
     assert cli.main(["history", "ethereum", "0x123"]) == 1
     assert "not a valid ethereum address" in capsys.readouterr().err
     assert providers.etherscan.requests == [] and providers.alchemy.requests == []
