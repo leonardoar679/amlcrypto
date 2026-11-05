@@ -1,0 +1,54 @@
+"""Application factory.
+
+Run with:  uvicorn app.main:create_app --factory
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app import __version__
+from app.api.errors import register_exception_handlers
+from app.api.middleware import RequestIdMiddleware
+from app.api.v1.router import api_router
+from app.core.config import Settings, get_settings
+from app.core.logging import configure_logging
+from app.database.connection import create_db_engine, create_session_factory
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    configure_logging(settings.log_level)
+    if settings.secret_key is None:
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY is not set: using an ephemeral key, so tokens stop working on restart"
+        )
+
+    engine = create_db_engine(settings.resolved_database_url)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        yield
+        app.state.engine.dispose()
+
+    is_prod = settings.environment == "prod"
+    app = FastAPI(
+        title="Blockchain AML API",
+        version=__version__,
+        lifespan=lifespan,
+        docs_url=None if is_prod else "/api/docs",
+        redoc_url=None,
+        openapi_url=None if is_prod else "/api/v1/openapi.json",
+    )
+    app.state.settings = settings
+    app.state.engine = engine
+    app.state.session_factory = create_session_factory(engine)
+
+    app.add_middleware(RequestIdMiddleware)
+    register_exception_handlers(app)
+    app.include_router(api_router)
+    return app

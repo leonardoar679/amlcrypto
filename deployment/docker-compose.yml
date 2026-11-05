@@ -1,0 +1,19 @@
+# NOT YET RUN: Docker is not installed on the development machine.
+# Usage:  docker compose -f deployment/docker-compose.yml --env-file deployment/.env up --build
+# The web service is added when the frontend gets its Dockerfile (milestone M12/M13).
+services:
+  api:
+    build:
+      context: ../apps/api
+    environment:
+      ENVIRONMENT: prod
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in deployment/.env (32+ random characters)}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/aml.db}
+    volumes:
+      - aml-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+volumes:
+  aml-data:

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blockchain-aml"
+version = "0.1.0"
+description = "Blockchain AML platform API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13",
+    "pydantic-settings>=2.4",
+    "PyJWT>=2.9",
+    "pwdlib[argon2]>=0.2.1",
+    "pycryptodome>=3.20",  # keccak-256 for EIP-55 (hashlib's sha3_256 is not keccak)
+]
+
+[project.optional-dependencies]
+# MySQL 8 authenticates with caching_sha2_password, which PyMySQL only supports through "cryptography".
+mysql = ["pymysql>=1.1", "cryptography>=42"]
+# httpx2: Starlette's TestClient requires it (the plain httpx fallback is deprecated).
+dev = ["pytest>=8", "httpx2>=2.16", "ruff>=0.6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = ["error::sqlalchemy.exc.SAWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Depends() in argument defaults is how FastAPI declares dependencies.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Security"]
