@@ -1,0 +1,10 @@
+# Keep the build context small and free of local state.
+.venv
+data
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.env
+.env.*
+tests

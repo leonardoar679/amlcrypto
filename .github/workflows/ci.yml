@@ -28,15 +28,20 @@ jobs:
         if: failure()
         run: python scripts/annotate_junit.py pytest-report.xml
 
-  # Runs the same suite against a real MySQL 8. Each test is rolled back (see tests/conftest.py).
+  # Runs the same suite against a real MySQL. Each test is rolled back (see tests/conftest.py).
+  # 8.0 reached end of life in April 2026; 8.4 is the current LTS.
   api-mysql:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mysql: ["8.0", "8.4"]
     defaults:
       run:
         working-directory: apps/api
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:${{ matrix.mysql }}
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: aml_test
@@ -85,3 +90,28 @@ jobs:
               --exclude-dir=node_modules --exclude-dir=.next --exclude=package-lock.json; then
             echo "third-party brand strings found"; exit 1
           fi
+
+  # Docker is not installed on the development machine, so the image is built and smoke-tested here.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build the API image
+        run: docker build -t aml-api:ci apps/api
+      - name: Run it and call the public endpoints
+        run: |
+          secret="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          docker run -d --name aml-api -p 8000:8000 -e ENVIRONMENT=prod -e SECRET_KEY="$secret" aml-api:ci
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/v1/health; then echo; break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/api/v1/version
+      - name: Container logs on failure
+        if: failure()
+        run: |
+          logs="$(docker logs aml-api 2>&1 | tail -40)"
+          logs="${logs//'%'/'%25'}"; logs="${logs//$'\n'/'%0A'}"
+          echo "::error title=aml-api container logs::${logs}"
+      - name: Validate the compose file
+        run: SECRET_KEY=ci-check docker compose -f deployment/docker-compose.yml config -q

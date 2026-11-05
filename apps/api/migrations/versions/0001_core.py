@@ -56,6 +56,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_users_organization_id"), table_name="users")
+    # Dropping a table drops its indexes. Do not drop ix_users_organization_id first: MySQL refuses
+    # (error 1553) because that index backs the foreign key to organizations; SQLite does not mind.
     op.drop_table("users")
     op.drop_table("organizations")

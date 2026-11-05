@@ -7,6 +7,7 @@ they catch type and collation mistakes early, on any machine.
 from __future__ import annotations
 
 import io
+import re
 
 from alembic import command
 from sqlalchemy.dialects import mysql, sqlite
@@ -64,6 +65,23 @@ def test_mysql_identifier_columns_are_case_sensitive():
 def test_sqlite_identifier_columns_need_no_collation():
     # SQLite compares text with BINARY collation by default, which is already case-sensitive.
     assert "COLLATE" not in ddl("chains", sqlite.dialect())
+
+
+def test_offline_mysql_downgrade_never_drops_an_index_of_a_table_it_drops_anyway():
+    """MySQL refuses to drop an index that backs a foreign key (error 1553), and dropping the table
+    drops its indexes anyway. SQLite does not care, so only the MySQL CI job caught this once."""
+    config = migrations.alembic_config(MYSQL_URL)
+    config.output_buffer = io.StringIO()
+    command.downgrade(config, "head:base", sql=True)
+    script = config.output_buffer.getvalue()
+
+    table_drops = {m.group(1): m.start() for m in re.finditer(r"DROP TABLE (\w+)", script)}
+    assert table_drops, "expected the downgrade to drop tables"
+    for match in re.finditer(r"DROP INDEX (\w+) ON (\w+)", script):
+        index, table = match.groups()
+        assert not (table in table_drops and table_drops[table] > match.start()), (
+            f"downgrade drops index {index} before dropping table {table}; drop the table only"
+        )
 
 
 def test_offline_mysql_migration_sql_matches_the_models():
