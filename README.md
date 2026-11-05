@@ -11,17 +11,18 @@ risk engine. Built as a modular monolith.
 | `apps/api` | FastAPI backend, Alembic migrations, tests. See [apps/api/README.md](apps/api/README.md) |
 | `apps/web` | Next.js frontend (plain JavaScript). Still runs on mock data; wired to the API in milestone M12 |
 | `shared/documentation` | [Frontend integration map](shared/documentation/frontend-integration-map.md), [branding and IP register](shared/documentation/branding-ip-register.md) |
-| `deployment` | `docker-compose.yml` (written, not yet run) |
-| `.github/workflows` | CI on GitHub Actions: backend on SQLite (passing) and on MySQL 8.0 (failing), frontend build (passing). Failed tests are also written as annotations, because the logs need a login |
+| `deployment` | `docker-compose.yml`: the API and the worker from one image. CI builds the image and checks the file parses; it has not been started on a development machine |
+| `.github/workflows` | CI on GitHub Actions: backend on SQLite and on MySQL 8.0 and 8.4, frontend build, Docker image build and smoke test. All passed for the last verified commit (`1773682`). Failed tests are also written as annotations, because the logs need a login |
 
 ## Status
 
 | Milestone | State |
 |---|---|
 | M0 audit, restructure, rebrand | done: moved to `apps/web`, upgraded to Next.js 16.4.5 (0 audit vulnerabilities), fully rebranded to the placeholder "AML Platform", build and a headless-browser run verified |
-| M1 backend foundation | done; verified on SQLite locally and in Linux CI. **The MySQL CI job fails** (cause not yet diagnosed) |
-| M2 chain registry and address validation | done; verified on SQLite locally and in Linux CI |
-| M3 and later | not started |
+| M1 backend foundation | done; verified on SQLite locally and in CI on SQLite, MySQL 8.0 and MySQL 8.4 |
+| M2 chain registry and address validation | done; verified the same way |
+| M3 provider infrastructure and job queue | done and verified on SQLite locally (490 tests, a live run against a public Bitcoin endpoint, and a clean Ctrl+Break shutdown of the worker on Windows). Not yet seen by CI: MySQL and the Docker worker step run on the next push |
+| M4 and later | not started |
 
 ## Prerequisites
 
@@ -42,6 +43,11 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m app.cli create-user --email you@example.com --org-name "Your Org"
 .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --reload   # API docs at /api/docs
 .\.venv\Scripts\python.exe -m pytest -q
+
+# data providers and the background worker (keys go in apps\api\.env; every provider is optional)
+.\.venv\Scripts\python.exe -m app.cli providers
+.\.venv\Scripts\python.exe -m app.cli probe esplora
+.\.venv\Scripts\python.exe -m app.worker
 ```
 
 Frontend (verified with Node 22; `next build` fetches Google Fonts, so it needs internet):

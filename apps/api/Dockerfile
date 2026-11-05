@@ -1,5 +1,6 @@
-# NOT YET BUILT OR RUN: Docker is not installed on the development machine. Verify with
-# `docker build -f apps/api/Dockerfile apps/api` (or in CI) before relying on it.
+# Built and smoke-tested by the docker-build job in CI (.github/workflows/ci.yml). It has never
+# been built on the development machine, which has no Docker.
+# One image, two commands: the default runs the API; `python -m app.worker` runs the worker.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

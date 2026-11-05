@@ -107,6 +107,16 @@ jobs:
             sleep 2
           done
           curl -fsS http://127.0.0.1:8000/api/v1/version
+      - name: Run the worker on a job that needs no network
+        # PROVIDER_PROBE for a provider without a key finishes without any request leaving the
+        # runner, so this exercises migrate, enqueue and the worker without a flaky dependency.
+        run: |
+          secret="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          out="$(docker run --rm -e ENVIRONMENT=prod -e SECRET_KEY="$secret" \
+            -e PAYLOAD='{"provider":"etherscan"}' aml-api:ci sh -c \
+            'python -m app.cli migrate >/dev/null && python -m app.cli enqueue PROVIDER_PROBE --payload "$PAYLOAD" && python -m app.worker --once 2>/dev/null')"
+          echo "$out"
+          echo "$out" | grep -q "Processed 1 job(s)."
       - name: Container logs on failure
         if: failure()
         run: |

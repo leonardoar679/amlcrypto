@@ -1,18 +1,52 @@
-# NOT YET RUN: Docker is not installed on the development machine.
+# CI builds the image and checks that this file parses (job docker-build); it has not been started
+# on the development machine, which has no Docker.
 # Usage:  docker compose -f deployment/docker-compose.yml --env-file deployment/.env up --build
 # The web service is added when the frontend gets its Dockerfile (milestone M12/M13).
+x-aml-environment: &aml-environment
+  ENVIRONMENT: prod
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in deployment/.env (32+ random characters)}
+  DATABASE_URL: ${DATABASE_URL:-sqlite:////data/aml.db}
+  # Provider keys are optional; a blank one means "not configured".
+  ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+  ALCHEMY_API_KEY: ${ALCHEMY_API_KEY:-}
+  TRONGRID_API_KEY: ${TRONGRID_API_KEY:-}
+  HELIUS_API_KEY: ${HELIUS_API_KEY:-}
+
 services:
   api:
     build:
       context: ../apps/api
-    environment:
-      ENVIRONMENT: prod
-      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in deployment/.env (32+ random characters)}
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/aml.db}
+    image: aml-api
+    environment: *aml-environment
     volumes:
       - aml-data:/data
     ports:
       - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  # Same image as the API. It waits for the API because the API's start-up applies the migrations.
+  # With SQLite keep exactly one worker: the limits it enforces live in the process.
+  worker:
+    image: aml-api
+    command: ["python", "-m", "app.worker"]
+    environment: *aml-environment
+    volumes:
+      - aml-data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    # WORKER_SHUTDOWN_GRACE_SECONDS (20) plus time to hand unfinished jobs back.
+    stop_grace_period: 30s
     restart: unless-stopped
 
 volumes:
