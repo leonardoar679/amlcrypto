@@ -70,6 +70,66 @@ Things to know:
 * Any authenticated user can read provider status and trigger a probe (one request of quota) until
   roles arrive in M13.
 
+## Reading address histories (Ethereum and BNB Smart Chain)
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli history ethereum 0xYourAddress --max-items 20
+.\.venv\Scripts\python.exe -m app.cli history bsc 0xYourAddress --json
+.\.venv\Scripts\python.exe -m app.cli tx ethereum 0xTransactionHash
+.\.venv\Scripts\python.exe -m app.cli enqueue FETCH_ADDRESS_HISTORY --set chain=ethereum --set address=0xYourAddress
+```
+
+Needs at least one of `ETHERSCAN_API_KEY` or `ALCHEMY_API_KEY` in `.env`. **Do this first with your own
+keys:** the Etherscan and Alchemy code is written against their documentation and tested against
+in-memory copies of them, and has not yet talked to the real services. `history` exits with 0 when the
+read is complete, 2 when a limit stopped it, 1 on errors.
+
+What comes back is the same on every chain and from every provider (`app/chains/models.py`):
+
+* **`Transfer`**: one movement of value. Native coin sent by a transaction, native coin moved by a
+  contract (internal), or an ERC-20 token event. Amounts are integer strings in the asset's smallest
+  unit (`amount_raw`), never floats. Addresses are lowercase. Times are UTC.
+* **`Transaction`**: what an account sees, including calls that moved nothing and failed ones.
+* **`event_key`** identifies a movement within its transaction the same way whichever provider (or
+  whichever address's history) reported it: `native`, `internal:<from>:<to>:<amount>` or
+  `erc20:<contract>:<from>:<to>:<amount>`, with `#1`, `#2` for identical repeats. Etherscan's token
+  endpoint gives no log index, so position cannot be the identity. `(chain_id, transaction_hash,
+  event_key)` is the deduplication key milestone M8 will use.
+
+Where the data comes from, and what that means:
+
+| Chain | First source | Then | Internal transfers | Failed / zero-value transactions |
+|---|---|---|---|---|
+| Ethereum | Etherscan (free) | Alchemy (free) | yes | listed by Etherscan; Alchemy lists only transactions that carried value |
+| BNB Smart Chain | Alchemy (free) | | **not available**, and reported as a gap | not listed |
+| BNB Smart Chain, `ETHERSCAN_PAID_PLAN=true` | Etherscan | Alchemy | yes | yes |
+
+Rules that keep a history honest:
+
+* **Gaps are stated, never hidden.** Every result carries `coverage` notes. A read is `complete` only
+  if every stream that can be read was read to its end. A kind no source provides (BNB internal
+  transfers on the free plans) is listed under `unavailable` instead of looking like an empty history.
+* **Limits stop politely.** A read stops at `HISTORY_MAX_ITEMS` transfers or `HISTORY_REQUEST_BUDGET`
+  provider requests, reports `INCOMPLETE`, and returns a `resume` mapping that carries on from there.
+* **Pagination survives long histories.** Cursors are block positions, so a history longer than
+  Etherscan's assumed 10,000-row window is read by moving the start block; a single block holding more
+  rows than the window shows is reported as cut. A cursor belongs to the source that issued it.
+* **Incremental sync** is `from_block`: an update starts from `synced_through_block` minus the chain's
+  reorganisation margin (64 blocks on Ethereum, 30 on BNB Smart Chain), and identities make the overlap
+  harmless.
+* **Transaction details** (`tx`) are decoded by us from the receipt, so they carry the true log
+  index (`data_quality: decoded`) but not token symbols or decimals, and no internal movements.
+
+Known limits, deliberately not hidden:
+
+* Two identical movements inside one transaction (same token, parties and amount) are told apart by
+  their order in the provider's answer. That is exact unless a page boundary falls between them.
+* Alchemy's documentation does not say which transfer categories work on BNB Smart Chain, or whether
+  one request returns outgoing, incoming or both; the code assumes the cautious reading (two passes).
+* Etherscan's documentation states no maximum page size or result window, and no default order. The
+  code asks for ascending order explicitly and assumes the classic 10,000-row window.
+* NFTs (ERC-721 and ERC-1155) are not modelled yet.
+
 ## Testing against MySQL
 
 Point `TEST_DATABASE_URL` at an **empty, throwaway** MySQL 8 database and run the suite as usual:
@@ -106,7 +166,9 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/database/` | engine/session setup, models, programmatic Alembic access |
 | `app/api/v1/` | HTTP routes under `/api/v1` |
 | `app/chains/` | per-chain address validation and the chain registry |
-| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage |
+| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan and Alchemy sources |
+| `app/chains/models.py`, `app/chains/evm/` | the normalized records, the EVM chains, normalizers, cursors and the adapter |
+| `app/ingestion/` | reading a whole history (`fetcher`), the history job, the text views for the CLI |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
 | `app/database/repositories/` | job queue and usage counters |
 | `migrations/` | Alembic environment and versions |
@@ -134,15 +196,15 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 ## Known gaps (tracked in the project plan)
 
 * No login rate limiting or lockout yet.
-* **MySQL:** the whole suite passed on MySQL 8.0 and 8.4 in CI for milestones M1 and M2 (commit
-  `1773682`). The first MySQL run of the M3 code (`40aa7ef`) failed four tests: two real concurrency
-  bugs (below), now fixed, and two artefacts of the MySQL test fixture, also fixed. The re-run has not
-  happened yet, so M3 is verified on SQLite only.
+* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `7292b18`, which
+  includes the two concurrency bugs and the test-fixture flaw that the first M3 run found).
 * **Docker:** CI builds `Dockerfile`, runs the container, calls `/health` and `/version`, runs the
-  worker on a job that needs no network (passed for `40aa7ef`), and checks that
-  `deployment/docker-compose.yml` parses. Nothing has been run with Docker on the development machine,
-  and the compose file's worker service has only been syntax-checked.
+  worker on a job that needs no network, and checks that `deployment/docker-compose.yml` parses.
+  Nothing has been run with Docker on the development machine, and the compose file's worker service
+  has only been syntax-checked.
+* **Ethereum and BNB connectors:** verified against Etherscan's and Alchemy's documentation, real
+  transactions from public nodes (for the receipt decoder) and in-memory copies of both providers; not
+  yet against the live services. See "Reading address histories" for the first thing to try.
 * The Bitcoin source for production is undecided. Esplora is public with no published limits;
   Alchemy's Bitcoin address API is sold as a separate add-on and its docs do not say whether the free
   plan includes it. Decide in milestone M6.
-* BNB Smart Chain is not on Etherscan's free plan. Decide the source in milestone M4.

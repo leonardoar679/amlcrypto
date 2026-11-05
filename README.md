@@ -12,7 +12,7 @@ risk engine. Built as a modular monolith.
 | `apps/web` | Next.js frontend (plain JavaScript). Still runs on mock data; wired to the API in milestone M12 |
 | `shared/documentation` | [Frontend integration map](shared/documentation/frontend-integration-map.md), [branding and IP register](shared/documentation/branding-ip-register.md) |
 | `deployment` | `docker-compose.yml`: the API and the worker from one image. CI builds the image and checks the file parses; it has not been started on a development machine |
-| `.github/workflows` | CI on GitHub Actions: backend on SQLite and on MySQL 8.0 and 8.4, frontend build, Docker image build and smoke test. All passed for the last verified commit (`1773682`). Failed tests are also written as annotations, because the logs need a login |
+| `.github/workflows` | CI on GitHub Actions: backend on SQLite and on MySQL 8.0 and 8.4, frontend build, Docker image build and smoke test. All passed for the last verified commit (`7292b18`). Failed tests are also written as annotations, because the logs need a login |
 
 ## Status
 
@@ -21,8 +21,9 @@ risk engine. Built as a modular monolith.
 | M0 audit, restructure, rebrand | done: moved to `apps/web`, upgraded to Next.js 16.4.5 (0 audit vulnerabilities), fully rebranded to the placeholder "AML Platform", build and a headless-browser run verified |
 | M1 backend foundation | done; verified on SQLite locally and in CI on SQLite, MySQL 8.0 and MySQL 8.4 |
 | M2 chain registry and address validation | done; verified the same way |
-| M3 provider infrastructure and job queue | done and verified on SQLite locally (490 tests, a live run against a public Bitcoin endpoint, and a clean Ctrl+Break shutdown of the worker on Windows). In CI the SQLite, web and Docker jobs (including a worker run inside the image) passed; the first MySQL run found two real concurrency bugs and two test-fixture flaws, all fixed and awaiting a re-run |
-| M4 and later | not started |
+| M3 provider infrastructure and job queue | done; verified in CI on SQLite, MySQL 8.0 and 8.4, and in the Docker image (including a worker run inside it), plus a live run against a public Bitcoin endpoint and a clean Ctrl+Break shutdown of the worker on Windows. Its first MySQL run found two real concurrency bugs, both fixed |
+| M4 Ethereum and BNB connectors | built (757 tests): normalized records, Etherscan and Alchemy sources with fallback, address histories with pagination and incremental sync, transaction details decoded from receipts (checked against 12 real transactions from public nodes). **Not yet tried against the live Etherscan and Alchemy services**: that needs your API keys, see "Reading address histories" in apps/api/README.md |
+| M5 and later | not started |
 
 ## Prerequisites
 
@@ -47,6 +48,7 @@ python -m venv .venv
 # data providers and the background worker (keys go in apps\api\.env; every provider is optional)
 .\.venv\Scripts\python.exe -m app.cli providers
 .\.venv\Scripts\python.exe -m app.cli probe esplora
+.\.venv\Scripts\python.exe -m app.cli history ethereum 0xYourAddress --max-items 20   # needs a key
 .\.venv\Scripts\python.exe -m app.worker
 ```
 
