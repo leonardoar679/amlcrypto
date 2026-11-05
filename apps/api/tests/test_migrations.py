@@ -28,7 +28,7 @@ def test_upgrade_downgrade_upgrade_round_trip(migration_url):
         assert _tables(migration_url) <= {"alembic_version"}
 
         migrations.upgrade(migration_url)
-        assert {"organizations", "users"} <= _tables(migration_url)
+        assert {"organizations", "users", "chains", "chain_assets"} <= _tables(migration_url)
 
         migrations.downgrade(migration_url, "base")
         assert _tables(migration_url) <= {"alembic_version"}

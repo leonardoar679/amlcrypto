@@ -51,6 +51,21 @@ def test_mysql_timestamps_keep_microseconds():
     assert "created_at DATETIME(6) NOT NULL" in ddl("users", mysql.dialect())
 
 
+def test_mysql_identifier_columns_are_case_sensitive():
+    chains = ddl("chains", mysql.dialect())
+    assets = ddl("chain_assets", mysql.dialect())
+    assert "id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in chains
+    assert "chain_id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in assets
+    assert "asset_key VARCHAR(128) COLLATE utf8mb4_bin NOT NULL" in assets
+    # Ordinary text columns keep the server default (case-insensitive) collation.
+    assert "slug VARCHAR(32) NOT NULL" in chains
+
+
+def test_sqlite_identifier_columns_need_no_collation():
+    # SQLite compares text with BINARY collation by default, which is already case-sensitive.
+    assert "COLLATE" not in ddl("chains", sqlite.dialect())
+
+
 def test_offline_mysql_migration_sql_matches_the_models():
     config = migrations.alembic_config(MYSQL_URL)
     config.output_buffer = io.StringIO()
@@ -61,3 +76,8 @@ def test_offline_mysql_migration_sql_matches_the_models():
     assert "id BIGINT NOT NULL AUTO_INCREMENT" in script
     assert "created_at DATETIME(6) NOT NULL" in script
     assert "CONSTRAINT fk_users_organization_id_organizations FOREIGN KEY" in script
+    # Migration 0002: case-sensitive identifiers and the seed rows.
+    assert "id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in script
+    assert "chain_id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in script
+    assert "tron:728126428" in script
+    assert script.count("INSERT INTO chains") == 5
