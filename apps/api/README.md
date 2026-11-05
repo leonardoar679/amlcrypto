@@ -59,7 +59,7 @@ SQLite and MySQL, runs async handlers with no database transaction open, retries
 backoff (or at the time a provider asked for), gives up at once on failures that waiting cannot fix
 (bad key, missing key, malformed request), cancels a handler after `JOB_TIMEOUT_SECONDS`, hands jobs
 back on shutdown, and requeues the jobs of a worker that died. Handlers are registered in
-`app/worker/handlers.py`; milestone M4 adds the first real ones.
+`app/worker/handlers.py`; `PROVIDER_PROBE` and `FETCH_ADDRESS_HISTORY` exist so far.
 
 Things to know:
 
@@ -70,31 +70,48 @@ Things to know:
 * Any authenticated user can read provider status and trigger a probe (one request of quota) until
   roles arrive in M13.
 
-## Reading address histories (Ethereum and BNB Smart Chain)
+## Reading address histories (Ethereum, BNB Smart Chain and TRON)
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.cli history ethereum 0xYourAddress --max-items 20
 .\.venv\Scripts\python.exe -m app.cli history bsc 0xYourAddress --json
+.\.venv\Scripts\python.exe -m app.cli history tron TYourAddress --from-block 87700000
 .\.venv\Scripts\python.exe -m app.cli tx ethereum 0xTransactionHash
+.\.venv\Scripts\python.exe -m app.cli tx tron TransactionId
 .\.venv\Scripts\python.exe -m app.cli enqueue FETCH_ADDRESS_HISTORY --set chain=ethereum --set address=0xYourAddress
 ```
 
-Needs at least one of `ETHERSCAN_API_KEY` or `ALCHEMY_API_KEY` in `.env`. **Do this first with your own
-keys:** the Etherscan and Alchemy code is written against their documentation and tested against
-in-memory copies of them, and has not yet talked to the real services. `history` exits with 0 when the
-read is complete, 2 when a limit stopped it, 1 on errors.
+Keys (in `.env`): Ethereum needs `ETHERSCAN_API_KEY` or `ALCHEMY_API_KEY`, BNB Smart Chain needs
+`ALCHEMY_API_KEY` (an Etherscan key helps there only with `ETHERSCAN_PAID_PLAN=true`), TRON needs
+`TRONGRID_API_KEY`. `history` exits with 0 when the read is complete, 2 when a limit stopped it, 1 on
+errors.
+
+Verified against the live services on 2026-11-05, with a real key for each:
+
+* **Ethereum, Etherscan and Alchemy**: the same address read through each gave the same 106
+  transfers, complete, with no disagreement. (That run found that Alchemy drops zero-value ERC-20
+  events unless asked not to, which is evidence in address-poisoning cases; it is now asked not to.)
+* **TRON, TronGrid**: histories and transaction lookups work, and the transfers listed by the address
+  feeds were cross-checked against the same transactions decoded from their own details: 0
+  disagreements over three addresses, including the internal-transfer feed.
+* **BNB Smart Chain: not verified live.** Alchemy answered that the network is not enabled for the
+  app. Switch on "BNB Smart Chain Mainnet" in the app's Networks tab in the Alchemy dashboard (free) and
+  run `history bsc` once.
 
 What comes back is the same on every chain and from every provider (`app/chains/models.py`):
 
 * **`Transfer`**: one movement of value. Native coin sent by a transaction, native coin moved by a
-  contract (internal), or an ERC-20 token event. Amounts are integer strings in the asset's smallest
-  unit (`amount_raw`), never floats. Addresses are lowercase. Times are UTC.
+  contract (internal), or a token event (ERC-20, TRC-20; on TRON also TRC-10 tokens, which travel with
+  the transactions). Amounts are integer strings in the asset's smallest unit (`amount_raw`), never
+  floats. EVM addresses are lowercase, TRON's are Base58. Times are UTC.
 * **`Transaction`**: what an account sees, including calls that moved nothing and failed ones.
 * **`event_key`** identifies a movement within its transaction the same way whichever provider (or
-  whichever address's history) reported it: `native`, `internal:<from>:<to>:<amount>` or
-  `erc20:<contract>:<from>:<to>:<amount>`, with `#1`, `#2` for identical repeats. Etherscan's token
-  endpoint gives no log index, so position cannot be the identity. `(chain_id, transaction_hash,
-  event_key)` is the deduplication key milestone M8 will use.
+  whichever address's history) reported it. EVM: `native`, `internal:<from>:<to>:<amount>` or
+  `erc20:<contract>:<from>:<to>:<amount>`, with `#1`, `#2` for identical repeats (Etherscan's token
+  endpoint gives no log index, so position cannot be the identity). TRON: `native`,
+  `trc10:<id>:<from>:<to>:<amount>`, `trc20:<contract>:<from>:<to>:<amount>` (with `#n` likewise) and
+  `internal:<id>`, where the id is the unique one TRON gives every internal transaction.
+  `(chain_id, transaction_hash, event_key)` is the deduplication key milestone M8 will use.
 
 Where the data comes from, and what that means:
 
@@ -103,6 +120,7 @@ Where the data comes from, and what that means:
 | Ethereum | Etherscan (free) | Alchemy (free) | yes | listed by Etherscan; Alchemy lists only transactions that carried value |
 | BNB Smart Chain | Alchemy (free) | | **not available**, and reported as a gap | not listed |
 | BNB Smart Chain, `ETHERSCAN_PAID_PLAN=true` | Etherscan | Alchemy | yes | yes |
+| TRON | TronGrid (free key) | | yes (its own feed) | listed and marked failed; they moved nothing |
 
 Rules that keep a history honest:
 
@@ -115,10 +133,23 @@ Rules that keep a history honest:
   Etherscan's assumed 10,000-row window is read by moving the start block; a single block holding more
   rows than the window shows is reported as cut. A cursor belongs to the source that issued it.
 * **Incremental sync** is `from_block`: an update starts from `synced_through_block` minus the chain's
-  reorganisation margin (64 blocks on Ethereum, 30 on BNB Smart Chain), and identities make the overlap
-  harmless.
+  reorganisation margin (64 blocks on Ethereum, 30 on BNB Smart Chain, 60 on TRON), and identities
+  make the overlap harmless.
 * **Transaction details** (`tx`) are decoded by us from the receipt, so they carry the true log
-  index (`data_quality: decoded`) but not token symbols or decimals, and no internal movements.
+  index (`data_quality: decoded`) but not token symbols or decimals. On Ethereum and BNB they have no
+  internal movements; TRON's details do list them.
+
+TRON works differently in four ways, all handled in `app/chains/tron/` and `app/providers/trongrid.py`:
+
+* **Only final data is read.** The feeds are asked for `only_confirmed` rows, which trail the head by
+  about twenty blocks. A complete read is therefore `synced_through_block` = head - 20, not the head,
+  and an update starts 60 blocks before that. The newest minute of activity is not in a read.
+* **Token and internal rows carry a time, not a block number**, so `block_number` is empty for them
+  (shown as `-`) and a TRON history is ordered by time. A transaction's own movements stay together:
+  the TRX it sent, then what contracts moved, then token events.
+* **Block ranges become time ranges.** TronGrid filters by time, so `--from-block` and `--to-block`
+  are turned into times by looking the two blocks up (once each).
+* **Cursors are TronGrid's own `fingerprint`**, checked before use, and are tied to one query.
 
 Known limits, deliberately not hidden:
 
@@ -128,7 +159,11 @@ Known limits, deliberately not hidden:
   one request returns outgoing, incoming or both; the code assumes the cautious reading (two passes).
 * Etherscan's documentation states no maximum page size or result window, and no default order. The
   code asks for ascending order explicitly and assumes the classic 10,000-row window.
-* NFTs (ERC-721 and ERC-1155) are not modelled yet.
+* NFTs (ERC-721, ERC-1155, TRC-721) are not modelled yet.
+* TRON: a TRC-10 token's name and decimals are not in any feed, so its amounts are raw and it is shown
+  as `#<token id>`. A TRC-10 amount moved inside a contract call is not modelled (only TRX is).
+  TronGrid publishes no limits for its free key, so the default request rate is cautious; raise it
+  with `PROVIDER_RATE_LIMITS` once you know your plan.
 
 ## Testing against MySQL
 
@@ -166,8 +201,9 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/database/` | engine/session setup, models, programmatic Alembic access |
 | `app/api/v1/` | HTTP routes under `/api/v1` |
 | `app/chains/` | per-chain address validation and the chain registry |
-| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan and Alchemy sources |
-| `app/chains/models.py`, `app/chains/evm/` | the normalized records, the EVM chains, normalizers, cursors and the adapter |
+| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan, Alchemy and TronGrid sources |
+| `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter every account-model chain shares, and the lookup from a chain name to its adapter |
+| `app/chains/evm/`, `app/chains/tron/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter |
 | `app/ingestion/` | reading a whole history (`fetcher`), the history job, the text views for the CLI |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
 | `app/database/repositories/` | job queue and usage counters |
