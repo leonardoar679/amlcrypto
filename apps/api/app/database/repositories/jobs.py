@@ -60,7 +60,10 @@ def enqueue(
         with session.begin_nested():
             session.add(job)
     except IntegrityError:
-        # Someone queued the same dedupe_key between our check and our insert.
+        # Someone queued the same dedupe_key between our check and our insert. End this
+        # transaction before looking: under MySQL's default REPEATABLE READ a plain SELECT keeps
+        # reading the snapshot taken by our first check, which cannot see their committed row.
+        session.rollback()
         existing = session.scalar(select(FetchJob).where(FetchJob.dedupe_key == dedupe_key))
         if existing is None:
             raise

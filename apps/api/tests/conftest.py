@@ -91,11 +91,17 @@ def app(settings: Settings) -> Iterator[FastAPI]:
     if MYSQL_URL:
         connection = engine.connect()
         outer = connection.begin()
-        joined = sessionmaker(
+        # Every session shares this one connection, unlike production, where reads and writes
+        # use separate ones. A read session that opened a savepoint would undo, when it closes,
+        # whatever a write session did on the connection after that savepoint. So reads join the
+        # outer transaction without a savepoint of their own (close() then leaves it alone), and
+        # writes get savepoints, which commit() releases.
+        application.state.session_factory = sessionmaker(
+            bind=connection, join_transaction_mode="rollback_only", expire_on_commit=False
+        )
+        application.state.write_session_factory = sessionmaker(
             bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
         )
-        application.state.session_factory = joined
-        application.state.write_session_factory = joined
         try:
             yield application
         finally:

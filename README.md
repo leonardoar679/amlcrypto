@@ -21,7 +21,7 @@ risk engine. Built as a modular monolith.
 | M0 audit, restructure, rebrand | done: moved to `apps/web`, upgraded to Next.js 16.4.5 (0 audit vulnerabilities), fully rebranded to the placeholder "AML Platform", build and a headless-browser run verified |
 | M1 backend foundation | done; verified on SQLite locally and in CI on SQLite, MySQL 8.0 and MySQL 8.4 |
 | M2 chain registry and address validation | done; verified the same way |
-| M3 provider infrastructure and job queue | done and verified on SQLite locally (490 tests, a live run against a public Bitcoin endpoint, and a clean Ctrl+Break shutdown of the worker on Windows). Not yet seen by CI: MySQL and the Docker worker step run on the next push |
+| M3 provider infrastructure and job queue | done and verified on SQLite locally (490 tests, a live run against a public Bitcoin endpoint, and a clean Ctrl+Break shutdown of the worker on Windows). In CI the SQLite, web and Docker jobs (including a worker run inside the image) passed; the first MySQL run found two real concurrency bugs and two test-fixture flaws, all fixed and awaiting a re-run |
 | M4 and later | not started |
 
 ## Prerequisites

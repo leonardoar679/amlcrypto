@@ -121,6 +121,12 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 * Migrations are written by hand and kept self-contained; `alembic check` must stay clean. A
   downgrade must not drop an index of a table it drops anyway (MySQL error 1553); a test guards this.
 * Never put a provider API key in a log line or an error message.
+* MySQL's default isolation (REPEATABLE READ) keeps a plain SELECT on the snapshot of the first one.
+  After a duplicate-key error, end the transaction (`rollback()`) before looking for the row the
+  other writer committed. See `enqueue`.
+* Never write an upsert as "UPDATE, then INSERT when nothing matched": under concurrency it deadlocks
+  on MySQL. Use the dialect's atomic statement, as `record_usage` does, and repeat the unit of work
+  when MySQL names you the deadlock victim (error 1213).
 * SQLite has two session modes. `create_session_factory(engine)` is read-only (writes fail at once);
   anything that writes uses `create_session_factory(engine, write=True)` and keeps its transaction
   short. Never hold a write transaction across network I/O. See `app/database/connection.py`.
@@ -129,10 +135,13 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 
 * No login rate limiting or lockout yet.
 * **MySQL:** the whole suite passed on MySQL 8.0 and 8.4 in CI for milestones M1 and M2 (commit
-  `1773682`). The M3 tables and concurrency tests have not run against MySQL yet; they do on the next push.
-* **Docker:** CI builds `Dockerfile`, runs the container and calls `/health` and `/version`, and checks
-  that `deployment/docker-compose.yml` parses. Nothing has been run with Docker on the development
-  machine, and the compose file's worker service has only been syntax-checked.
+  `1773682`). The first MySQL run of the M3 code (`40aa7ef`) failed four tests: two real concurrency
+  bugs (below), now fixed, and two artefacts of the MySQL test fixture, also fixed. The re-run has not
+  happened yet, so M3 is verified on SQLite only.
+* **Docker:** CI builds `Dockerfile`, runs the container, calls `/health` and `/version`, runs the
+  worker on a job that needs no network (passed for `40aa7ef`), and checks that
+  `deployment/docker-compose.yml` parses. Nothing has been run with Docker on the development machine,
+  and the compose file's worker service has only been syntax-checked.
 * The Bitcoin source for production is undecided. Esplora is public with no published limits;
   Alchemy's Bitcoin address API is sold as a separate add-on and its docs do not say whether the free
   plan includes it. Decide in milestone M6.

@@ -5,10 +5,14 @@ from __future__ import annotations
 import threading
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select, update
+from sqlalchemy.dialects import mysql, sqlite
+from sqlalchemy.exc import OperationalError
 
 from app.database.models import ApiUsage, FetchJob, JobStatus
 from app.database.repositories import jobs as queue
+from app.database.repositories import usage
 from app.database.repositories.usage import UsageTotals, hour_start, record_usage, usage_since
 
 T0 = datetime(2026, 11, 5, 12, 30, 15, 500_000, tzinfo=UTC)
@@ -72,6 +76,90 @@ def test_usage_since_sums_the_hours_in_range_and_rounds_down(committing_db):
     assert nothing == {}
 
 
+def deadlock() -> OperationalError:
+    return OperationalError(
+        "INSERT INTO api_usage ...", {}, Exception(1213, "Deadlock found when trying to get lock")
+    )
+
+
+def test_a_deadlock_victim_repeats_its_increment_and_nothing_is_counted_twice(
+    committing_db, monkeypatch
+):
+    real_add = usage._add
+    victims = []
+
+    def deadlock_twice(*args):
+        if len(victims) < 2:
+            victims.append(1)
+            raise deadlock()
+        return real_add(*args)
+
+    monkeypatch.setattr(usage, "_add", deadlock_twice)
+    with committing_db.write() as session:
+        record_usage(session, provider="etherscan", at=T0, successes=1)
+
+    with committing_db.read() as session:
+        assert usage_since(session, T0)["etherscan"] == UsageTotals(requests=1, successes=1)
+    assert len(victims) == 2
+
+
+def test_other_database_errors_are_not_repeated(committing_db, monkeypatch):
+    calls = []
+
+    def missing_table(*args):
+        calls.append(1)
+        raise OperationalError("INSERT ...", {}, Exception(1146, "Table 'api_usage' doesn't exist"))
+
+    monkeypatch.setattr(usage, "_add", missing_table)
+    with committing_db.write() as session, pytest.raises(OperationalError):
+        record_usage(session, provider="etherscan", at=T0)
+    assert len(calls) == 1
+
+
+def test_a_deadlock_that_never_clears_is_eventually_reported(committing_db, monkeypatch):
+    calls = []
+
+    def always_deadlocked(*args):
+        calls.append(1)
+        raise deadlock()
+
+    monkeypatch.setattr(usage, "_add", always_deadlocked)
+    with committing_db.write() as session, pytest.raises(OperationalError):
+        record_usage(session, provider="etherscan", at=T0)
+    assert len(calls) == usage.RETRIES + 1
+
+
+def test_the_upsert_is_one_native_statement_on_mysql_and_sqlite():
+    deltas = {"requests": 1, "successes": 1, "errors": 0, "rate_limited": 0, "retries": 0}
+    mysql_sql = str(
+        usage.upsert_statement("mysql", "etherscan", T0, deltas).compile(dialect=mysql.dialect())
+    )
+    sqlite_sql = str(
+        usage.upsert_statement("sqlite", "etherscan", T0, deltas).compile(dialect=sqlite.dialect())
+    )
+
+    # One statement that adds to the stored value, so no read-then-write window and no VALUES().
+    assert "ON DUPLICATE KEY UPDATE requests = (api_usage.requests + %s)" in mysql_sql
+    assert "VALUES(" not in mysql_sql.split("ON DUPLICATE KEY UPDATE")[1]
+    assert "ON CONFLICT (provider, period_start) DO UPDATE SET requests = (api_usage.requests" in (
+        sqlite_sql
+    )
+    assert usage.upsert_statement("postgresql", "etherscan", T0, deltas) is None
+
+
+def test_the_portable_fallback_counts_the_same_way(committing_db, monkeypatch):
+    """For a database without a native upsert: increment, and insert when nothing matched."""
+    monkeypatch.setattr(usage, "upsert_statement", lambda *args: None)
+    with committing_db.write() as session:
+        record_usage(session, provider="etherscan", at=T0, successes=1)
+        record_usage(session, provider="etherscan", at=T0, errors=1, retries=1)
+
+    with committing_db.read() as session:
+        assert usage_since(session, T0)["etherscan"] == UsageTotals(
+            requests=2, successes=1, errors=1, retries=1
+        )
+
+
 def test_concurrent_increments_of_one_row_are_all_counted(committing_db):
     def work(_index: int) -> None:
         for _ in range(20):
@@ -110,6 +198,36 @@ def test_the_dedupe_key_is_released_when_the_job_completes(committing_db):
         queue.complete(session, claimed.id, {"ok": True})
         again, created = queue.enqueue(session, "NOOP", dedupe_key="addr:1")
     assert created and again.id != job.id
+
+
+def test_losing_the_dedupe_race_returns_the_winners_job(committing_db, monkeypatch):
+    """The branch that matters on MySQL: the check finds nothing, the insert collides, and the
+    winner's committed row must then be found. (Under SQLite's single writer it cannot happen
+    by itself, so the first check is blinded.)"""
+    with committing_db.write() as session:
+        winner, _ = queue.enqueue(session, "NOOP", dedupe_key="k")
+
+    with committing_db.write() as session:
+        real_scalar, real_rollback, steps = session.scalar, session.rollback, []
+
+        def lookup(*args, **kwargs):
+            steps.append("lookup")
+            return None if steps.count("lookup") == 1 else real_scalar(*args, **kwargs)
+
+        def rollback():
+            steps.append("rollback")
+            real_rollback()
+
+        monkeypatch.setattr(session, "scalar", lookup)
+        monkeypatch.setattr(session, "rollback", rollback)
+        job, created = queue.enqueue(session, "NOOP", dedupe_key="k")
+
+    assert (job.id, created) == (winner.id, False)
+    # The transaction must end before the second look: under MySQL's REPEATABLE READ a plain
+    # SELECT keeps reading the snapshot of the first one and would not see the winner's row.
+    assert steps == ["lookup", "rollback", "lookup"]
+    with committing_db.read() as session:
+        assert len(session.scalars(select(FetchJob.id)).all()) == 1
 
 
 def test_many_threads_enqueueing_the_same_key_produce_exactly_one_job(committing_db):
