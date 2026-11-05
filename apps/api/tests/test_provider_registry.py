@@ -151,14 +151,9 @@ def test_the_esplora_url_must_be_http_and_blank_means_the_default():
 # --- documentation -----------------------------------------------------------------------------
 
 
-def test_env_example_documents_every_provider_and_worker_setting():
+def test_env_example_documents_every_setting_except_two_deliberately_internal_ones():
     text = (API_ROOT / ".env.example").read_text(encoding="utf-8")
     documented = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", text, flags=re.MULTILINE))
-    wanted = {
-        name.upper()
-        for name in Settings.model_fields
-        if name.startswith(("provider_", "worker_", "job_"))
-        or name.endswith("_api_key")
-        or name == "esplora_base_url"
-    }
+    internal = {"DATA_DIR", "JWT_ALGORITHM"}
+    wanted = {name.upper() for name in Settings.model_fields} - internal
     assert wanted <= documented, f"missing from .env.example: {sorted(wanted - documented)}"

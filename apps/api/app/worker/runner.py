@@ -29,7 +29,7 @@ from app.database.models import JobStatus
 from app.database.repositories import jobs as queue
 from app.providers.base import ProviderError
 from app.providers.service import ProviderService
-from app.worker.handlers import HandlerRegistry, JobContext, NonRetryable
+from app.worker.context import HandlerRegistry, JobContext, NonRetryable
 
 logger = logging.getLogger(__name__)
 

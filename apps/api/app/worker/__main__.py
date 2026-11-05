@@ -14,7 +14,8 @@ from app.database import migrations
 from app.database.connection import create_db_engine, create_session_factory
 from app.providers.service import ProviderService
 from app.providers.usage import DbUsageSink
-from app.worker import Worker, build_default_handlers
+from app.worker import Worker
+from app.worker.handlers import build_default_handlers
 
 logger = logging.getLogger("app.worker")
 

@@ -28,14 +28,8 @@ from app.providers.base import (
     ProviderUnavailable,
 )
 from app.providers.service import ProviderService
-from app.worker import (
-    PROVIDER_PROBE,
-    HandlerRegistry,
-    JobContext,
-    NonRetryable,
-    Worker,
-    build_default_handlers,
-)
+from app.worker import HandlerRegistry, JobContext, NonRetryable, Worker
+from app.worker.handlers import PROVIDER_PROBE, build_default_handlers
 from tests.helpers import FakeClock, Reply, Server, run, wait_until
 
 NOOP = "NOOP"

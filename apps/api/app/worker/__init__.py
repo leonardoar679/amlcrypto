@@ -1,19 +1,11 @@
-"""The background worker: python -m app.worker"""
+"""The background worker: python -m app.worker
 
-from app.worker.handlers import (
-    PROVIDER_PROBE,
-    HandlerRegistry,
-    JobContext,
-    NonRetryable,
-    build_default_handlers,
-)
+The handlers it runs are in app.worker.handlers. That module is deliberately not imported here:
+the ingestion handlers import this package's job context, and importing them from here would make
+the two import each other.
+"""
+
+from app.worker.context import HandlerRegistry, JobContext, NonRetryable
 from app.worker.runner import Worker
 
-__all__ = [
-    "PROVIDER_PROBE",
-    "HandlerRegistry",
-    "JobContext",
-    "NonRetryable",
-    "Worker",
-    "build_default_handlers",
-]
+__all__ = ["HandlerRegistry", "JobContext", "NonRetryable", "Worker"]

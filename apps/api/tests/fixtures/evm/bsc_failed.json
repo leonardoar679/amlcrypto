@@ -1,0 +1,37 @@
+{
+ "_note": "Real transaction from a public node; logsBloom removed to keep the file small.",
+ "chain": "bsc",
+ "kind": "failed",
+ "block_timestamp": "0x6aec32df",
+ "tx": {
+  "blockHash": "0x758f70c5cdf4be500cbde8b01a0f99ac25c2176d75a46a2eda896655f589a4e7",
+  "blockNumber": "0x7dac759",
+  "blockTimestamp": "0x6aec32df",
+  "chainId": "0x38",
+  "from": "0x85f6a42192e9e2e20b6c79901ba9f209d86f42e4",
+  "gas": "0x142fb6",
+  "gasPrice": "0x30b8225",
+  "hash": "0x7ed607aaa8d2e9b16f16b1629b3fb64898f78317bc51ade348b26843ed740e24",
+  "input": "0x000000010209080b8dde756293a200001ed879a1b33ce81a570a5d26f7765ecb712c0924e4de545b89fd43df000000006aec32e0f2688fb5b81049dfb7703ada5e770543770612c40064028ac76a51cc950d9822d68b83fe1ad97b32cd580d000100bffec96e8f3b5058b1817c14e4380758fada01ef01f402bb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c000000",
+  "nonce": "0x30e6a",
+  "to": "0x29be31e7ef434a74d69da1cb6b51ad65c83e9a7b",
+  "transactionIndex": "0x44",
+  "type": "0x0",
+  "value": "0x0"
+ },
+ "receipt": {
+  "type": "0x0",
+  "status": "0x0",
+  "cumulativeGasUsed": "0x84d44c",
+  "logs": [],
+  "transactionHash": "0x7ed607aaa8d2e9b16f16b1629b3fb64898f78317bc51ade348b26843ed740e24",
+  "transactionIndex": "0x44",
+  "blockHash": "0x758f70c5cdf4be500cbde8b01a0f99ac25c2176d75a46a2eda896655f589a4e7",
+  "blockNumber": "0x7dac759",
+  "gasUsed": "0xbf86",
+  "effectiveGasPrice": "0x30b8225",
+  "from": "0x85f6a42192e9e2e20b6c79901ba9f209d86f42e4",
+  "to": "0x29be31e7ef434a74d69da1cb6b51ad65c83e9a7b",
+  "contractAddress": null
+ }
+}

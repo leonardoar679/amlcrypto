@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     alchemy_api_key: SecretStr | None = None
     trongrid_api_key: SecretStr | None = None
     helius_api_key: SecretStr | None = None
+    # Set to true when the Etherscan key is on a paid plan (Lite or above). The free plan does not
+    # include BNB Smart Chain; a paid one does, and then Etherscan becomes its first source.
+    etherscan_paid_plan: bool = False
     # An Esplora-compatible Bitcoin API; None means the default in app.providers.registry.
     esplora_base_url: str | None = None
     # Requests per second per provider, as JSON: {"etherscan": 3, "trongrid": 5}. The defaults in
@@ -53,6 +56,11 @@ class Settings(BaseSettings):
     provider_max_retries: int = Field(default=3, ge=0, le=10)
     provider_breaker_threshold: int = Field(default=5, ge=1, le=100)
     provider_breaker_cooldown_seconds: float = Field(default=30.0, ge=1, le=3600)
+
+    # Reading an address history (python -m app.cli history, the FETCH_ADDRESS_HISTORY job): the
+    # most provider requests one read may spend, and the most transfers it collects.
+    history_request_budget: int = Field(default=200, ge=1, le=100_000)
+    history_max_items: int = Field(default=5000, ge=1, le=1_000_000)
 
     # The background worker (python -m app.worker).
     worker_concurrency: int = Field(default=4, ge=1, le=64)

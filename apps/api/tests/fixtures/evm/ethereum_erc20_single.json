@@ -1,0 +1,56 @@
+{
+ "_note": "Real transaction from a public node; logsBloom removed to keep the file small.",
+ "chain": "ethereum",
+ "kind": "erc20_single",
+ "block_timestamp": "0x6aec31df",
+ "tx": {
+  "blockHash": "0x9b0b627e76bb0be5a6a94beac30d4c145019b15ec68e7bcd2733377c428cc2f9",
+  "blockNumber": "0x19206a8",
+  "blockTimestamp": "0x6aec31df",
+  "chainId": "0x1",
+  "from": "0xc13a0855f0119160099197f5ef95cc21948b918f",
+  "gas": "0xfa1f",
+  "gasPrice": "0x80a30222",
+  "hash": "0x36c14b98dc5711bedbe46cdf85a3e0aa474a00298d3cab592a7606db3cddbb11",
+  "input": "0xa9059cbb0000000000000000000000001416e8a6f610aaf253653576d56b5a7a86d97bd00000000000000000000000000000000000000000000000000000000077359400",
+  "maxFeePerGas": "0x80cd7e0c",
+  "maxPriorityFeePerGas": "0x7d2b7501",
+  "nonce": "0x1c",
+  "to": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+  "transactionIndex": "0xe",
+  "type": "0x2",
+  "value": "0x0"
+ },
+ "receipt": {
+  "type": "0x2",
+  "status": "0x1",
+  "cumulativeGasUsed": "0x39ab50",
+  "logs": [
+   {
+    "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+    "topics": [
+     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+     "0x000000000000000000000000c13a0855f0119160099197f5ef95cc21948b918f",
+     "0x0000000000000000000000001416e8a6f610aaf253653576d56b5a7a86d97bd0"
+    ],
+    "data": "0x0000000000000000000000000000000000000000000000000000000077359400",
+    "blockHash": "0x9b0b627e76bb0be5a6a94beac30d4c145019b15ec68e7bcd2733377c428cc2f9",
+    "blockNumber": "0x19206a8",
+    "blockTimestamp": "0x6aec31df",
+    "transactionHash": "0x36c14b98dc5711bedbe46cdf85a3e0aa474a00298d3cab592a7606db3cddbb11",
+    "transactionIndex": "0xe",
+    "logIndex": "0x91",
+    "removed": false
+   }
+  ],
+  "transactionHash": "0x36c14b98dc5711bedbe46cdf85a3e0aa474a00298d3cab592a7606db3cddbb11",
+  "transactionIndex": "0xe",
+  "blockHash": "0x9b0b627e76bb0be5a6a94beac30d4c145019b15ec68e7bcd2733377c428cc2f9",
+  "blockNumber": "0x19206a8",
+  "gasUsed": "0xf6dd",
+  "effectiveGasPrice": "0x80a30222",
+  "from": "0xc13a0855f0119160099197f5ef95cc21948b918f",
+  "to": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+  "contractAddress": null
+ }
+}

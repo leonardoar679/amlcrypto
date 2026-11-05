@@ -1,0 +1,55 @@
+{
+ "_note": "Real transaction from a public node; logsBloom removed to keep the file small.",
+ "chain": "bsc",
+ "kind": "nft",
+ "block_timestamp": "0x6aec32df",
+ "tx": {
+  "blockHash": "0xbaa9769e72b4874623298ca1e2477c1283b9a372800cea5ec432a17d05d97882",
+  "blockNumber": "0x7dac758",
+  "blockTimestamp": "0x6aec32df",
+  "chainId": "0x38",
+  "from": "0x79cc5ac2dad778f7e36bc0452176030efba43e9a",
+  "gas": "0x1edd8",
+  "gasPrice": "0x9218b49",
+  "hash": "0xed0e0aca4e19e2047db87fa9975176f596fdf5e2bef280e173cd3acff935fdaf",
+  "input": "0xa0712d680000000000000000000000000000000000000000000000000000000000000001",
+  "nonce": "0x2a",
+  "to": "0x427aed3f7427b48e45f5e648105aa1b77724cf14",
+  "transactionIndex": "0x15",
+  "type": "0x0",
+  "value": "0x0"
+ },
+ "receipt": {
+  "type": "0x0",
+  "status": "0x1",
+  "cumulativeGasUsed": "0x212a3b",
+  "logs": [
+   {
+    "address": "0x427aed3f7427b48e45f5e648105aa1b77724cf14",
+    "topics": [
+     "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+     "0x0000000000000000000000000000000000000000000000000000000000000000",
+     "0x00000000000000000000000079cc5ac2dad778f7e36bc0452176030efba43e9a",
+     "0x000000000000000000000000000000000000000000000000000000000000234d"
+    ],
+    "data": "0x",
+    "blockHash": "0xbaa9769e72b4874623298ca1e2477c1283b9a372800cea5ec432a17d05d97882",
+    "blockNumber": "0x7dac758",
+    "blockTimestamp": "0x6aec32df",
+    "transactionHash": "0xed0e0aca4e19e2047db87fa9975176f596fdf5e2bef280e173cd3acff935fdaf",
+    "transactionIndex": "0x15",
+    "logIndex": "0x42",
+    "removed": false
+   }
+  ],
+  "transactionHash": "0xed0e0aca4e19e2047db87fa9975176f596fdf5e2bef280e173cd3acff935fdaf",
+  "transactionIndex": "0x15",
+  "blockHash": "0xbaa9769e72b4874623298ca1e2477c1283b9a372800cea5ec432a17d05d97882",
+  "blockNumber": "0x7dac758",
+  "gasUsed": "0x197a5",
+  "effectiveGasPrice": "0x9218b49",
+  "from": "0x79cc5ac2dad778f7e36bc0452176030efba43e9a",
+  "to": "0x427aed3f7427b48e45f5e648105aa1b77724cf14",
+  "contractAddress": null
+ }
+}

@@ -1,0 +1,39 @@
+{
+ "_note": "Real transaction from a public node; logsBloom removed to keep the file small.",
+ "chain": "ethereum",
+ "kind": "native",
+ "block_timestamp": "0x6aec31df",
+ "tx": {
+  "blockHash": "0x9b0b627e76bb0be5a6a94beac30d4c145019b15ec68e7bcd2733377c428cc2f9",
+  "blockNumber": "0x19206a8",
+  "blockTimestamp": "0x6aec31df",
+  "chainId": "0x1",
+  "from": "0xb01caea8c6c47bbf4f4b4c5080ca642043359c2e",
+  "gas": "0x61a8",
+  "gasPrice": "0x3f125721",
+  "hash": "0xd33db5783144b72f0984f75e15121b8a0ece6bc8e96b80e2c8628e4c25115b5d",
+  "input": "0x",
+  "maxFeePerGas": "0x80cd7e0c",
+  "maxPriorityFeePerGas": "0x3b9aca00",
+  "nonce": "0xd20de",
+  "to": "0xc13a0855f0119160099197f5ef95cc21948b918f",
+  "transactionIndex": "0xd",
+  "type": "0x2",
+  "value": "0xd93182e1e028"
+ },
+ "receipt": {
+  "type": "0x2",
+  "status": "0x1",
+  "cumulativeGasUsed": "0x38b473",
+  "logs": [],
+  "transactionHash": "0xd33db5783144b72f0984f75e15121b8a0ece6bc8e96b80e2c8628e4c25115b5d",
+  "transactionIndex": "0xd",
+  "blockHash": "0x9b0b627e76bb0be5a6a94beac30d4c145019b15ec68e7bcd2733377c428cc2f9",
+  "blockNumber": "0x19206a8",
+  "gasUsed": "0x523f",
+  "effectiveGasPrice": "0x3f125721",
+  "from": "0xb01caea8c6c47bbf4f4b4c5080ca642043359c2e",
+  "to": "0xc13a0855f0119160099197f5ef95cc21948b918f",
+  "contractAddress": null
+ }
+}
