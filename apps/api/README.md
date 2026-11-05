@@ -129,7 +129,8 @@ What comes back is the same on every account-model chain and from every provider
   endpoint gives no log index, so position cannot be the identity). TRON: `native`,
   `trc10:<id>:<from>:<to>:<amount>`, `trc20:<contract>:<from>:<to>:<amount>` (with `#n` likewise) and
   `internal:<id>`, where the id is the unique one TRON gives every internal transaction.
-  `(chain_id, transaction_hash, event_key)` is the deduplication key milestone M8 will use.
+  `(chain_id, transaction_hash, event_key)` is the key a movement is stored under (see "Stored
+  histories").
 
 Where the data comes from, and what that means:
 
@@ -272,6 +273,136 @@ Known limits, deliberately not hidden:
   TronGrid publishes no limits for its free key, so the default request rate is cautious; raise it
   with `PROVIDER_RATE_LIMITS` once you know your plan.
 
+## Stored histories (milestone M8)
+
+Every history that is read is stored, once per chain identity, and the next screening of the same
+address reuses it instead of downloading it again. `history`, `tx` and the `FETCH_ADDRESS_HISTORY`
+job all do this; `--no-store` (or a block range, or a job payload with `from_block`, `to_block` or
+`resume`) asks for exactly one read that is neither taken from nor put into storage.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress              # first time: reads and stores
+.\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress              # again: no provider request
+.\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress --refresh    # update now, whatever the age
+.\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress --rebuild    # read it all again
+```
+
+Every run ends with a line saying what it did, for example `stored data: served from storage: read
+2m ago, no provider request made`, and `--json` carries the same under `sync`.
+
+### What a screening does
+
+| The address was | What happens | Provider requests |
+|---|---|---|
+| never read | read within the limits, store it, remember how far it got | as many as the history needs |
+| read less than `HISTORY_FRESH_SECONDS` ago (300) | served from storage as it is | **none** |
+| read before, longer ago | read only what is new, starting a little before where the last read ended; carry on any read a limit had stopped | the new part: a page or two per stream |
+| `--refresh` | the same, whatever the age | |
+| `--rebuild` | read everything again; drop stored records the chain no longer shows | the whole history |
+
+Tried live on 2026-11-05 (Bitcoin, a 90-transaction address): the first read took 6 requests, a
+repeat took **0**, a forced update took 3 (the tip, the newest page, the node's figures) and the
+history was identical to a fresh read. Solana, a wallet of 360 transactions: 9, **0**, 5. Ethereum,
+an ordinary account: 4, **0**, 5 (one of them a retry). An update costs about as much as a first
+read when the whole history fits in one page per stream; the saving is in longer histories, where
+a first read needs many pages and an update needs the newest (the tests count 3 pages against 1).
+
+The age is counted from the oldest stream of the address, and a read that a **provider error**
+stopped looks stale, so the retry carries on at once instead of serving the half it got. A read
+stopped by a **limit** (`HISTORY_MAX_ITEMS`, `HISTORY_REQUEST_BUDGET`) is served as it is while it
+is fresh, with `complete: false`, and is carried on from where it stopped once it is not.
+
+### What is stored
+
+| Table | Holds |
+|---|---|
+| `transactions` | a transaction on any chain: an account's, a Bitcoin transaction, a Solana transaction (columns that belong to one family are NULL for the others) |
+| `transfers` | a movement of value between two addresses (account chains and Solana). Identity: `(chain_id, transaction_hash, event_key)` |
+| `transaction_inputs`, `transaction_outputs` | Bitcoin's coins destroyed and created |
+| `balance_changes`, `unattributed_changes` | what a Solana transaction did to every SOL and token balance, and what no instruction explains |
+| `address_transactions` | which transactions a read found for which address (see below) |
+| `data_coverage` | per address and stream: complete / partial / truncated / unavailable, the block it is synced through, where an interrupted read carries on, when it was last brought up to date, and for Bitcoin and Solana whether the whole agreed with the chain |
+| `fetch_runs` | a log of the reads that went to the network: what they asked, cost and changed |
+| `raw_responses` | the provider's answer for a Bitcoin or Solana transaction (below) |
+
+The tables are global, not tenant-owned: a transfer is a fact about a chain and is reached from
+both of its addresses. Amounts are integer strings, identifiers are case-sensitive on MySQL, times
+are UTC, and every identifier carries its chain id.
+
+An address's history is read back from storage as **the same history a fresh read returns**: the
+tests compare them record for record for every chain, and so did a live run for each.
+
+### How it stays correct
+
+* **One record per identity, whoever read it.** Saving a record again changes nothing unless the new
+  read knows more (a block time the first lacked); a read that knows *less* never erases what was
+  known; a record this platform decoded from a receipt or transaction ("decoded") is never replaced
+  by an indexer's summary of the same record. Reading the other side of a stored transfer stores
+  nothing new.
+* **Which transactions belong to an address is remembered, not worked out.** A provider decides, and
+  not always for a reason that is in the transaction: TronGrid lists a transaction for an address
+  that only took part through an internal call. (A live read of a busy TRON address found this: the
+  first version rebuilt the history from the sender and recipient and lost 2,500 of 9,800 records;
+  there is now a regression test.) Movements of value, by contrast, always involve the address.
+* **Updates overlap.** An update starts a little before where the last one ended (Ethereum 64
+  blocks, BNB 30, TRON 60, Bitcoin 12, Solana 300 slots), which catches records indexed late and
+  blocks that were reorganised away.
+* **Reorganisations.** Of what an update read again on Ethereum, BNB or Bitcoin, anything stored that the
+  chain no longer shows is removed, together with the inputs, outputs and links that belonged to it.
+  Only streams read to their end count, and nothing older than the overlap is ever judged. TRON and
+  Solana read final data, so nothing is dropped there.
+* **Bitcoin and Solana are checked again.** Whenever a stored history is complete after an update,
+  the whole of it (old and new together) is compared with the node's own count and totals (Bitcoin)
+  or the chain's SOL and token balances (Solana). A disagreement is a loud `MISMATCH` note, the
+  history is not called complete, and it is remembered with the stored history.
+* **An update that a limit cut short moves nothing.** The stored frontier stays where it was, the
+  result says it is not complete, and the next update starts from the same place, so no gap can
+  open between the old part and the new.
+* **A failed read keeps its pages.** The pages read before a provider error are stored (the readers
+  attach them to the error), so the retry does not pay for them again.
+* **An unusable saved cursor** (its source is no longer configured, or the chain moved under it) is
+  noted, and those streams are read again from their start; nothing stored is lost.
+* **Spend state is stored only when it is proven for good** (spent, with the spender, or
+  unspendable). "Unspent" is true only as of a moment, so it is worked out again whenever a history
+  is loaded.
+
+### Raw answers, kept selectively
+
+The platform decodes Bitcoin and Solana transactions itself. When a decoder is found wrong (they
+have been, and fixed), the provider's raw answer is what it can be run on again without asking a
+second time. So `raw_responses` keeps the response body for exactly those two kinds, compressed and
+with its SHA-256, and never for the account chains' indexer rows (the normalized record has every
+field of those). An answer over `RAW_MAX_BYTES` (256 KB) is not kept; `STORE_RAW_RESPONSES=false`
+turns it off. Decoding a kept answer gives back the stored record exactly (a test per chain), but
+there is no command that re-decodes everything yet. The body never contains a request, URL or key.
+
+### Looking up one transaction
+
+`tx` stores what it decodes (a decoded record outranks the indexer's version of the same one) and
+answers a **finalized Solana** transaction from storage when it is there. Ethereum and TRON receipts
+carry notes about what they leave out, and a Bitcoin transaction's spend state moves on, so those
+are asked of the provider each time. An unconfirmed Bitcoin transaction is shown but not stored: it
+may never be mined and nothing would ever remove it.
+
+### What is not done
+
+* A history that grows faster than one sync can read cannot be kept current: the update is cut short
+  every time and reported as incomplete (raise `HISTORY_REQUEST_BUDGET` / `HISTORY_MAX_ITEMS`).
+* An account chain's first read is oldest first and stops at the limit, so a busy address is stored
+  oldest-first until it is finished; the newest activity of a very busy address comes last.
+* Stored `confirmations` on account chains are the value when the record was read (identical records
+  read now would show more). Bitcoin's are recomputed from the stored head on every load.
+* No pruning or retention policy, and no command to re-decode stored raw answers.
+* Not created, on purpose: `token_assets` (the asset is on each transfer, with its contract address,
+  as the provider reported it), `transaction_instructions` (a Solana instruction's position is
+  the transfer's `event_key`; instructions that move no value are not decoded) and `provider_cursors`
+  (the cursor, which already names the provider that issued it, is `data_coverage.resume_cursor`).
+* Stored provider data may not be shared between tenants without a licensing review (milestone M14).
+* **MySQL:** the new tables and statements are checked offline (identifier and key lengths, row
+  width, the exact statements PyMySQL will send and that none takes a parameter after `VALUES`)
+  and by the tests on SQLite. The suite runs on MySQL 8.0 and 8.4 in CI; until it has run on the M8
+  commits, MySQL parity is unverified.
+
 ## Testing against MySQL
 
 Point `TEST_DATABASE_URL` at an **empty, throwaway** MySQL 8 database and run the suite as usual:
@@ -311,9 +442,9 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan, Alchemy, TronGrid, Esplora and Helius sources |
 | `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter base (`SourceAdapter`) and the account-model adapter on top of it, and the lookup from a chain name to its adapter |
 | `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/`, `app/chains/solana/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis; Solana its own transaction record, the instruction decoder checked against balance changes, and a wallet's per-transaction activity |
-| `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), the history job, the text views for the CLI |
+| `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), storing and reusing it (`sync`, with `families` for what differs per chain family, `raw` for the kept provider answers, `detail` for single transactions), the history job, the text views for the CLI |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
-| `app/database/repositories/` | job queue and usage counters |
+| `app/database/repositories/` | job queue and usage counters; the stored chain data (`transfers`, `bitcoin`, `solana`, `membership`, saved by identity through `rows`); coverage, the log of reads and the raw answers (`acquisition`). `app/database/upsert.py` and `retry.py` are the bulk upserts and the deadlock retry they share |
 | `migrations/` | Alembic environment and versions |
 | `tests/` | pytest suite |
 
@@ -345,9 +476,8 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
   worker on a job that needs no network, and checks that `deployment/docker-compose.yml` parses.
   Nothing has been run with Docker on the development machine, and the compose file's worker service
   has only been syntax-checked.
-* **Ethereum and BNB connectors:** verified against Etherscan's and Alchemy's documentation, real
-  transactions from public nodes (for the receipt decoder) and in-memory copies of both providers; not
-  yet against the live services. See "Reading address histories" for the first thing to try.
-* The Bitcoin source for production is undecided. Esplora is public with no published limits;
-  Alchemy's Bitcoin address API is sold as a separate add-on and its docs do not say whether the free
-  plan includes it. Decide in milestone M6.
+* **BNB Smart Chain:** verified against Alchemy's documentation, real transactions from public nodes
+  (for the receipt decoder) and an in-memory copy of the provider, not against the live service
+  (Alchemy's BNB network is not switched on for the key). See "Reading address histories" for the first thing to try.
+* Bitcoin is read through Esplora (decided in M6): public, with no published limits. Alchemy's Bitcoin
+  address API is sold as a separate add-on and is not used.
