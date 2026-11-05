@@ -24,7 +24,8 @@ risk engine. Built as a modular monolith.
 | M3 provider infrastructure and job queue | done; verified in CI on SQLite, MySQL 8.0 and 8.4, and in the Docker image (including a worker run inside it), plus a live run against a public Bitcoin endpoint and a clean Ctrl+Break shutdown of the worker on Windows. Its first MySQL run found two real concurrency bugs, both fixed |
 | M4 Ethereum and BNB connectors | done: normalized records, Etherscan and Alchemy sources with fallback, address histories with pagination and incremental sync, transaction details decoded from receipts (checked against 12 real transactions from public nodes). CI green on SQLite, MySQL 8.0 and 8.4 and in Docker. Tried live on Ethereum with real keys: Etherscan and Alchemy returned the same 106 transfers for one address (the run found and fixed one real difference). **BNB Smart Chain is not yet tried live**: switch the network on in the Alchemy app first, see "Reading address histories" in apps/api/README.md |
 | M5 TRON connector | built (903 tests; CI has not run on it yet): the adapter code that Ethereum, BNB and TRON share, a TronGrid source, normalizers checked against real TRON data, histories (TRX, TRC-10, TRC-20, internal) and transaction details. Tried live with a real TronGrid key: feed rows and the same transactions decoded from their own details agreed on every transfer checked |
-| M6 and later | not started |
+| M6 Bitcoin connector | built: Bitcoin is read as inputs and outputs, not as transfers between accounts; spend links between transactions; change, CoinJoin and shared-ownership are inferences, labelled as such and withheld when nothing supports them; histories newest first, checked against the node's own count and totals. Tried live through a public Esplora: a 90-transaction address agreed with the node to the satoshi. Alchemy's Bitcoin API (the blueprint's first choice) is not used yet: its network is not switched on for the key. CI has not run on it yet |
+| M7 and later | not started |
 
 ## Prerequisites
 
@@ -51,6 +52,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m app.cli probe esplora
 .\.venv\Scripts\python.exe -m app.cli history ethereum 0xYourAddress --max-items 20   # needs a key
 .\.venv\Scripts\python.exe -m app.cli history tron TYourAddress --max-items 20       # needs a TronGrid key
+.\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress --max-items 50      # no key needed
 .\.venv\Scripts\python.exe -m app.worker
 ```
 

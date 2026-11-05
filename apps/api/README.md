@@ -70,21 +70,24 @@ Things to know:
 * Any authenticated user can read provider status and trigger a probe (one request of quota) until
   roles arrive in M13.
 
-## Reading address histories (Ethereum, BNB Smart Chain and TRON)
+## Reading address histories (Ethereum, BNB Smart Chain, TRON and Bitcoin)
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.cli history ethereum 0xYourAddress --max-items 20
 .\.venv\Scripts\python.exe -m app.cli history bsc 0xYourAddress --json
 .\.venv\Scripts\python.exe -m app.cli history tron TYourAddress --from-block 87700000
+.\.venv\Scripts\python.exe -m app.cli history bitcoin bc1YourAddress
 .\.venv\Scripts\python.exe -m app.cli tx ethereum 0xTransactionHash
 .\.venv\Scripts\python.exe -m app.cli tx tron TransactionId
+.\.venv\Scripts\python.exe -m app.cli tx bitcoin TransactionId
 .\.venv\Scripts\python.exe -m app.cli enqueue FETCH_ADDRESS_HISTORY --set chain=ethereum --set address=0xYourAddress
 ```
 
 Keys (in `.env`): Ethereum needs `ETHERSCAN_API_KEY` or `ALCHEMY_API_KEY`, BNB Smart Chain needs
 `ALCHEMY_API_KEY` (an Etherscan key helps there only with `ETHERSCAN_PAID_PLAN=true`), TRON needs
-`TRONGRID_API_KEY`. `history` exits with 0 when the read is complete, 2 when a limit stopped it, 1 on
-errors.
+`TRONGRID_API_KEY`, Bitcoin needs no key (it uses a public Esplora endpoint, blockstream.info by
+default; set `ESPLORA_BASE_URL` for mempool.space or your own instance). `history` exits with 0 when
+the read is complete, 2 when a limit stopped it, 1 on errors.
 
 Verified against the live services on 2026-11-05, with a real key for each:
 
@@ -94,11 +97,17 @@ Verified against the live services on 2026-11-05, with a real key for each:
 * **TRON, TronGrid**: histories and transaction lookups work, and the transfers listed by the address
   feeds were cross-checked against the same transactions decoded from their own details: 0
   disagreements over three addresses, including the internal-transfer feed.
+* **Bitcoin, Esplora**: an address with 90 transactions was read in four pages and agreed with the
+  node's own figures exactly: its transaction count, the total ever paid to it, the total ever
+  spent from it, and its balance (the one output inferred unspent was worth the node's balance to
+  the satoshi). mempool.space could not be reached from the development machine, so no second
+  Esplora instance cross-checked it.
 * **BNB Smart Chain: not verified live.** Alchemy answered that the network is not enabled for the
   app. Switch on "BNB Smart Chain Mainnet" in the app's Networks tab in the Alchemy dashboard (free) and
   run `history bsc` once.
 
-What comes back is the same on every chain and from every provider (`app/chains/models.py`):
+What comes back is the same on every account-model chain and from every provider
+(`app/chains/models.py`); Bitcoin is different and has its own section below:
 
 * **`Transfer`**: one movement of value. Native coin sent by a transaction, native coin moved by a
   contract (internal), or a token event (ERC-20, TRC-20; on TRON also TRC-10 tokens, which travel with
@@ -151,6 +160,44 @@ TRON works differently in four ways, all handled in `app/chains/tron/` and `app/
   are turned into times by looking the two blocks up (once each).
 * **Cursors are TronGrid's own `fingerprint`**, checked before use, and are tied to one query.
 
+### Bitcoin
+
+Bitcoin has no accounts and no transfers from one address to another. A transaction destroys some
+unspent outputs (its inputs) and creates new ones (its outputs); which input paid which output is not
+recorded anywhere. So Bitcoin is not forced into `Transfer`: a read gives `BitcoinTransaction`s with
+their `inputs` and `outputs` as the chain wrote them (`app/chains/bitcoin/models.py`), amounts in
+satoshis, and what the address did in each (`received`, `sent`, `net`).
+
+* **Proven and inferred are kept apart** (`app/chains/bitcoin/utxo.py`). Proven, from the records:
+  which output each input spends, what each output pays, which outputs are spent and by what,
+  and one address's part in a transaction. Inferred, always labelled so and with its reasons:
+  *change* (an output paying an address that also funded the transaction, the only output of the
+  inputs' script type, a round payment against an odd remainder), *CoinJoin* (several equal outputs
+  to different addresses from at least as many different funders; one wallet paying many people the
+  same amount is not flagged, and neither are equal dust outputs) and *common input ownership*
+  (addresses that sign together are one owner, withheld when a CoinJoin is suspected). When nothing
+  separates the cases the answer is "unknown", not a guess.
+* **Spend links.** `tx` fetches which outputs are spent. In a history, an output whose spender is in
+  the history is marked spent; with the address's *complete* confirmed history, its own outputs that
+  nobody spent are marked unspent (their spender would have to be in it), which matched the node's
+  balance exactly. Anything else stays `unknown`, never "unspent by default".
+* **Only confirmed transactions are read**, newest first, 25 to a page (Esplora fixes the size), so
+  the cursor is the last transaction of the page and a read stopped early holds the newest part; `resume`
+  carries on towards the oldest. `--from-block` stops the read once it is below that block; `--to-block`
+  has to read through everything newer first. An update starts 12 blocks before `synced_through_block`.
+  Within a block, a transaction is listed after the ones it spends from.
+* **A whole-history read is checked against the node's own figures**: the number of transactions, the
+  total ever paid to the address and the total ever spent from it. If they differ the read is not
+  called complete and a `MISMATCH` note gives both sets of numbers (a block arriving mid-read is
+  allowed for by asking once more). Unconfirmed transactions are noted, not included.
+* Esplora lists an input together with the output it spends. If it ever leaves that out, the
+  transaction is kept, the amount sent from the address may be short, and the page says so.
+* Not done here: Alchemy's Bitcoin address API (the blueprint's first choice) answers 403 "BITCOIN_MAINNET
+  is not enabled for this app" for the current key, and is sold as a separate add-on; the adapter takes a
+  list of sources, so it can be added once the network is switched on and the plan covers it. Public
+  Esplora publishes no limits, so the default is one request a second; a history of 5,000
+  transactions costs about 200 requests, which is the default `HISTORY_REQUEST_BUDGET`.
+
 Known limits, deliberately not hidden:
 
 * Two identical movements inside one transaction (same token, parties and amount) are told apart by
@@ -201,10 +248,10 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/database/` | engine/session setup, models, programmatic Alembic access |
 | `app/api/v1/` | HTTP routes under `/api/v1` |
 | `app/chains/` | per-chain address validation and the chain registry |
-| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan, Alchemy and TronGrid sources |
-| `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter every account-model chain shares, and the lookup from a chain name to its adapter |
-| `app/chains/evm/`, `app/chains/tron/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter |
-| `app/ingestion/` | reading a whole history (`fetcher`), the history job, the text views for the CLI |
+| `app/providers/` | provider catalogue, HTTP client, throttle, circuit breaker, cache, budget, fallback, usage; the Etherscan, Alchemy, TronGrid and Esplora sources |
+| `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter base (`SourceAdapter`) and the account-model adapter on top of it, and the lookup from a chain name to its adapter |
+| `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis |
+| `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `read`), the history job, the text views for the CLI |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
 | `app/database/repositories/` | job queue and usage counters |
 | `migrations/` | Alembic environment and versions |
