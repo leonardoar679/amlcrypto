@@ -179,8 +179,9 @@ def test_a_tron_transaction_shows_trx_not_sun():
 def test_an_amount_on_a_chain_nobody_reads_is_shown_raw_and_says_so():
     from app.ingestion.render import _native
 
-    assert _native("123", "bip122:000000000019d6689c085ae165831e93") == "123 (raw, smallest unit)"
+    assert _native("123", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp") == "123 (raw, smallest unit)"
     assert _native("1500000", "tron:728126428") == "1.5 TRX"
+    assert _native("150000000", "bip122:000000000019d6689c085ae165831e93") == "1.5 BTC"
 
 
 def test_lookalike_token_symbols_are_spelled_out_so_they_cannot_pass_for_the_real_one():
@@ -191,3 +192,113 @@ def test_lookalike_token_symbols_are_spelled_out_so_they_cannot_pass_for_the_rea
     assert printable("US\u0421") == r"US\u0421"  # a Cyrillic capital Es, not a Latin C
     assert printable("U\u17b5S\u17b5D") == r"U\u17b5S\u17b5D"  # invisible characters made visible
     assert printable("\u0116T\u1e28") == r"\u0116T\u1e28"
+
+
+# --- Bitcoin ------------------------------------------------------------------------------------
+
+
+def _bitcoin_text(name):
+    from app.chains.bitcoin.chains import BITCOIN_CHAIN
+    from app.chains.bitcoin.models import BitcoinDetail
+    from app.chains.bitcoin.normalize import apply_outspends, esplora_transaction, with_head
+    from app.ingestion.render import render_bitcoin_transaction
+
+    data = load_fixture(f"bitcoin/{name}")
+    transaction = esplora_transaction(data["tx"], BITCOIN_CHAIN)
+    if data["outspends"] is not None:
+        transaction = apply_outspends(transaction, data["outspends"])
+    head = (transaction.block_height or 0) + 9
+    return render_bitcoin_transaction(BitcoinDetail(with_head(transaction, head, BITCOIN_CHAIN)))
+
+
+def test_an_old_pay_to_key_payment_shows_outputs_with_no_address_and_who_spent_them():
+    text = _bitcoin_text("p2pk_payment")
+
+    assert "status        confirmed (block 170, 10 confirmations)" in text
+    assert "time          2009-01-12 03:30:25 UTC" in text
+    assert "Inputs (1), 50 BTC:" in text and "Outputs (2), 50 BTC:" in text
+    assert text.count("(no address form: p2pk)") == 3
+    assert "10 BTC  spent by ea44e97271..ee708e:0" in text
+    assert "spends 0437cd7f85..a597c9:0" in text
+
+
+def test_a_coinjoin_look_alike_is_named_as_an_inference_and_the_other_heuristics_are_withheld():
+    text = _bitcoin_text("coinjoin_like")
+
+    assert "Inferred, not proven by the chain (change confidence: low):" in text
+    assert (
+        "CoinJoin (likely): 7 outputs of exactly 0.33554432 BTC and 18 different input addresses"
+        in text
+    )
+    assert "18 input addresses signed together: NOT a sign of one owner here" in text
+    assert "the change heuristics do not apply" in text
+    assert text.count("spent by 8a428652b1..20184d:") == 7  # the equal outputs were merged again
+
+
+def test_a_reused_address_is_reported_as_probable_change_with_the_reason():
+    text = _bitcoin_text("self_change")
+    assert "is probably change: pays an address that also funded the transaction" in text
+    assert "is probably a payment" in text
+
+
+def test_data_outputs_and_coinbases_are_described_as_what_they_are():
+    assert "unspendable (data, not coins)" in _bitcoin_text("op_return_only")
+    assert "coinbase: newly created coins" in _bitcoin_text("coinbase")
+    assert "fee " not in _bitcoin_text("coinbase")  # a coinbase pays no fee
+
+
+def test_an_output_whose_spend_state_was_not_fetched_says_so():
+    assert "spend state unknown" in _bitcoin_text("legacy_p2pkh")
+
+
+def test_amounts_in_bitcoin_are_signed_for_the_address_and_shown_in_coins():
+    from app.ingestion.render import _btc, _signed_btc
+
+    assert _signed_btc("150000000") == "+1.5" and _signed_btc("-1") == "-0.00000001"
+    assert _signed_btc("0") == " 0"
+    assert _btc("150000000") == "1.5 BTC" and _btc(None) == "-"
+
+
+def test_a_bitcoin_history_shows_the_time_the_net_amount_and_the_verdict():
+    from app.ingestion.render import render_utxo_history
+    from app.ingestion.utxo import fetch_utxo_history
+    from tests.fake_esplora import p2pkh, pay, spend, tx, txid
+
+    rig = Rig()
+    me = p2pkh(1)
+    rig.esplora.add(
+        tx(
+            1,
+            [spend(txid(900), 0, p2pkh(2), 60_000)],
+            [pay(me, 50_000), pay(p2pkh(2), 9_000)],
+            height=101,
+        ),
+        tx(
+            2, [spend(txid(1), 0, me, 50_000)], [pay(p2pkh(3), 30_000), pay(me, 19_000)], height=102
+        ),
+    )
+
+    text = render_utxo_history(run(fetch_utxo_history(rig.bitcoin_adapter(), me)))
+
+    lines = text.splitlines()
+    assert lines[0].endswith(me) and "2 transactions in blocks 101..102" in lines[1]
+    assert "received 0.00069 BTC and sent 0.0005 BTC" in lines[1]
+    row = next(line for line in lines if "both" in line)
+    assert "-0.00031" in row and "1/2" in row and "2026-" in row
+    assert "Complete through block" in text and "Balance now: 0.00019 BTC" in text
+
+
+def test_a_bitcoin_history_that_does_not_agree_with_the_node_is_not_called_complete():
+    from app.ingestion.render import render_utxo_history
+    from app.ingestion.utxo import fetch_utxo_history
+    from tests.fake_esplora import p2pkh, pay, spend, tx, txid
+
+    rig = Rig()
+    me = p2pkh(1)
+    rig.esplora.add(tx(1, [spend(txid(900), 0, p2pkh(2), 6_000)], [pay(me, 5_000)], height=101))
+    rig.esplora.unlisted = {txid(1)}
+
+    text = render_utxo_history(run(fetch_utxo_history(rig.bitcoin_adapter(), me)))
+
+    assert "INCOMPLETE: this is not the whole history." in text
+    assert "MISMATCH with the provider's own figures" in text and "Complete through" not in text

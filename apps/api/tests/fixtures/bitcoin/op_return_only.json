@@ -1,0 +1,68 @@
+{
+ "_note": "Two P2WSH inputs, one OP_RETURN output with no value (data only). No output carries value.",
+ "tx": {
+  "txid": "ce2ea7b48cb50d4744b99585406b87ef608780e52e7e02355da4700c048b8100",
+  "version": 2,
+  "locktime": 11115,
+  "vin": [
+   {
+    "txid": "84b096b5f6596f468154799fd50b8bc0c3e9c94f9d252bc70e8f694bda28b1bf",
+    "vout": 0,
+    "prevout": {
+     "scriptpubkey": "002087cd9e6074fac1c4a295f5d96bc1943e641f9bf8f74d78f5adebc95036d1dd9f",
+     "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_32 87cd9e6074fac1c4a295f5d96bc1943e641f9bf8f74d78f5adebc95036d1dd9f",
+     "scriptpubkey_type": "v0_p2wsh",
+     "scriptpubkey_address": "bc1qslxeucr5ltqufg547hvkhsv58ejplxlc7axh3adda0y4qdk3mk0sf46tw9",
+     "value": 330
+    },
+    "scriptsig": "",
+    "scriptsig_asm": "",
+    "witness": [
+     "",
+     "21029c77574c185bdb37a9614c9c6d7d494443b2ae01d5d5f73f2aac70dc30c2e1e5ac736460b268"
+    ],
+    "is_coinbase": false,
+    "sequence": 16,
+    "inner_witnessscript_asm": "OP_PUSHBYTES_33 029c77574c185bdb37a9614c9c6d7d494443b2ae01d5d5f73f2aac70dc30c2e1e5 OP_CHECKSIG OP_IFDUP OP_NOTIF OP_PUSHNUM_16 OP_CSV OP_ENDIF"
+   },
+   {
+    "txid": "84b096b5f6596f468154799fd50b8bc0c3e9c94f9d252bc70e8f694bda28b1bf",
+    "vout": 1,
+    "prevout": {
+     "scriptpubkey": "0020c6e1faacc6ebee34cae70e1cc2df4a12874c7e2a9038b5b753a7de1697531c3c",
+     "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_32 c6e1faacc6ebee34cae70e1cc2df4a12874c7e2a9038b5b753a7de1697531c3c",
+     "scriptpubkey_type": "v0_p2wsh",
+     "scriptpubkey_address": "bc1qcmsl4txxa0hrfjh8pcwv9h62z2r5cl32jquttd6n5l0pd96nrs7qemlvcf",
+     "value": 330
+    },
+    "scriptsig": "",
+    "scriptsig_asm": "",
+    "witness": [
+     "",
+     "2103f6915ef119f3f61a530b1ff1a0e5f917e03134df58d91ea5684d47d18af5bbc7ac736460b268"
+    ],
+    "is_coinbase": false,
+    "sequence": 16,
+    "inner_witnessscript_asm": "OP_PUSHBYTES_33 03f6915ef119f3f61a530b1ff1a0e5f917e03134df58d91ea5684d47d18af5bbc7 OP_CHECKSIG OP_IFDUP OP_NOTIF OP_PUSHNUM_16 OP_CSV OP_ENDIF"
+   }
+  ],
+  "vout": [
+   {
+    "scriptpubkey": "6a00",
+    "scriptpubkey_asm": "OP_RETURN OP_0",
+    "scriptpubkey_type": "op_return",
+    "value": 0
+   }
+  ],
+  "size": 191,
+  "weight": 500,
+  "fee": 660,
+  "status": {
+   "confirmed": true,
+   "block_height": 974655,
+   "block_hash": "00000000000000000001d61c41c5ea7ca8c2f409bb5b3b69953774b27d5aef1f",
+   "block_time": 1793871117
+  }
+ },
+ "outspends": null
+}

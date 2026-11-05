@@ -109,7 +109,7 @@ def test_the_item_limit_in_the_payload_cannot_exceed_the_deployments_ceiling():
         ({}, '"chain" and an "address"'),
         ({"chain": "ethereum"}, '"chain" and an "address"'),
         ({"chain": 1, "address": ME}, '"chain" and an "address"'),
-        ({"chain": "bitcoin", "address": ME}, "not a chain this platform reads"),
+        ({"chain": "solana", "address": ME}, "not a chain this platform reads"),
         ({"chain": "dogecoin", "address": ME}, "not a chain this platform reads"),
         ({"chain": "ethereum", "address": "0x123"}, "not a valid ethereum address"),
         ({"chain": "ethereum", "address": CHECKSUMMED_ME}, "checksum"),
@@ -193,3 +193,84 @@ def test_a_provider_outage_leaves_the_history_job_to_be_retried(committing_db):
 
     waiting = job_of(committing_db, job.id)
     assert (waiting.status, waiting.attempts) == ("QUEUED", 1)
+
+
+# --- Bitcoin ------------------------------------------------------------------------------------
+
+
+def _bitcoin(rig: Rig):
+    from tests.fake_esplora import p2pkh, pay, spend, tx, txid
+
+    me = p2pkh(1)
+    rig.esplora.add(
+        tx(
+            1,
+            [spend(txid(900), 0, p2pkh(2), 60_000)],
+            [pay(me, 50_000), pay(p2pkh(2), 9_000)],
+            height=101,
+        ),
+        tx(
+            2, [spend(txid(1), 0, me, 50_000)], [pay(p2pkh(3), 30_000), pay(me, 19_000)], height=102
+        ),
+        tx(3, [spend(txid(901), 0, p2pkh(4), 8_000)], [pay(me, 7_000)], height=103),
+    )
+    return me
+
+
+def test_the_job_reads_a_bitcoin_history_and_returns_a_json_ready_summary():
+    rig = Rig()
+    me = _bitcoin(rig)
+
+    result = run(fetch_address_history(context(rig, chain="bitcoin", address=me)))
+
+    json.dumps(result)
+    assert result["complete"] is True and result["transactions"] == 3
+    assert (result["received_raw"], result["sent_raw"]) == ("76000", "50000")
+    assert result["sources"] == result["providers"] == ["esplora"]
+    assert result["requests_used"] == len(rig.esplora.requests)
+    assert result["chain_id"] == "bip122:000000000019d6689c085ae165831e93"
+
+
+def test_a_bitcoin_payload_may_name_the_chain_by_id_and_limit_the_blocks():
+    rig = Rig()
+    me = _bitcoin(rig)
+    result = run(
+        fetch_address_history(
+            context(
+                rig, chain="bip122:000000000019d6689c085ae165831e93", address=me, from_block=102
+            )
+        )
+    )
+    assert result["transactions"] == 2 and result["first_block"] == 102
+
+
+def test_a_bitcoin_job_that_stops_at_its_limit_hands_back_where_to_resume():
+    rig = Rig()
+    me = _bitcoin(rig)
+    first = run(fetch_address_history(context(rig, chain="bitcoin", address=me, max_items=1)))
+    assert first["complete"] is True  # three transactions fit on one page: the limit is per page
+
+    from tests.fake_esplora import p2pkh, pay, spend, tx, txid
+
+    rig.esplora.add(
+        *[
+            tx(
+                n,
+                [spend(txid(5000 + n), 0, p2pkh(9000 + n), 10_000)],
+                [pay(me, 9_000)],
+                height=200 + n,
+            )
+            for n in range(10, 40)
+        ]
+    )
+    cut = run(fetch_address_history(context(rig, chain="bitcoin", address=me, max_items=1)))
+    assert cut["complete"] is False and cut["resume"]["transactions"].startswith("esplora|")
+    rest = run(
+        fetch_address_history(context(rig, chain="bitcoin", address=me, resume=cut["resume"]))
+    )
+    assert rest["complete"] is True and rest["transactions"] + cut["transactions"] == 33
+
+
+def test_a_bad_bitcoin_address_in_the_payload_is_rejected_for_good():
+    with pytest.raises(NonRetryable, match="not a valid bitcoin address"):
+        run(fetch_address_history(context(Rig(), chain="bitcoin", address="not-an-address")))

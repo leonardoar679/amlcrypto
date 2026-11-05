@@ -1,0 +1,70 @@
+{
+ "_note": "One input, two outputs: one pays an address that also funded the transaction (address reuse), the other uses a different script type.",
+ "tx": {
+  "txid": "ce7bebe820392a2dad92bfb55b7026f24477d781df2d5160ebf11350f144b9cb",
+  "version": 2,
+  "locktime": 0,
+  "vin": [
+   {
+    "txid": "f62de4026470fe57de0fd44aaafca68ebc191e9cfbf07ba9c6df49f415712b87",
+    "vout": 1,
+    "prevout": {
+     "scriptpubkey": "0014cec9c03e261395d97dcd51b39ae270b640393877",
+     "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_20 cec9c03e261395d97dcd51b39ae270b640393877",
+     "scriptpubkey_type": "v0_p2wpkh",
+     "scriptpubkey_address": "bc1qemyuq03xzw2ajlwd2xee4cnskeqrjwrhv58w66",
+     "value": 1099395
+    },
+    "scriptsig": "",
+    "scriptsig_asm": "",
+    "witness": [
+     "30450221008fc10331402c6d39d67d5f093169ef3bda551320150301cee0ae18b32a4b7e3f02202661430ba8c30de050fa8b663cb16c0fdda6a48c15cd22983e49059c9645b4b601",
+     "0253439e7a7d4985bc9b6cf72a21f0c34703ffe177b67e3ac606ce6299a4ef91ef"
+    ],
+    "is_coinbase": false,
+    "sequence": 4294967293
+   }
+  ],
+  "vout": [
+   {
+    "scriptpubkey": "76a91484f392af043b10d8c4650a452769fec08e6fb76f88ac",
+    "scriptpubkey_asm": "OP_DUP OP_HASH160 OP_PUSHBYTES_20 84f392af043b10d8c4650a452769fec08e6fb76f OP_EQUALVERIFY OP_CHECKSIG",
+    "scriptpubkey_type": "p2pkh",
+    "scriptpubkey_address": "1D7yz51gwu7LkCcUujJiRQbkXMhXkWvWqn",
+    "value": 99253
+   },
+   {
+    "scriptpubkey": "0014cec9c03e261395d97dcd51b39ae270b640393877",
+    "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_20 cec9c03e261395d97dcd51b39ae270b640393877",
+    "scriptpubkey_type": "v0_p2wpkh",
+    "scriptpubkey_address": "bc1qemyuq03xzw2ajlwd2xee4cnskeqrjwrhv58w66",
+    "value": 999224
+   }
+  ],
+  "size": 226,
+  "weight": 574,
+  "fee": 918,
+  "status": {
+   "confirmed": true,
+   "block_height": 974655,
+   "block_hash": "00000000000000000001d61c41c5ea7ca8c2f409bb5b3b69953774b27d5aef1f",
+   "block_time": 1793871117
+  }
+ },
+ "outspends": [
+  {
+   "spent": false
+  },
+  {
+   "spent": true,
+   "txid": "879cdf02eaa760748b31cdde19059827e41814b652ea036c695afdab30f6f7b7",
+   "vin": 0,
+   "status": {
+    "confirmed": true,
+    "block_height": 974656,
+    "block_hash": "000000000000000000009329dd36026c003c8b32a38a102acf6e1bdf5f3bf1ee",
+    "block_time": 1793874566
+   }
+  }
+ ]
+}

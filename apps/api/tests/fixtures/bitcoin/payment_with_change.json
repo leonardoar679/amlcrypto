@@ -1,0 +1,78 @@
+{
+ "_note": "A segwit wallet paying once and getting change: one input, two outputs of the same script type, no reused address, no round amount. Nothing separates payment from change.",
+ "tx": {
+  "txid": "ec74be4b2a09ffc0e788853589cfcd773cf85068b3f4eb97efd7652f7163ebad",
+  "version": 2,
+  "locktime": 0,
+  "vin": [
+   {
+    "txid": "1ce9022d234f54d49aea2e59d83b8379e168d3ee762358d750ea9c822602e136",
+    "vout": 0,
+    "prevout": {
+     "scriptpubkey": "00149e93ff5b094d6fd1c5c17e33d7298595534573cc",
+     "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_20 9e93ff5b094d6fd1c5c17e33d7298595534573cc",
+     "scriptpubkey_type": "v0_p2wpkh",
+     "scriptpubkey_address": "bc1qn6fl7kcff4har3wp0ceaw2v9j4f52u7vcu68cn",
+     "value": 41915062
+    },
+    "scriptsig": "",
+    "scriptsig_asm": "",
+    "witness": [
+     "3045022100a0af38d19f9fab7dc5b5cd2d79f1c5c58d0d7ac07c34dbaa0a64b8b366cd66df02206a887e08dc3bf48b30d094f54a97e40252fca0b89c0a7abe29cf270489e7637901",
+     "023d91edbaf3a78fbe855382fec6548fc9ecd7d951bede75883913126f3f86facf"
+    ],
+    "is_coinbase": false,
+    "sequence": 4294967293
+   }
+  ],
+  "vout": [
+   {
+    "scriptpubkey": "0014d9bbf654d4392fcde00197450a2c6b9086ce44b1",
+    "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_20 d9bbf654d4392fcde00197450a2c6b9086ce44b1",
+    "scriptpubkey_type": "v0_p2wpkh",
+    "scriptpubkey_address": "bc1qmxalv4x58yhumcqpjazs5trtjzrvu393kw4gac",
+    "value": 31149144
+   },
+   {
+    "scriptpubkey": "0014ea3485f45b8139dcf8d0b7928d293f03d4d20764",
+    "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_20 ea3485f45b8139dcf8d0b7928d293f03d4d20764",
+    "scriptpubkey_type": "v0_p2wpkh",
+    "scriptpubkey_address": "bc1qag6gtazmsyuae7xsk7fg62flq02dypmywmrkh2",
+    "value": 10765000
+   }
+  ],
+  "size": 223,
+  "weight": 562,
+  "fee": 918,
+  "status": {
+   "confirmed": true,
+   "block_height": 974655,
+   "block_hash": "00000000000000000001d61c41c5ea7ca8c2f409bb5b3b69953774b27d5aef1f",
+   "block_time": 1793871117
+  }
+ },
+ "outspends": [
+  {
+   "spent": true,
+   "txid": "f941a4c25aa2a4262a52071b2758327226a68a2b2dd05d7b3c8f75e3bcecc607",
+   "vin": 0,
+   "status": {
+    "confirmed": true,
+    "block_height": 974656,
+    "block_hash": "000000000000000000009329dd36026c003c8b32a38a102acf6e1bdf5f3bf1ee",
+    "block_time": 1793874566
+   }
+  },
+  {
+   "spent": true,
+   "txid": "6b767ba5465316bd263cb47e40c216efc4442d89a2afc4a750032ebd42adbd46",
+   "vin": 22,
+   "status": {
+    "confirmed": true,
+    "block_height": 974663,
+    "block_hash": "000000000000000000012919c7bc9412c291677459b5dd76f5c029408481da67",
+    "block_time": 1793879030
+   }
+  }
+ ]
+}

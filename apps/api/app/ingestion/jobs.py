@@ -6,7 +6,7 @@ from typing import Any
 
 from app.chains.registry import get_chain
 from app.chains.support import SUPPORTED, build_adapter, find_chain, keys_needed
-from app.ingestion.fetcher import fetch_history
+from app.ingestion.read import read_history
 from app.providers.budget import RequestBudget
 from app.worker.context import JobContext, NonRetryable
 
@@ -23,10 +23,11 @@ def _block(payload: dict[str, Any], name: str) -> int | None:
 
 
 async def fetch_address_history(context: JobContext) -> dict[str, Any]:
-    """Read an address's history on Ethereum, BNB Smart Chain or TRON.
+    """Read an address's history on Ethereum, BNB Smart Chain, TRON or Bitcoin.
 
-    Payload: {"chain": "ethereum" | "bsc" | "tron" | a CAIP-2 id, "address": ..., and optionally
-    "from_block", "to_block", "max_items", "resume" (the `resume` of an earlier result)}.
+    Payload: {"chain": "ethereum" | "bsc" | "tron" | "bitcoin" | a CAIP-2 id, "address": ...,
+    and optionally "from_block", "to_block", "max_items", "resume" (the `resume` of an earlier
+    result)}.
     The result is a summary, not the history itself: persisting transfers is milestone M8.
     """
     payload, settings = context.payload, context.settings
@@ -64,7 +65,7 @@ async def fetch_address_history(context: JobContext) -> dict[str, Any]:
             f"no data provider is configured for {chain.slug}: set {keys_needed(chain)}"
         )
 
-    history = await fetch_history(
+    history = await read_history(
         adapter,
         check.normalized,
         from_block=_block(payload, "from_block"),

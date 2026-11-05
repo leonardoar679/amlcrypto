@@ -153,7 +153,7 @@ def test_a_read_that_stops_early_exits_with_status_two_so_scripts_can_tell(provi
 
 
 def test_history_refuses_what_cannot_work_before_spending_any_request(providers, capsys):
-    assert cli.main(["history", "bitcoin", ME]) == 1
+    assert cli.main(["history", "solana", ME]) == 1
     assert "not a chain this platform reads" in capsys.readouterr().err
     assert cli.main(["history", "ethereum", "0x123"]) == 1
     assert "not a valid ethereum address" in capsys.readouterr().err
@@ -198,3 +198,117 @@ def test_tx_says_when_nothing_has_it_and_rejects_a_malformed_hash(providers, cap
     assert "Not found" in capsys.readouterr().err
     assert cli.main(["tx", "ethereum", "0x1234"]) == 1
     assert "not a transaction hash" in capsys.readouterr().err
+
+
+# --- Bitcoin ------------------------------------------------------------------------------------
+
+
+def _bitcoin_flow(rig: Rig):
+    from tests.fake_esplora import p2pkh, pay, spend, tx, txid
+
+    me = p2pkh(1)
+    rig.esplora.add(
+        tx(
+            1,
+            [spend(txid(900), 0, p2pkh(2), 60_000)],
+            [pay(me, 50_000), pay(p2pkh(2), 9_000)],
+            height=101,
+        ),
+        tx(
+            2, [spend(txid(1), 0, me, 50_000)], [pay(p2pkh(3), 30_000), pay(me, 19_000)], height=102
+        ),
+        tx(3, [spend(txid(901), 0, p2pkh(4), 8_000)], [pay(me, 7_000)], height=103),
+    )
+    return me
+
+
+def test_history_for_bitcoin_shows_each_transaction_with_the_addresss_part_in_it(providers, capsys):
+    me = _bitcoin_flow(providers)
+
+    assert cli.main(["history", "bitcoin", me]) == 0
+
+    out = capsys.readouterr().out
+    assert "3 transactions in blocks 101..103" in out
+    assert "received 0.00076 BTC and sent 0.0005 BTC" in out
+    assert "receiver" in out and "both" in out and "-0.00031" in out
+    assert "Balance now: 0.00026 BTC (confirmed), checked against the provider's own totals." in out
+    assert "Complete through block" in out
+
+
+def test_history_for_bitcoin_as_json_carries_every_transaction_with_inputs_outputs_and_activity(
+    providers, capsys
+):
+    me = _bitcoin_flow(providers)
+
+    assert cli.main(["history", "bitcoin", me, "--json"]) == 0
+
+    document = json.loads(capsys.readouterr().out)
+    assert document["complete"] is True and document["transactions"] == 3
+    assert [t["block_height"] for t in document["transactions_list"]] == [101, 102, 103]
+    second = document["transactions_list"][1]
+    assert second["activity"]["net_raw"] == "-31000" and second["activity"]["role"] == "both"
+    assert second["inputs"][0]["source_address"] == me and len(second["outputs"]) == 2
+    assert second["outputs"][0]["spend_state"] == "unknown"
+    assert document["transactions_list"][0]["outputs"][0]["spend_state"] == "spent"
+
+
+def test_a_bitcoin_read_that_stops_early_exits_with_status_two(providers, capsys):
+    from tests.fake_esplora import p2pkh, pay, spend, tx, txid
+
+    me = p2pkh(1)
+    providers.esplora.add(
+        *[
+            tx(
+                n,
+                [spend(txid(5000 + n), 0, p2pkh(9000 + n), 10_000)],
+                [pay(me, 9_000)],
+                height=100 + n,
+            )
+            for n in range(1, 61)
+        ]
+    )
+
+    assert cli.main(["history", "bitcoin", me, "--max-items", "5"]) == 2
+
+    out = capsys.readouterr().out
+    assert "INCOMPLETE" in out and "Resume with: {'transactions': 'esplora|" in out
+
+
+def test_tx_for_bitcoin_shows_inputs_outputs_which_are_spent_and_what_is_only_inferred(
+    providers, capsys
+):
+    me = _bitcoin_flow(providers)
+    from tests.fake_esplora import txid
+
+    assert cli.main(["tx", "bitcoin", txid(2)]) == 0
+
+    out = capsys.readouterr().out
+    assert f"bip122:000000000019d6689c085ae165831e93  {txid(2)}" in out
+    assert "Inputs (1), 0.0005 BTC:" in out and "Outputs (2), 0.00049 BTC:" in out
+    assert me in out and "spends 0000000000..000001:0" in out
+    assert "fee           0.00001 BTC" in out and "confirmed (block 102" in out
+    assert "Inferred, not proven by the chain" in out
+
+
+def test_tx_for_bitcoin_as_json(providers, capsys):
+    _bitcoin_flow(providers)
+    from tests.fake_esplora import txid
+
+    assert cli.main(["tx", "bitcoin", txid(1), "--json"]) == 0
+
+    document = json.loads(capsys.readouterr().out)
+    assert document["transaction"]["txid"] == txid(1) and document["coverage"] == []
+    assert [o["spend_state"] for o in document["transaction"]["outputs"]] == ["spent", "unspent"]
+
+
+def test_tx_for_bitcoin_that_does_not_exist_or_is_not_an_id(providers, capsys):
+    assert cli.main(["tx", "bitcoin", "ab" * 32]) == 1
+    assert "Not found" in capsys.readouterr().err
+    assert cli.main(["tx", "bitcoin", "1234"]) == 1
+    assert "not a transaction id" in capsys.readouterr().err
+
+
+def test_a_bad_bitcoin_address_is_refused_before_any_request(providers, capsys):
+    assert cli.main(["history", "bitcoin", "1NotAnAddressAtAll"]) == 1
+    assert "not a valid bitcoin address" in capsys.readouterr().err
+    assert providers.esplora.requests == []

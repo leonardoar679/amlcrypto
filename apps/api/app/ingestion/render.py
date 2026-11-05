@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from app.chains.bitcoin.models import BitcoinDetail, BitcoinTransaction, SpendState
+from app.chains.bitcoin.utxo import Likelihood, analyze
 from app.chains.models import TransactionDetail, Transfer
 from app.chains.support import find_chain
 from app.ingestion.fetcher import History
+from app.ingestion.utxo import UtxoHistory
 
 
 def format_amount(amount_raw: str, decimals: int | None) -> str:
@@ -148,4 +151,151 @@ def render_transaction(detail: TransactionDetail) -> str:
     else:
         lines.append("No value movements in the receipt.")
     lines += [f"  - {note}" for note in detail.coverage]
+    return "\n".join(lines)
+
+
+# --- Bitcoin -----------------------------------------------------------------------------------
+
+
+def _btc(amount_raw: str | None) -> str:
+    return "-" if amount_raw is None else f"{format_amount(amount_raw, 8)} BTC"
+
+
+def _signed_btc(net_raw: str) -> str:
+    net = int(net_raw)
+    return f"{'+' if net > 0 else '-' if net < 0 else ' '}{format_amount(str(abs(net)), 8)}"
+
+
+def _tags(tx: BitcoinTransaction) -> str:
+    analysis = analyze(tx)
+    tags = []
+    if tx.is_coinbase:
+        tags.append("coinbase")
+    if analysis.coinjoin is not None:
+        tags.append(f"coinjoin? ({analysis.coinjoin.strength})")
+    return ", ".join(tags)
+
+
+def render_utxo_history(history: UtxoHistory) -> str:
+    heights = [tx.block_height for tx in history.transactions if tx.block_height is not None]
+    span = f" in blocks {min(heights)}..{max(heights)}" if heights else ""
+    lines = [
+        f"{history.chain_id}  {history.address}",
+        f"{len(history.transactions)} transactions{span}; this address received "
+        f"{_btc(history.received_raw)} and sent {_btc(history.sent_raw)}; "
+        f"chain height {history.head_block or 'unknown'}",
+        "",
+    ]
+    if history.transactions:
+        lines.append(
+            f"{'block':>10}  {'time (UTC)':<16}  {'role':<8}  {'net (BTC)':>16}  {'in/out':>7}  "
+            f"{'transaction':<17}  notes"
+        )
+        for tx in history.transactions:
+            mine = history.activity.get(tx.txid)
+            when = "-" if tx.timestamp is None else tx.timestamp.strftime("%Y-%m-%d %H:%M")
+            block = "-" if tx.block_height is None else str(tx.block_height)
+            role, net = (mine.role, _signed_btc(mine.net_raw)) if mine else ("-", "-")
+            counts = f"{len(tx.inputs)}/{len(tx.outputs)}"
+            lines.append(
+                f"{block:>10}  {when:<16}  {role:<8}  {net:>16}  {counts:>7}  "
+                f"{short(tx.txid, 10, 6):<17}  {_tags(tx)}".rstrip()
+            )
+        lines.append("")
+
+    if history.complete:
+        through = history.synced_through_block
+        lines.append(f"Complete through block {through}." if through is not None else "Complete.")
+        if history.provider_summary is not None:
+            lines.append(
+                f"Balance now: {_btc(history.provider_summary.balance_raw)} "
+                f"(confirmed), checked against the provider's own totals."
+            )
+    else:
+        lines.append("INCOMPLETE: this is not the whole history.")
+    lines += [f"  - {note}" for note in history.coverage]
+    if history.resume:
+        lines.append(f"Resume with: {history.resume}")
+    return "\n".join(lines)
+
+
+def _spend_text(output) -> str:
+    if output.spend_state is SpendState.SPENT:
+        return f"spent by {short(output.spent_by_txid, 10, 6)}:{output.spent_by_input_index}"
+    return {
+        SpendState.UNSPENT: "unspent",
+        SpendState.UNSPENDABLE: "unspendable (data, not coins)",
+        SpendState.UNKNOWN: "spend state unknown",
+    }[output.spend_state]
+
+
+def render_bitcoin_transaction(detail: BitcoinDetail) -> str:
+    tx = detail.transaction
+    where = (
+        "unconfirmed (in the mempool)"
+        if tx.block_height is None
+        else f"{tx.confirmation_status.value} (block {tx.block_height}"
+        + (f", {tx.confirmations} confirmations" if tx.confirmations is not None else "")
+        + ")"
+    )
+    total_in = sum(int(i.value_raw) for i in tx.inputs if i.value_raw is not None)
+    total_out = sum(int(o.value_raw) for o in tx.outputs)
+    lines = [
+        f"{tx.chain_id}  {tx.txid}",
+        f"  status        {where}",
+        f"  time          {tx.timestamp:%Y-%m-%d %H:%M:%S} UTC"
+        if tx.timestamp
+        else "  time          -",
+        f"  size          {tx.vsize} vB ({tx.weight} weight units)",
+    ]
+    if tx.fee_raw is not None:
+        rate = int(tx.fee_raw) / tx.vsize if tx.vsize else 0
+        lines.append(f"  fee           {_btc(tx.fee_raw)} ({rate:.1f} sat/vB)")
+    lines.append(f"  source        {tx.provider} ({tx.data_quality.value})")
+
+    lines += ["", f"Inputs ({len(tx.inputs)}), {_btc(str(total_in))}:"]
+    for item in tx.inputs:
+        if item.is_coinbase:
+            lines.append(f"  {item.index:>3}  coinbase: newly created coins")
+            continue
+        who = item.source_address or f"(no address form: {printable(item.script_type or '?')})"
+        lines.append(
+            f"  {item.index:>3}  {who}  {_btc(item.value_raw)}  "
+            f"spends {short(item.previous_txid, 10, 6)}:{item.previous_output_index}"
+        )
+    lines += ["", f"Outputs ({len(tx.outputs)}), {_btc(str(total_out))}:"]
+    for output in tx.outputs:
+        who = output.destination_address or f"(no address form: {printable(output.script_type)})"
+        lines.append(f"  {output.index:>3}  {who}  {_btc(output.value_raw)}  {_spend_text(output)}")
+
+    analysis = analyze(tx)
+    inferred: list[str] = []
+    if analysis.coinjoin is not None:
+        c = analysis.coinjoin
+        inferred.append(
+            f"CoinJoin ({c.strength}): {c.equal_outputs} outputs of exactly "
+            f"{_btc(c.equal_value_raw)} and {c.input_parties} different input addresses"
+        )
+    if analysis.common_inputs is not None:
+        c = analysis.common_inputs
+        inferred.append(
+            f"{len(c.addresses)} input addresses signed together"
+            + (
+                ": usually one owner (common-input-ownership)"
+                if c.reliable
+                else ": NOT a sign of one owner here, this looks like a CoinJoin"
+            )
+        )
+    for item in analysis.change.outputs:
+        if item.likelihood is not Likelihood.UNKNOWN:
+            label = "change" if item.likelihood is Likelihood.CHANGE else "a payment"
+            inferred.append(f"output {item.index} is probably {label}: {'; '.join(item.reasons)}")
+    inferred += list(analysis.change.notes)
+    if inferred:
+        confidence = analysis.change.confidence.value
+        lines += ["", f"Inferred, not proven by the chain (change confidence: {confidence}):"]
+        lines += [f"  - {text}" for text in inferred]
+    if detail.coverage:
+        lines.append("")
+        lines += [f"  - {note}" for note in detail.coverage]
     return "\n".join(lines)

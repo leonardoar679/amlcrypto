@@ -1,0 +1,47 @@
+{
+ "_note": "A recent block's coinbase: no previous output, a P2WSH reward and an OP_RETURN commitment.",
+ "tx": {
+  "txid": "807e83514619793c5bcc00b23cbd9c96bbe495f6bbeabf7fbfb64cd1f504e495",
+  "version": 2,
+  "locktime": 974654,
+  "vin": [
+   {
+    "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+    "vout": 4294967295,
+    "prevout": null,
+    "scriptsig": "033fdf0e0427680d4d2f466f756e6472792055534120506f6f6c202364726f70676f6c642f399d156400000300e8150000",
+    "scriptsig_asm": "OP_PUSHBYTES_3 3fdf0e OP_PUSHBYTES_4 27680d4d OP_PUSHBYTES_47 <push past end>",
+    "witness": [
+     "0000000000000000000000000000000000000000000000000000000000000000"
+    ],
+    "is_coinbase": true,
+    "sequence": 4294967294
+   }
+  ],
+  "vout": [
+   {
+    "scriptpubkey": "00205efc4cbddb79e97bb0e79742eb77fb75971eef38a08b8f763c9b1f45a51a2283",
+    "scriptpubkey_asm": "OP_0 OP_PUSHBYTES_32 5efc4cbddb79e97bb0e79742eb77fb75971eef38a08b8f763c9b1f45a51a2283",
+    "scriptpubkey_type": "v0_p2wsh",
+    "scriptpubkey_address": "bc1qtm7ye0wm085hhv88japwkalmwkt3amec5z9c7a3unv05tfg6y2pstr3xfz",
+    "value": 313649146
+   },
+   {
+    "scriptpubkey": "6a24aa21a9eddcf1bcc9c889c58adc1f14068831ad73a0389914780cc08a4ce6b34578794876",
+    "scriptpubkey_asm": "OP_RETURN OP_PUSHBYTES_36 aa21a9eddcf1bcc9c889c58adc1f14068831ad73a0389914780cc08a4ce6b34578794876",
+    "scriptpubkey_type": "op_return",
+    "value": 0
+   }
+  ],
+  "size": 226,
+  "weight": 796,
+  "fee": 0,
+  "status": {
+   "confirmed": true,
+   "block_height": 974655,
+   "block_hash": "00000000000000000001d61c41c5ea7ca8c2f409bb5b3b69953774b27d5aef1f",
+   "block_time": 1793871117
+  }
+ },
+ "outspends": null
+}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.chains.bitcoin.chains import BITCOIN_CHAIN
 from app.chains.evm.adapter import EvmAdapter
 from app.chains.support import SUPPORTED, build_adapter, find_chain, keys_needed
 from app.chains.tron.adapter import TronAdapter
@@ -23,13 +24,16 @@ from tests.rigs import Rig
         ("tron", TRON_CHAIN.chain_id),
         ("TRON", TRON_CHAIN.chain_id),
         (TRON_CHAIN.chain_id, TRON_CHAIN.chain_id),
+        ("bitcoin", BITCOIN_CHAIN.chain_id),
+        ("Bitcoin", BITCOIN_CHAIN.chain_id),
+        (BITCOIN_CHAIN.chain_id, BITCOIN_CHAIN.chain_id),
     ],
 )
 def test_chains_are_found_by_slug_or_caip2_id(name, chain_id):
     assert find_chain(name).chain_id == chain_id
 
 
-@pytest.mark.parametrize("name", ["bitcoin", "solana", "eip155:137", "dogecoin", "", "EIP155:1"])
+@pytest.mark.parametrize("name", ["solana", "eip155:137", "dogecoin", "", "EIP155:1"])
 def test_chains_the_platform_cannot_read_are_not_found(name):
     assert find_chain(name) is None
 

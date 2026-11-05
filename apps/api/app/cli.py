@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from app.chains.adapter import AccountAdapter
+from app.chains.bitcoin.adapter import BitcoinAdapter
 from app.chains.registry import get_chain
 from app.chains.support import SUPPORTED, ReadableChain, build_adapter, find_chain, keys_needed
 from app.core.config import Settings, get_settings
@@ -18,8 +19,12 @@ from app.core.logging import configure_logging
 from app.database import migrations
 from app.database.connection import create_db_engine, create_session_factory
 from app.database.repositories import jobs as queue
-from app.ingestion.fetcher import fetch_history
-from app.ingestion.render import render_history, render_transaction
+from app.ingestion.read import (
+    history_json,
+    read_history,
+    render_any_history,
+    render_any_transaction,
+)
 from app.providers.base import ProviderError
 from app.providers.budget import RequestBudget
 from app.providers.registry import PROVIDERS
@@ -119,7 +124,9 @@ def _chain(name: str) -> ReadableChain:
     return chain
 
 
-def _adapter(chain: ReadableChain, settings: Settings, service: ProviderService) -> AccountAdapter:
+def _adapter(
+    chain: ReadableChain, settings: Settings, service: ProviderService
+) -> AccountAdapter | BitcoinAdapter:
     budget = RequestBudget(settings.history_request_budget)
     adapter = build_adapter(
         chain, service, etherscan_paid_plan=settings.etherscan_paid_plan, budget=budget
@@ -140,7 +147,7 @@ def _cmd_history(args: argparse.Namespace) -> int:
         raise UserError(f"not a valid {chain.slug} address: {check.message}")
 
     async def read(settings: Settings, service: ProviderService):
-        return await fetch_history(
+        return await read_history(
             _adapter(chain, settings, service),
             check.normalized,
             from_block=args.from_block,
@@ -149,17 +156,7 @@ def _cmd_history(args: argparse.Namespace) -> int:
         )
 
     history = _run_with_providers(read)
-    if args.json:
-        print(
-            json.dumps(
-                {
-                    **history.summary(latest=len(history.transfers)),
-                    "transfers_list": [transfer.to_dict() for transfer in history.transfers],
-                }
-            )
-        )
-    else:
-        print(render_history(history))
+    print(json.dumps(history_json(history)) if args.json else render_any_history(history))
     return 0 if history.complete else 2
 
 
@@ -177,7 +174,7 @@ def _cmd_tx(args: argparse.Namespace) -> int:
     if detail is None:
         print("Not found, or not mined yet, by any configured source.", file=sys.stderr)
         return 1
-    print(json.dumps(detail.to_dict()) if args.json else render_transaction(detail))
+    print(json.dumps(detail.to_dict()) if args.json else render_any_transaction(detail))
     return 0
 
 
@@ -231,18 +228,22 @@ def main(argv: list[str] | None = None) -> int:
     probe.set_defaults(run=_cmd_probe)
 
     history = commands.add_parser(
-        "history", help="read an address's normalized transfers (uses your provider keys)"
+        "history", help="read an address's normalized history (uses your provider keys)"
     )
-    history.add_argument("chain", help="ethereum, bsc or tron")
+    history.add_argument("chain", help="ethereum, bsc, tron or bitcoin")
     history.add_argument("address")
     history.add_argument("--from-block", type=int, help="start at this block (default: the first)")
     history.add_argument("--to-block", type=int, help="stop at this block (default: the latest)")
-    history.add_argument("--max-items", type=int, help="stop after about this many transfers")
+    history.add_argument(
+        "--max-items",
+        type=int,
+        help="stop after about this many transfers (transactions, on Bitcoin)",
+    )
     history.add_argument("--json", action="store_true", help="print JSON instead of a table")
     history.set_defaults(run=_cmd_history)
 
-    tx = commands.add_parser("tx", help="decode one transaction from its receipt")
-    tx.add_argument("chain", help="ethereum, bsc or tron")
+    tx = commands.add_parser("tx", help="decode one transaction")
+    tx.add_argument("chain", help="ethereum, bsc, tron or bitcoin")
     tx.add_argument("hash")
     tx.add_argument("--json", action="store_true", help="print JSON instead of text")
     tx.set_defaults(run=_cmd_tx)

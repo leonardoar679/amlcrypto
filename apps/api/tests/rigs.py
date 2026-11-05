@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import httpx2
 
+from app.chains.bitcoin.adapter import build_bitcoin_adapter
+from app.chains.bitcoin.chains import BITCOIN_CHAIN
 from app.chains.evm.adapter import build_evm_adapter
 from app.chains.evm.chains import EVM_CHAINS
 from app.chains.tron.adapter import build_tron_adapter
@@ -11,6 +13,7 @@ from app.chains.tron.chains import TRON_CHAIN
 from app.core.config import Settings
 from app.providers.service import ProviderService
 from tests.fake_alchemy import FakeAlchemy
+from tests.fake_esplora import FakeEsplora
 from tests.fake_etherscan import KEY, FakeEtherscan
 from tests.fake_trongrid import KEY as TRONGRID_KEY
 from tests.fake_trongrid import FakeTronGrid
@@ -19,6 +22,7 @@ from tests.helpers import FakeClock, FullJitter
 ETHEREUM = EVM_CHAINS["eip155:1"]
 BSC = EVM_CHAINS["eip155:56"]
 TRON = TRON_CHAIN
+BITCOIN = BITCOIN_CHAIN
 ALCHEMY_KEY = "alchemy-test-key-abcdef123456"
 SECRET = "test-secret-key-that-is-comfortably-over-32-characters"
 
@@ -36,6 +40,7 @@ class Rig:
         self.etherscan = FakeEtherscan()
         self.alchemy = FakeAlchemy()
         self.trongrid = FakeTronGrid()
+        self.esplora = FakeEsplora()
         config = Settings(
             _env_file=None,
             environment="test",
@@ -63,6 +68,8 @@ class Rig:
             return await self.alchemy(request)
         if request.url.host == "api.trongrid.io":
             return await self.trongrid(request)
+        if request.url.host == "blockstream.info":
+            return await self.esplora(request)
         return httpx2.Response(404)
 
     def adapter(self, chain=ETHEREUM, *, budget=None):
@@ -75,3 +82,6 @@ class Rig:
 
     def tron_adapter(self, *, budget=None):
         return build_tron_adapter(TRON, self.providers, budget=budget)
+
+    def bitcoin_adapter(self, *, budget=None):
+        return build_bitcoin_adapter(BITCOIN, self.providers, budget=budget)
