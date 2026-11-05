@@ -7,19 +7,26 @@ from app.chains.bitcoin.adapter import BitcoinAdapter, build_bitcoin_adapter
 from app.chains.bitcoin.chains import BitcoinChain, get_bitcoin_chain
 from app.chains.evm.adapter import build_evm_adapter
 from app.chains.evm.chains import EvmChain, get_evm_chain
+from app.chains.solana.adapter import SolanaAdapter, build_solana_adapter
+from app.chains.solana.chains import SolanaChain, get_solana_chain
 from app.chains.tron.adapter import build_tron_adapter
 from app.chains.tron.chains import TronChain, get_tron_chain
 from app.providers.budget import RequestBudget
 from app.providers.registry import PROVIDERS
 from app.providers.service import ProviderService
 
-ReadableChain = EvmChain | TronChain | BitcoinChain
-SUPPORTED = ("ethereum", "bsc", "tron", "bitcoin")
+ReadableChain = EvmChain | TronChain | BitcoinChain | SolanaChain
+SUPPORTED = ("ethereum", "bsc", "tron", "bitcoin", "solana")
 
 
 def find_chain(name: str) -> ReadableChain | None:
     """A chain this platform can read, by slug or CAIP-2 id; None for anything else."""
-    return get_evm_chain(name) or get_tron_chain(name) or get_bitcoin_chain(name)
+    return (
+        get_evm_chain(name)
+        or get_tron_chain(name)
+        or get_bitcoin_chain(name)
+        or get_solana_chain(name)
+    )
 
 
 def keys_needed(chain: ReadableChain) -> str:
@@ -28,6 +35,8 @@ def keys_needed(chain: ReadableChain) -> str:
         return "TRONGRID_API_KEY"
     if isinstance(chain, BitcoinChain):
         return "ESPLORA_BASE_URL (the default Esplora needs no key)"
+    if isinstance(chain, SolanaChain):
+        return "HELIUS_API_KEY"
     if chain.chain_id in PROVIDERS["etherscan"].chains:
         return "ETHERSCAN_API_KEY or ALCHEMY_API_KEY"
     # Etherscan's free plan does not include this chain, so its key alone does not help.
@@ -40,11 +49,13 @@ def build_adapter(
     *,
     etherscan_paid_plan: bool = False,
     budget: RequestBudget | None = None,
-) -> AccountAdapter | BitcoinAdapter:
+) -> AccountAdapter | BitcoinAdapter | SolanaAdapter:
     if isinstance(chain, TronChain):
         return build_tron_adapter(chain, providers, budget=budget)
     if isinstance(chain, BitcoinChain):
         return build_bitcoin_adapter(chain, providers, budget=budget)
+    if isinstance(chain, SolanaChain):
+        return build_solana_adapter(chain, providers, budget=budget)
     return build_evm_adapter(
         chain, providers, etherscan_paid_plan=etherscan_paid_plan, budget=budget
     )

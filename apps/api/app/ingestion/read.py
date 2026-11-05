@@ -12,25 +12,39 @@ from app.chains.adapter import AccountAdapter
 from app.chains.bitcoin.adapter import BitcoinAdapter
 from app.chains.bitcoin.models import BitcoinDetail
 from app.chains.models import TransactionDetail
+from app.chains.solana.adapter import SolanaAdapter
+from app.chains.solana.models import SolanaDetail
 from app.ingestion.fetcher import History, fetch_history
 from app.ingestion.render import (
     render_bitcoin_transaction,
     render_history,
+    render_solana_history,
+    render_solana_transaction,
     render_transaction,
     render_utxo_history,
 )
+from app.ingestion.solana import SolanaHistory, fetch_solana_history
 from app.ingestion.utxo import UtxoHistory, fetch_utxo_history
 
 
 async def read_history(
-    adapter: AccountAdapter | BitcoinAdapter,
+    adapter: AccountAdapter | BitcoinAdapter | SolanaAdapter,
     address: str,
     *,
     from_block: int | None = None,
     to_block: int | None = None,
     max_items: int,
     resume: dict[str, str] | None = None,
-) -> History | UtxoHistory:
+) -> History | UtxoHistory | SolanaHistory:
+    if isinstance(adapter, SolanaAdapter):
+        return await fetch_solana_history(
+            adapter,
+            address,
+            from_block=from_block,
+            to_block=to_block,
+            max_items=max_items,
+            resume=resume,
+        )
     if isinstance(adapter, BitcoinAdapter):
         return await fetch_utxo_history(
             adapter,
@@ -50,8 +64,13 @@ async def read_history(
     )
 
 
-def history_json(history: History | UtxoHistory) -> dict[str, Any]:
+def history_json(history: History | UtxoHistory | SolanaHistory) -> dict[str, Any]:
     """Everything in a history, JSON-ready."""
+    if isinstance(history, SolanaHistory):
+        return {
+            **history.summary(latest=0),
+            "transactions_list": [history.detailed(tx) for tx in history.transactions],
+        }
     if isinstance(history, UtxoHistory):
         return {
             **history.summary(latest=0),
@@ -63,13 +82,17 @@ def history_json(history: History | UtxoHistory) -> dict[str, Any]:
     }
 
 
-def render_any_history(history: History | UtxoHistory) -> str:
+def render_any_history(history: History | UtxoHistory | SolanaHistory) -> str:
+    if isinstance(history, SolanaHistory):
+        return render_solana_history(history)
     if isinstance(history, UtxoHistory):
         return render_utxo_history(history)
     return render_history(history)
 
 
-def render_any_transaction(detail: TransactionDetail | BitcoinDetail) -> str:
+def render_any_transaction(detail: TransactionDetail | BitcoinDetail | SolanaDetail) -> str:
+    if isinstance(detail, SolanaDetail):
+        return render_solana_transaction(detail)
     if isinstance(detail, BitcoinDetail):
         return render_bitcoin_transaction(detail)
     return render_transaction(detail)

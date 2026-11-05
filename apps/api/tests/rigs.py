@@ -8,6 +8,8 @@ from app.chains.bitcoin.adapter import build_bitcoin_adapter
 from app.chains.bitcoin.chains import BITCOIN_CHAIN
 from app.chains.evm.adapter import build_evm_adapter
 from app.chains.evm.chains import EVM_CHAINS
+from app.chains.solana.adapter import build_solana_adapter
+from app.chains.solana.chains import SOLANA_CHAIN
 from app.chains.tron.adapter import build_tron_adapter
 from app.chains.tron.chains import TRON_CHAIN
 from app.core.config import Settings
@@ -15,6 +17,8 @@ from app.providers.service import ProviderService
 from tests.fake_alchemy import FakeAlchemy
 from tests.fake_esplora import FakeEsplora
 from tests.fake_etherscan import KEY, FakeEtherscan
+from tests.fake_helius import KEY as HELIUS_KEY
+from tests.fake_helius import FakeHelius
 from tests.fake_trongrid import KEY as TRONGRID_KEY
 from tests.fake_trongrid import FakeTronGrid
 from tests.helpers import FakeClock, FullJitter
@@ -23,6 +27,7 @@ ETHEREUM = EVM_CHAINS["eip155:1"]
 BSC = EVM_CHAINS["eip155:56"]
 TRON = TRON_CHAIN
 BITCOIN = BITCOIN_CHAIN
+SOLANA = SOLANA_CHAIN
 ALCHEMY_KEY = "alchemy-test-key-abcdef123456"
 SECRET = "test-secret-key-that-is-comfortably-over-32-characters"
 
@@ -34,6 +39,7 @@ class Rig:
         etherscan_key=KEY,
         alchemy_key=ALCHEMY_KEY,
         trongrid_key=TRONGRID_KEY,
+        helius_key=HELIUS_KEY,
         paid_plan=False,
         **settings,
     ):
@@ -41,6 +47,7 @@ class Rig:
         self.alchemy = FakeAlchemy()
         self.trongrid = FakeTronGrid()
         self.esplora = FakeEsplora()
+        self.helius = FakeHelius()
         config = Settings(
             _env_file=None,
             environment="test",
@@ -48,6 +55,7 @@ class Rig:
             etherscan_api_key=etherscan_key,
             alchemy_api_key=alchemy_key,
             trongrid_api_key=trongrid_key,
+            helius_api_key=helius_key,
             etherscan_paid_plan=paid_plan,
             **settings,
         )
@@ -70,6 +78,8 @@ class Rig:
             return await self.trongrid(request)
         if request.url.host == "blockstream.info":
             return await self.esplora(request)
+        if request.url.host == "mainnet.helius-rpc.com":
+            return await self.helius(request)
         return httpx2.Response(404)
 
     def adapter(self, chain=ETHEREUM, *, budget=None):
@@ -85,3 +95,6 @@ class Rig:
 
     def bitcoin_adapter(self, *, budget=None):
         return build_bitcoin_adapter(BITCOIN, self.providers, budget=budget)
+
+    def solana_adapter(self, *, budget=None):
+        return build_solana_adapter(SOLANA, self.providers, budget=budget)

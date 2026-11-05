@@ -13,6 +13,7 @@ from typing import TypeVar
 from app.chains.adapter import AccountAdapter
 from app.chains.bitcoin.adapter import BitcoinAdapter
 from app.chains.registry import get_chain
+from app.chains.solana.adapter import SolanaAdapter
 from app.chains.support import SUPPORTED, ReadableChain, build_adapter, find_chain, keys_needed
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
@@ -126,7 +127,7 @@ def _chain(name: str) -> ReadableChain:
 
 def _adapter(
     chain: ReadableChain, settings: Settings, service: ProviderService
-) -> AccountAdapter | BitcoinAdapter:
+) -> AccountAdapter | BitcoinAdapter | SolanaAdapter:
     budget = RequestBudget(settings.history_request_budget)
     adapter = build_adapter(
         chain, service, etherscan_paid_plan=settings.etherscan_paid_plan, budget=budget
@@ -230,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     history = commands.add_parser(
         "history", help="read an address's normalized history (uses your provider keys)"
     )
-    history.add_argument("chain", help="ethereum, bsc, tron or bitcoin")
+    history.add_argument("chain", help="ethereum, bsc, tron, bitcoin or solana")
     history.add_argument("address")
     history.add_argument("--from-block", type=int, help="start at this block (default: the first)")
     history.add_argument("--to-block", type=int, help="stop at this block (default: the latest)")
@@ -243,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     history.set_defaults(run=_cmd_history)
 
     tx = commands.add_parser("tx", help="decode one transaction")
-    tx.add_argument("chain", help="ethereum, bsc, tron or bitcoin")
+    tx.add_argument("chain", help="ethereum, bsc, tron, bitcoin or solana")
     tx.add_argument("hash")
     tx.add_argument("--json", action="store_true", help="print JSON instead of text")
     tx.set_defaults(run=_cmd_tx)

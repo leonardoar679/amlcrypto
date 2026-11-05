@@ -24,6 +24,7 @@ class TransferType(StrEnum):
     ERC20 = "erc20"  # a fungible token event (BEP-20 on BNB Smart Chain)
     TRC20 = "trc20"  # a fungible token event on TRON
     TRC10 = "trc10"  # a TRON token that is not a contract, moved by a plain transfer
+    SPL = "spl"  # a Solana token (Token or Token-2022 program): transfer, mint or burn
 
 
 class DataQuality(StrEnum):
@@ -86,6 +87,14 @@ class Transfer:
     transaction_index: int | None = None
     log_index: int | None = None  # the position of the token event in the block, when known
     trace_id: str | None = None  # the position of an internal call in its transaction's trace
+    # Solana moves value between token accounts, which belong to wallets: `from_address` and
+    # `to_address` are the wallets (owners), these are the accounts the instruction named.
+    source_account: str | None = None
+    destination_account: str | None = None
+    program_id: str | None = None  # the program whose instruction moved it
+    operation: str | None = (
+        None  # "transfer", "mint", "burn", "create_account", "close_account" ...
+    )
 
     @property
     def identity(self) -> tuple[str, str, str]:
@@ -99,6 +108,10 @@ class Transfer:
             "event_key": self.event_key,
             "event_index": self.log_index,
             "trace_id": self.trace_id,
+            "source_account": self.source_account,
+            "destination_account": self.destination_account,
+            "program_id": self.program_id,
+            "operation": self.operation,
             "block_number": self.block_number,
             "transaction_index": self.transaction_index,
             "timestamp": iso(self.timestamp),

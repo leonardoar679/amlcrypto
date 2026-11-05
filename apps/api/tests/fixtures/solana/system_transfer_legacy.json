@@ -1,0 +1,79 @@
+{
+ "_note": "A legacy transaction: one top-level system transfer of 10,000 lamports into the wallet.",
+ "item": {
+  "transaction": {
+   "signatures": [
+    "5iL8UFEk4932jwjr922CDyMgLH9zjrqHURDrJEiGjcsbcEe8uph683RYHT3tvtiAKrPU69QLnQMEy4tX6kXLEgFp"
+   ],
+   "message": {
+    "accountKeys": [
+     {
+      "pubkey": "FTZ5faycV5nv5kNTKU1B5yAk5MQddauLKUY8eXyrvBcS",
+      "writable": true,
+      "signer": true,
+      "source": "transaction"
+     },
+     {
+      "pubkey": "4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2",
+      "writable": true,
+      "signer": false,
+      "source": "transaction"
+     },
+     {
+      "pubkey": "11111111111111111111111111111111",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+     }
+    ],
+    "recentBlockhash": "EpsCQdHGzgF2eZbHRLWZW7drrSa6rvyjh4FmrgEvXAPX",
+    "instructions": [
+     {
+      "program": "system",
+      "programId": "11111111111111111111111111111111",
+      "parsed": {
+       "info": {
+        "destination": "4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2",
+        "lamports": 9687,
+        "source": "FTZ5faycV5nv5kNTKU1B5yAk5MQddauLKUY8eXyrvBcS"
+       },
+       "type": "transfer"
+      },
+      "stackHeight": 1
+     }
+    ]
+   }
+  },
+  "meta": {
+   "err": null,
+   "status": {
+    "Ok": null
+   },
+   "fee": 5000,
+   "preBalances": [
+    10205932,
+    2830232156,
+    1
+   ],
+   "postBalances": [
+    10191245,
+    2830241843,
+    1
+   ],
+   "innerInstructions": [],
+   "logMessages": [
+    "Program 11111111111111111111111111111111 invoke [1]",
+    "Program 11111111111111111111111111111111 success"
+   ],
+   "preTokenBalances": [],
+   "postTokenBalances": [],
+   "rewards": [],
+   "computeUnitsConsumed": 150,
+   "costUnits": 1481
+  },
+  "version": "legacy",
+  "slot": 465661595,
+  "transactionIndex": 128,
+  "blockTime": 1793872357
+ }
+}

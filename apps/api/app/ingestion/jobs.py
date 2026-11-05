@@ -23,9 +23,10 @@ def _block(payload: dict[str, Any], name: str) -> int | None:
 
 
 async def fetch_address_history(context: JobContext) -> dict[str, Any]:
-    """Read an address's history on Ethereum, BNB Smart Chain, TRON or Bitcoin.
+    """Read an address's history on Ethereum, BNB Smart Chain, TRON, Bitcoin or Solana.
 
-    Payload: {"chain": "ethereum" | "bsc" | "tron" | "bitcoin" | a CAIP-2 id, "address": ...,
+    Payload: {"chain": "ethereum" | "bsc" | "tron" | "bitcoin" | "solana" | a CAIP-2
+    id, "address": ...,
     and optionally "from_block", "to_block", "max_items", "resume" (the `resume` of an earlier
     result)}.
     The result is a summary, not the history itself: persisting transfers is milestone M8.

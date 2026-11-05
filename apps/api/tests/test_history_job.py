@@ -109,7 +109,7 @@ def test_the_item_limit_in_the_payload_cannot_exceed_the_deployments_ceiling():
         ({}, '"chain" and an "address"'),
         ({"chain": "ethereum"}, '"chain" and an "address"'),
         ({"chain": 1, "address": ME}, '"chain" and an "address"'),
-        ({"chain": "solana", "address": ME}, "not a chain this platform reads"),
+        ({"chain": "dogecoin", "address": ME}, "not a chain this platform reads"),
         ({"chain": "dogecoin", "address": ME}, "not a chain this platform reads"),
         ({"chain": "ethereum", "address": "0x123"}, "not a valid ethereum address"),
         ({"chain": "ethereum", "address": CHECKSUMMED_ME}, "checksum"),
@@ -274,3 +274,79 @@ def test_a_bitcoin_job_that_stops_at_its_limit_hands_back_where_to_resume():
 def test_a_bad_bitcoin_address_in_the_payload_is_rejected_for_good():
     with pytest.raises(NonRetryable, match="not a valid bitcoin address"):
         run(fetch_address_history(context(Rig(), chain="bitcoin", address="not-an-address")))
+
+
+# --- Solana -------------------------------------------------------------------------------------
+
+
+def _solana(rig: Rig):
+    from tests.fake_helius import HEAD, address, transfer_item
+
+    wallet = address(1)
+    rig.helius.add(
+        transfer_item(1, address(2), wallet, 2_000_000, slot=HEAD - 300),
+        transfer_item(2, wallet, address(3), 500_000, slot=HEAD - 100),
+    )
+    return wallet
+
+
+def test_the_job_reads_a_solana_history_and_returns_a_json_ready_summary():
+    rig = Rig()
+    wallet = _solana(rig)
+
+    result = run(fetch_address_history(context(rig, chain="solana", address=wallet)))
+
+    json.dumps(result)
+    assert result["complete"] is True and result["transactions"] == 2
+    assert result["wallet_transfers"] == 2 and result["transfers_by_type"] == {"native": 2}
+    assert result["sources"] == result["providers"] == ["helius"]
+    assert result["requests_used"] == len(rig.helius.requests)
+    assert result["chain_id"] == "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"
+
+
+def test_a_solana_payload_may_name_the_chain_by_id_and_limit_the_slots():
+    from tests.fake_helius import HEAD
+
+    rig = Rig()
+    wallet = _solana(rig)
+    result = run(
+        fetch_address_history(
+            context(
+                rig,
+                chain="solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+                address=wallet,
+                from_block=HEAD - 200,
+            )
+        )
+    )
+    assert result["transactions"] == 1 and result["first_block"] == HEAD - 100
+
+
+def test_a_solana_job_that_stops_at_its_limit_hands_back_where_to_resume():
+    from tests.fake_helius import HEAD, address, transfer_item
+
+    rig = Rig()
+    wallet = address(1)
+    rig.helius.add(
+        *[
+            transfer_item(n, address(1000 + n), wallet, 5_000, slot=HEAD - 10_000 + n)
+            for n in range(1, 251)
+        ]
+    )
+
+    cut = run(fetch_address_history(context(rig, chain="solana", address=wallet, max_items=1)))
+    assert cut["complete"] is False and cut["resume"]["transactions"].startswith("helius|")
+    rest = run(
+        fetch_address_history(context(rig, chain="solana", address=wallet, resume=cut["resume"]))
+    )
+    assert rest["complete"] is True and rest["transactions"] + cut["transactions"] == 250
+
+
+def test_a_solana_job_without_a_key_or_with_a_bad_address_is_rejected_for_good():
+    from tests.fake_helius import address
+
+    unkeyed = Rig(helius_key=None)
+    with pytest.raises(NonRetryable, match="HELIUS_API_KEY"):
+        run(fetch_address_history(context(unkeyed, chain="solana", address=address(1))))
+    with pytest.raises(NonRetryable, match="not a valid solana address"):
+        run(fetch_address_history(context(Rig(), chain="solana", address="not-an-address")))

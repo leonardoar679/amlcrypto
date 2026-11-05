@@ -179,7 +179,8 @@ def test_a_tron_transaction_shows_trx_not_sun():
 def test_an_amount_on_a_chain_nobody_reads_is_shown_raw_and_says_so():
     from app.ingestion.render import _native
 
-    assert _native("123", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp") == "123 (raw, smallest unit)"
+    assert _native("123", "eip155:137") == "123 (raw, smallest unit)"
+    assert _native("1500000000", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp") == "1.5 SOL"
     assert _native("1500000", "tron:728126428") == "1.5 TRX"
     assert _native("150000000", "bip122:000000000019d6689c085ae165831e93") == "1.5 BTC"
 
@@ -302,3 +303,132 @@ def test_a_bitcoin_history_that_does_not_agree_with_the_node_is_not_called_compl
 
     assert "INCOMPLETE: this is not the whole history." in text
     assert "MISMATCH with the provider's own figures" in text and "Complete through" not in text
+
+
+# --- Solana -------------------------------------------------------------------------------------
+
+
+def _solana_text(name, **options):
+    from app.chains.solana.adapter import _detail
+    from app.chains.solana.chains import SOLANA_CHAIN
+    from app.chains.solana.normalize import solana_transaction
+    from app.ingestion.render import render_solana_transaction
+
+    raw = load_fixture(f"solana/{name}")["item"]
+    detail = _detail(solana_transaction(raw, SOLANA_CHAIN))
+    return render_solana_transaction(detail, **options)
+
+
+def test_a_payout_by_a_program_is_shown_with_the_changes_no_instruction_explains():
+    text = _solana_text("hidden_payout_v1")
+
+    assert (
+        "finalized, version 1" in text
+        and "paid by 4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2" in text
+    )
+    assert (
+        "Transfers (3):" in text
+        and "0.1    transfer" in text
+        and "580530.570094 AyJ3fi..pump" in text
+    )
+    assert "Largest SOL balance changes (fee included):" in text
+    assert "Changes no instruction explains (a program moved them directly):" in text
+    assert "+0.115013228 SOL" in text and "-0.115566456 SOL" in text
+    assert "8 balance changes are explained by no instruction" in text
+
+
+def test_a_failed_solana_transaction_says_it_moved_nothing_but_its_fee():
+    text = _solana_text("failed")
+    assert "status        failed" in text and "InstructionError" in text
+    assert "No transfers (a failed transaction moves nothing but its fee)." in text
+    assert "Changes no instruction explains" not in text
+
+
+def test_a_swap_lists_every_movement_at_its_exact_position_and_the_rent_it_creates():
+    text = _solana_text("swap_temp_wsol_v1")
+    assert "1.0    create_account" in text and "3.8    close_account" in text
+    assert "programs      system, FLASHX..txB9" in text and "2 signers" not in text
+
+
+def test_a_long_list_of_transfers_is_cut_and_says_how_to_see_the_rest():
+    text = _solana_text("swap_temp_wsol_v1", max_transfers=2)
+    assert "... and 7 more (use --json for all)" in text
+
+
+def test_well_known_programs_are_named_and_others_shortened():
+    from app.ingestion.render import _program
+
+    assert _program("11111111111111111111111111111111") == "system"
+    assert _program("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb") == "token-2022"
+    assert _program("FLASHX8DrLbgeR8FcfNV1F5krxYcYMUdBkrP1EPBtxB9") == "FLASHX..txB9"
+
+
+def test_signed_amounts_show_their_direction_in_the_assets_own_units():
+    from app.ingestion.render import _signed
+
+    assert _signed("1500000000", 9) == "+1.5" and _signed("-1", 9) == "-0.000000001"
+    assert _signed("0", 9) == " 0"
+
+
+def test_a_solana_history_shows_status_role_the_sol_net_and_token_changes():
+    from app.ingestion.render import render_solana_history
+    from app.ingestion.solana import fetch_solana_history
+    from tests.test_solana_history import FEE, MINT, W, flow
+
+    rig = Rig()
+    flow(rig)
+
+    text = render_solana_history(run(fetch_solana_history(rig.solana_adapter(), W, max_items=100)))
+
+    lines = text.splitlines()
+    assert lines[0].endswith(W) and "3 transactions in slots" in lines[1]
+    assert "3 transfers involve this wallet (native 2, spl 1)" in lines[1]
+    sender = next(line for line in lines if "sender" in line)
+    assert f"-{format_amount(str(500_000 + FEE), 9)}" in sender
+    receiver = next(line for line in lines if MINT[:6] in line)
+    assert f"{MINT[:6]}..{MINT[-4:]}: +0.0003" in receiver and "receiver" in receiver
+    assert "Complete through slot" in text
+    assert (
+        "Wallet holds 0.001495 SOL and 1 tokens, checked against the chain's own balances." in text
+    )
+
+
+def test_a_solana_history_that_does_not_agree_with_the_chain_is_not_called_complete():
+    from app.ingestion.render import render_solana_history
+    from app.ingestion.solana import fetch_solana_history
+    from tests.fake_helius import signature
+    from tests.test_solana_history import W, flow
+
+    rig = Rig()
+    flow(rig)
+    rig.helius.unlisted = {signature(3)}
+
+    text = render_solana_history(run(fetch_solana_history(rig.solana_adapter(), W, max_items=100)))
+
+    assert "INCOMPLETE: this is not the whole history." in text
+    assert "MISMATCH with the chain's own balance" in text and "Complete through" not in text
+
+
+def test_a_failed_transaction_in_a_history_is_marked_failed():
+    from app.ingestion.render import render_solana_history
+    from app.ingestion.solana import fetch_solana_history
+    from tests.fake_helius import HEAD, SYSTEM, instruction, item
+    from tests.test_solana_history import FEE, B, W, flow
+
+    rig = Rig()
+    flow(rig)
+    rig.helius.add(
+        item(
+            4,
+            [W, B, SYSTEM],
+            [instruction(SYSTEM, "transfer", {"source": W, "destination": B, "lamports": 1})],
+            slot=HEAD - 50,
+            err={"InstructionError": [0, "Custom"]},
+            lamports={W: (10**9, 10**9 - FEE)},
+        )
+    )
+
+    text = render_solana_history(run(fetch_solana_history(rig.solana_adapter(), W, max_items=100)))
+
+    assert "4 transactions" in text and "(1 failed)" in text
+    assert next(line for line in text.splitlines() if "FAILED" in line).count("signer") == 1

@@ -1,0 +1,151 @@
+{
+ "_note": "Closes a token account; its remaining lamports (the rent) go back to the wallet.",
+ "item": {
+  "transaction": {
+   "signatures": [
+    "4dLJjYJrSN2XCjHf99NdybCFgvHJDWkGyc7qnfJzENq3eJGSCN29KeadVHMjM8so6Uv1KHZ7SXhZFEj4z6PZJbTp",
+    "2WCGLC9eu8bwq5PWUsCd62RBTta8AC5EgWzfPTkdMUeRo6FyMdCRF1ARy5xztbDXMhfkCAuwhZJ3ffwFi9LcnGrs"
+   ],
+   "message": {
+    "accountKeys": [
+     {
+      "pubkey": "AxiomRYAid8ZDhS1bJUAzEaNSr69aTWB9ATfdDLfUbnc",
+      "writable": true,
+      "signer": true,
+      "source": "transaction"
+     },
+     {
+      "pubkey": "4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2",
+      "writable": true,
+      "signer": true,
+      "source": "transaction"
+     },
+     {
+      "pubkey": "H88GacAi8SZbVh84oP87eSYRnwh1KCcQyPWtTScTg1ua",
+      "writable": true,
+      "signer": false,
+      "source": "transaction"
+     },
+     {
+      "pubkey": "11111111111111111111111111111111",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+     },
+     {
+      "pubkey": "ComputeBudget111111111111111111111111111111",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+     },
+     {
+      "pubkey": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "writable": false,
+      "signer": false,
+      "source": "transaction"
+     }
+    ],
+    "recentBlockhash": "D575qu9uvuGuC1yhHr5WJSdn7iQaNGPMaQKbwqQknNdZ",
+    "instructions": [
+     {
+      "programId": "ComputeBudget111111111111111111111111111111",
+      "accounts": [],
+      "data": "GeQ8D5",
+      "stackHeight": 1
+     },
+     {
+      "programId": "ComputeBudget111111111111111111111111111111",
+      "accounts": [],
+      "data": "3QCwqmHZ4mdq",
+      "stackHeight": 1
+     },
+     {
+      "program": "spl-token",
+      "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+      "parsed": {
+       "info": {
+        "account": "H88GacAi8SZbVh84oP87eSYRnwh1KCcQyPWtTScTg1ua",
+        "destination": "4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2",
+        "owner": "4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2"
+       },
+       "type": "closeAccount"
+      },
+      "stackHeight": 1
+     },
+     {
+      "program": "system",
+      "programId": "11111111111111111111111111111111",
+      "parsed": {
+       "info": {
+        "destination": "AxiomRYAid8ZDhS1bJUAzEaNSr69aTWB9ATfdDLfUbnc",
+        "lamports": 15138,
+        "source": "4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2"
+       },
+       "type": "transfer"
+      },
+      "stackHeight": 1
+     }
+    ],
+    "addressTableLookups": []
+   }
+  },
+  "meta": {
+   "err": null,
+   "status": {
+    "Ok": null
+   },
+   "fee": 13684,
+   "preBalances": [
+    713484676713,
+    1650304936,
+    1513840,
+    1,
+    1,
+    70228638
+   ],
+   "postBalances": [
+    713484678167,
+    1651803638,
+    0,
+    1,
+    1,
+    70228638
+   ],
+   "innerInstructions": [],
+   "logMessages": [
+    "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+    "Program ComputeBudget111111111111111111111111111111 success",
+    "Program ComputeBudget111111111111111111111111111111 invoke [1]",
+    "Program ComputeBudget111111111111111111111111111111 success",
+    "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [1]",
+    "Program log: Instruction: CloseAccount",
+    "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb consumed 1466 of 3384 compute units",
+    "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb success",
+    "Program 11111111111111111111111111111111 invoke [1]",
+    "Program 11111111111111111111111111111111 success"
+   ],
+   "preTokenBalances": [
+    {
+     "accountIndex": 2,
+     "mint": "8PPjGkmf2TmDamUj4BEpT2GRAcdnBYRfwxCUgJCioPJ8",
+     "uiTokenAmount": {
+      "uiAmount": null,
+      "decimals": 6,
+      "amount": "0",
+      "uiAmountString": "0"
+     },
+     "owner": "4jErKA4q4sUbAUWpseN8s2anSbdsTAAjX2PnwFRzEwQ2",
+     "programId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+    }
+   ],
+   "postTokenBalances": [],
+   "rewards": [],
+   "computeUnitsConsumed": 1916,
+   "costUnits": 4606
+  },
+  "version": 0,
+  "slot": 465453704,
+  "transactionIndex": 187,
+  "blockTime": 1793827922
+ }
+}

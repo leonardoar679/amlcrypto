@@ -6,6 +6,8 @@ import pytest
 
 from app.chains.bitcoin.chains import BITCOIN_CHAIN
 from app.chains.evm.adapter import EvmAdapter
+from app.chains.solana.adapter import SolanaAdapter
+from app.chains.solana.chains import SOLANA_CHAIN
 from app.chains.support import SUPPORTED, build_adapter, find_chain, keys_needed
 from app.chains.tron.adapter import TronAdapter
 from app.chains.tron.chains import TRON_CHAIN
@@ -27,13 +29,16 @@ from tests.rigs import Rig
         ("bitcoin", BITCOIN_CHAIN.chain_id),
         ("Bitcoin", BITCOIN_CHAIN.chain_id),
         (BITCOIN_CHAIN.chain_id, BITCOIN_CHAIN.chain_id),
+        ("solana", SOLANA_CHAIN.chain_id),
+        ("SOLANA", SOLANA_CHAIN.chain_id),
+        (SOLANA_CHAIN.chain_id, SOLANA_CHAIN.chain_id),
     ],
 )
 def test_chains_are_found_by_slug_or_caip2_id(name, chain_id):
     assert find_chain(name).chain_id == chain_id
 
 
-@pytest.mark.parametrize("name", ["solana", "eip155:137", "dogecoin", "", "EIP155:1"])
+@pytest.mark.parametrize("name", ["eip155:137", "dogecoin", "polygon", "", "EIP155:1"])
 def test_chains_the_platform_cannot_read_are_not_found(name):
     assert find_chain(name) is None
 
@@ -45,6 +50,7 @@ def test_every_supported_slug_is_a_distinct_readable_chain():
 
 
 def test_the_message_names_the_settings_that_would_make_a_chain_readable():
+    assert keys_needed(find_chain("solana")) == "HELIUS_API_KEY"
     assert keys_needed(find_chain("tron")) == "TRONGRID_API_KEY"
     assert keys_needed(find_chain("ethereum")) == "ETHERSCAN_API_KEY or ALCHEMY_API_KEY"
 
@@ -58,6 +64,8 @@ def test_the_adapter_is_the_one_for_the_chains_family():
     rig = Rig()
     tron = build_adapter(find_chain("tron"), rig.providers)
     ethereum = build_adapter(find_chain("ethereum"), rig.providers)
+    solana = build_adapter(find_chain("solana"), rig.providers)
+    assert isinstance(solana, SolanaAdapter) and solana.source_names == ["helius"]
     assert isinstance(tron, TronAdapter) and tron.source_names == ["trongrid"]
     assert isinstance(ethereum, EvmAdapter) and ethereum.source_names == ["etherscan", "alchemy"]
 

@@ -15,6 +15,7 @@ from app.providers.service import ProviderService
 from tests.conftest import TEST_SECRET
 from tests.fake_etherscan import KEY as FAKE_ETHERSCAN_KEY
 from tests.fake_etherscan import ME, OTHER, tx_row
+from tests.fake_helius import KEY as HELIUS_KEY
 from tests.helpers import load_fixture
 from tests.rigs import ALCHEMY_KEY, Rig
 
@@ -114,6 +115,7 @@ def providers(cli_env, monkeypatch, committing_db):
     rig = Rig()
     cli_env.setenv("ETHERSCAN_API_KEY", FAKE_ETHERSCAN_KEY)
     cli_env.setenv("ALCHEMY_API_KEY", ALCHEMY_KEY)
+    cli_env.setenv("HELIUS_API_KEY", HELIUS_KEY)
     real = ProviderService.from_settings.__func__
 
     def from_settings(cls, settings, **options):
@@ -153,7 +155,7 @@ def test_a_read_that_stops_early_exits_with_status_two_so_scripts_can_tell(provi
 
 
 def test_history_refuses_what_cannot_work_before_spending_any_request(providers, capsys):
-    assert cli.main(["history", "solana", ME]) == 1
+    assert cli.main(["history", "dogecoin", ME]) == 1
     assert "not a chain this platform reads" in capsys.readouterr().err
     assert cli.main(["history", "ethereum", "0x123"]) == 1
     assert "not a valid ethereum address" in capsys.readouterr().err
@@ -312,3 +314,113 @@ def test_a_bad_bitcoin_address_is_refused_before_any_request(providers, capsys):
     assert cli.main(["history", "bitcoin", "1NotAnAddressAtAll"]) == 1
     assert "not a valid bitcoin address" in capsys.readouterr().err
     assert providers.esplora.requests == []
+
+
+# --- Solana -------------------------------------------------------------------------------------
+
+
+def _solana_flow(rig: Rig):
+    from tests.fake_helius import HEAD, address, transfer_item
+
+    wallet = address(1)
+    rig.helius.add(
+        transfer_item(1, address(2), wallet, 2_000_000, slot=HEAD - 300),
+        transfer_item(2, wallet, address(3), 500_000, slot=HEAD - 100),
+    )
+    return wallet
+
+
+def test_history_for_solana_shows_each_transaction_with_what_the_wallet_did_in_it(
+    providers, capsys
+):
+    wallet = _solana_flow(providers)
+
+    assert cli.main(["history", "solana", wallet]) == 0
+
+    out = capsys.readouterr().out
+    assert out.startswith(f"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp  {wallet}")
+    assert "2 transactions in slots" in out and "2 transfers involve this wallet" in out
+    assert "receiver" in out and "sender" in out and "+0.002" in out and "-0.000505" in out
+    assert "Wallet holds 0.001495 SOL and 0 tokens, checked against the chain" in out
+    assert "Complete through slot" in out
+
+
+def test_history_for_solana_as_json_carries_every_transaction_with_its_transfers(providers, capsys):
+    wallet = _solana_flow(providers)
+
+    assert cli.main(["history", "solana", wallet, "--json"]) == 0
+
+    document = json.loads(capsys.readouterr().out)
+    assert document["complete"] is True and document["transactions"] == 2
+    second = document["transactions_list"][1]
+    assert second["activity"]["role"] == "sender" and second["fee_payer"] == wallet
+    assert second["transfers"][0]["amount_raw"] == "500000" and second["version"] == "0"
+    assert document["figures"]["sol_raw"] == "1495000"
+
+
+def test_a_solana_read_that_stops_early_exits_with_status_two(providers, capsys):
+    from tests.fake_helius import HEAD, address, transfer_item
+
+    wallet = address(1)
+    providers.helius.add(
+        *[
+            transfer_item(n, address(1000 + n), wallet, 5_000, slot=HEAD - 10_000 + n)
+            for n in range(1, 251)
+        ]
+    )
+
+    assert cli.main(["history", "solana", wallet, "--max-items", "5"]) == 2
+
+    out = capsys.readouterr().out
+    assert "INCOMPLETE" in out and "Resume with: {'transactions': 'helius|" in out
+
+
+def test_tx_for_solana_shows_the_fee_the_transfers_and_the_largest_balance_changes(
+    providers, capsys
+):
+    from tests.fake_helius import signature
+
+    wallet = _solana_flow(providers)
+
+    assert cli.main(["tx", "solana", signature(2)]) == 0
+
+    out = capsys.readouterr().out
+    assert f"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp  {signature(2)}" in out
+    assert "finalized, version 0" in out and f"paid by {wallet}" in out
+    assert "fee           0.000005 SOL" in out
+    assert "Transfers (1):" in out and "0.0005 SOL" in out
+    assert "Largest SOL balance changes (fee included):" in out and "-0.000505 SOL" in out
+
+
+def test_tx_for_solana_as_json(providers, capsys):
+    from tests.fake_helius import signature
+
+    _solana_flow(providers)
+
+    assert cli.main(["tx", "solana", signature(1), "--json"]) == 0
+
+    document = json.loads(capsys.readouterr().out)
+    assert document["transaction"]["signature"] == signature(1) and document["coverage"] == []
+    assert document["transaction"]["transfers"][0]["operation"] == "transfer"
+
+
+def test_tx_for_solana_that_does_not_exist_or_is_not_a_signature(providers, capsys):
+    from tests.fake_helius import signature
+
+    assert cli.main(["tx", "solana", signature(99)]) == 1
+    assert "Not found" in capsys.readouterr().err
+    assert cli.main(["tx", "solana", "1234"]) == 1
+    assert "not a transaction signature" in capsys.readouterr().err
+
+
+def test_a_bad_solana_address_is_refused_before_any_request(providers, capsys):
+    assert cli.main(["history", "solana", "not-an-address"]) == 1
+    assert "not a valid solana address" in capsys.readouterr().err
+    assert providers.helius.requests == []
+
+
+def test_solana_without_a_helius_key_says_which_to_set(cli_env, capsys):
+    from tests.fake_helius import address
+
+    assert cli.main(["history", "solana", address(1)]) == 1
+    assert "HELIUS_API_KEY" in capsys.readouterr().err
