@@ -151,6 +151,20 @@ class AddressSummary:
     def balance_raw(self) -> str:
         return str(int(self.funded_raw) - int(self.spent_raw))
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AddressSummary:
+        """The figures as `to_dict` wrote them (a check that was stored with a history)."""
+        return cls(
+            address=data["address"],
+            tx_count=data["tx_count"],
+            funded_count=data["funded_count"],
+            funded_raw=data["funded_raw"],
+            spent_count=data["spent_count"],
+            spent_raw=data["spent_raw"],
+            mempool_tx_count=data["mempool_tx_count"],
+            provider=data["provider"],
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "address": self.address,

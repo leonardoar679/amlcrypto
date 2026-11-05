@@ -11,6 +11,7 @@ back to carry on. An empty string means "that stream has not started".
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -18,10 +19,13 @@ from app.chains.models import (
     AccountPage,
     DataQuality,
     Page,
+    StreamState,
+    StreamStatus,
     Transaction,
     Transfer,
     TransferType,
 )
+from app.ingestion.partial import attach_partial
 from app.providers.base import BudgetExceeded, ProviderError
 
 ACCOUNT = "account"  # normal transactions, and the coin they sent
@@ -84,6 +88,8 @@ class History:
     synced_through_block: int | None
     resume: dict[str, str] = field(default_factory=dict)
     unavailable: list[str] = field(default_factory=list)  # streams no source provides
+    # How far each stream that was read got, by stream name.
+    streams: dict[str, StreamState] = field(default_factory=dict)
 
     def summary(self, *, latest: int = 5) -> dict[str, Any]:
         """A compact, JSON-ready description (a job result must not hold the whole history)."""
@@ -138,7 +144,9 @@ async def fetch_history(
     transactions: dict[tuple[str, str], Transaction] = {}
     unfinished: dict[str, str] = {}
     unavailable: list[str] = []
+    states: dict[str, StreamState] = {}
     complete = True
+    reached = to_block if to_block is not None else settled  # what a stream read to its end covers
 
     def keep(items: list[Transfer]) -> None:
         for transfer in items:
@@ -149,12 +157,31 @@ async def fetch_history(
             ):
                 transfers[transfer.identity] = transfer
 
+    def result(*, whole: bool) -> History:
+        ordered, ordered_transactions = assemble_history(transfers.values(), transactions.values())
+        return History(
+            chain_id=source.chain_id,
+            address=address,
+            transfers=ordered,
+            transactions=ordered_transactions,
+            coverage=coverage,
+            complete=whole,
+            head_block=head,
+            synced_through_block=reached if whole else None,
+            resume=unfinished,
+            unavailable=unavailable,
+            streams=states,
+        )
+
     stopped = False
-    for stream in streams:
+    for position, stream in enumerate(streams):
         if stopped:
             unfinished[stream] = (resume or {}).get(stream, "")
+            states[stream] = StreamState(StreamStatus.PARTIAL, cursor=unfinished[stream])
             continue
         cursor = (resume or {}).get(stream) or None
+        cut = False  # this stream's window ran out before its history did
+        absent = False  # no source provides this stream
         try:
             while True:
                 if stream == ACCOUNT:
@@ -183,15 +210,26 @@ async def fetch_history(
                     keep(page.items)
                     if page.unavailable:
                         unavailable.append(stream)
+                        absent = True
 
                 _remember(coverage, page.coverage)
                 if page.truncated:
                     complete = False
+                    cut = True
                 if page.next_cursor is None:
+                    status = (
+                        StreamStatus.UNAVAILABLE
+                        if absent
+                        else StreamStatus.TRUNCATED
+                        if cut
+                        else StreamStatus.COMPLETE
+                    )
+                    states[stream] = StreamState(status, synced_through=reached)
                     break
                 cursor = page.next_cursor
                 if len(transfers) >= max_items:
                     unfinished[stream] = cursor
+                    states[stream] = StreamState(StreamStatus.PARTIAL, cursor=cursor)
                     complete, stopped = False, True
                     _remember(
                         coverage,
@@ -204,33 +242,47 @@ async def fetch_history(
         except BudgetExceeded:
             # The page that was refused has not been read: resume from the cursor that asked for it.
             unfinished[stream] = cursor or ""
+            states[stream] = StreamState(StreamStatus.PARTIAL, cursor=unfinished[stream])
             complete, stopped = False, True
             _remember(coverage, ("stopped: the request budget for this read was used up",))
+        except ProviderError as error:
+            # The pages already read are good data that cost real quota: hand them to a caller that
+            # keeps histories. The failed page is the one to read again, with the streams after it.
+            for later in streams[position:]:
+                unfinished[later] = (
+                    (cursor or "") if later == stream else (resume or {}).get(later, "")
+                )
+                states[later] = StreamState(StreamStatus.PARTIAL, cursor=unfinished[later])
+            _remember(coverage, (f"stopped: {error.reason}",))
+            attach_partial(error, result(whole=False))
+            raise
 
+    return result(whole=complete)
+
+
+def assemble_history(
+    transfers: Iterable[Transfer], transactions: Iterable[Transaction]
+) -> tuple[list[Transfer], list[Transaction]]:
+    """Each movement once, in chronological order, and the transactions in order too.
+
+    Whether the records were just read or have been stored and loaded, a history is put together
+    the same way, so the same records always give the same history.
+    """
+    moves = list(transfers)
+    sent = list(transactions)
     # An internal transfer does not say where its transaction sits in the block, but another record
     # of the same transaction usually does.
     positions: dict[tuple[str, str], int] = {}
-    for record in (*transactions.values(), *transfers.values()):
+    for record in (*sent, *moves):
         if record.transaction_index is not None:
             positions.setdefault(
                 (record.chain_id, record.transaction_hash), record.transaction_index
             )
     # Where blocks are known they order a history; where a feed carries only a time (TRON's token
     # and internal feeds), the time does.
-    by_time = any(transfer.block_number is None for transfer in transfers.values())
-    ordered = sorted(transfers.values(), key=lambda transfer: _order(transfer, positions, by_time))
-    return History(
-        chain_id=source.chain_id,
-        address=address,
-        transfers=ordered,
-        transactions=sorted(transactions.values(), key=_transaction_order),
-        coverage=coverage,
-        complete=complete,
-        head_block=head,
-        synced_through_block=(to_block if to_block is not None else settled) if complete else None,
-        resume=unfinished,
-        unavailable=unavailable,
-    )
+    by_time = any(transfer.block_number is None for transfer in moves)
+    ordered = sorted(moves, key=lambda transfer: _order(transfer, positions, by_time))
+    return ordered, sorted(sent, key=_transaction_order)
 
 
 def _remember(coverage: list[str], notes: tuple[str, ...]) -> None:

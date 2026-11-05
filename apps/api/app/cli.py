@@ -14,20 +14,33 @@ from app.chains.adapter import AccountAdapter
 from app.chains.bitcoin.adapter import BitcoinAdapter
 from app.chains.registry import get_chain
 from app.chains.solana.adapter import SolanaAdapter
+from app.chains.solana.normalize import signature_of
 from app.chains.support import SUPPORTED, ReadableChain, build_adapter, find_chain, keys_needed
+from app.chains.values import MalformedRow
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.database import migrations
-from app.database.connection import create_db_engine, create_session_factory
+from app.database.connection import (
+    Sessions,
+    create_db_engine,
+    create_session_factory,
+    create_sessions,
+)
 from app.database.repositories import jobs as queue
+from app.database.repositories.acquisition import save_raw
+from app.database.retry import commit_with_retry
+from app.ingestion.detail import save_detail, stored_solana_detail
+from app.ingestion.raw import RawCollector
 from app.ingestion.read import (
     history_json,
     read_history,
     render_any_history,
     render_any_transaction,
 )
+from app.ingestion.sync import SyncPolicy, sync_history
 from app.providers.base import ProviderError
 from app.providers.budget import RequestBudget
+from app.providers.rawsink import RawSink
 from app.providers.registry import PROVIDERS
 from app.providers.service import ProviderService
 from app.providers.usage import DbUsageSink
@@ -83,18 +96,18 @@ def _cmd_providers(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_with_providers(work: Callable[[Settings, ProviderService], Awaitable[T]]) -> T:
-    """Run `work` with the configured providers. Their requests are counted in api_usage like any
-    other, so the quota figures stay honest."""
+def _run_with_providers(work: Callable[[Settings, ProviderService, Sessions], Awaitable[T]]) -> T:
+    """Run `work` with the configured providers and the database. Their requests are counted in
+    api_usage like any other, so the quota figures stay honest."""
     settings = get_settings()
     configure_logging(settings.log_level)
     engine = create_db_engine(settings.resolved_database_url)
-    write_sessions = create_session_factory(engine, write=True)
-    service = ProviderService.from_settings(settings, usage=DbUsageSink(lambda: write_sessions))
+    sessions = create_sessions(engine)
+    service = ProviderService.from_settings(settings, usage=DbUsageSink(lambda: sessions.write))
 
     async def go() -> T:
         try:
-            return await work(settings, service)
+            return await work(settings, service, sessions)
         finally:
             await service.aclose()
 
@@ -109,7 +122,7 @@ def _cmd_probe(args: argparse.Namespace) -> int:
     if args.provider not in PROVIDERS:
         raise UserError(f"unknown provider; choose one of: {', '.join(PROVIDERS)}")
 
-    async def probe(_settings: Settings, service: ProviderService):
+    async def probe(_settings: Settings, service: ProviderService, _sessions: Sessions):
         return await service.probe(args.provider)
 
     result = _run_with_providers(probe)
@@ -126,11 +139,16 @@ def _chain(name: str) -> ReadableChain:
 
 
 def _adapter(
-    chain: ReadableChain, settings: Settings, service: ProviderService
+    chain: ReadableChain,
+    settings: Settings,
+    service: ProviderService,
+    *,
+    budget: RequestBudget | None = None,
+    raw: RawSink | None = None,
 ) -> AccountAdapter | BitcoinAdapter | SolanaAdapter:
-    budget = RequestBudget(settings.history_request_budget)
+    budget = budget or RequestBudget(settings.history_request_budget)
     adapter = build_adapter(
-        chain, service, etherscan_paid_plan=settings.etherscan_paid_plan, budget=budget
+        chain, service, etherscan_paid_plan=settings.etherscan_paid_plan, budget=budget, raw=raw
     )
     if not adapter.source_names:
         raise UserError(
@@ -147,17 +165,44 @@ def _cmd_history(args: argparse.Namespace) -> int:
     if not check.valid:
         raise UserError(f"not a valid {chain.slug} address: {check.message}")
 
-    async def read(settings: Settings, service: ProviderService):
-        return await read_history(
-            _adapter(chain, settings, service),
-            check.normalized,
-            from_block=args.from_block,
-            to_block=args.to_block,
-            max_items=min(args.max_items or settings.history_max_items, settings.history_max_items),
+    explicit_range = args.from_block is not None or args.to_block is not None
+    if explicit_range and (args.refresh or args.rebuild):
+        raise UserError(
+            "a block range is read as asked and is not stored: drop --refresh/--rebuild"
         )
+    if args.no_store and (args.refresh or args.rebuild):
+        raise UserError("--refresh and --rebuild are about stored data; drop --no-store")
+    stored = not (args.no_store or explicit_range)
 
-    history = _run_with_providers(read)
-    print(json.dumps(history_json(history)) if args.json else render_any_history(history))
+    async def read(settings: Settings, service: ProviderService, sessions: Sessions):
+        budget = RequestBudget(settings.history_request_budget)
+        raw = RawCollector.from_settings(settings) if stored else None
+        adapter = _adapter(chain, settings, service, budget=budget, raw=raw)
+        policy = SyncPolicy.from_settings(
+            settings, max_items=args.max_items, refresh=args.refresh, rebuild=args.rebuild
+        )
+        if not stored:
+            history = await read_history(
+                adapter,
+                check.normalized,
+                from_block=args.from_block,
+                to_block=args.to_block,
+                max_items=policy.max_items,
+            )
+            return history, None
+        result = await sync_history(
+            adapter, check.normalized, sessions=sessions, policy=policy, budget=budget, raw=raw
+        )
+        return result.history, result.report
+
+    history, report = _run_with_providers(read)
+    if args.json:
+        body = history_json(history)
+        print(json.dumps(body if report is None else {**body, "sync": report.to_dict()}))
+    else:
+        print(render_any_history(history))
+        if report is not None:
+            print(report.describe())
     return 0 if history.complete else 2
 
 
@@ -165,18 +210,40 @@ def _cmd_tx(args: argparse.Namespace) -> int:
     """One transaction, decoded from its receipt. Costs two or three provider requests."""
     chain = _chain(args.chain)
 
-    async def read(settings: Settings, service: ProviderService):
+    async def read(settings: Settings, service: ProviderService, sessions: Sessions):
+        raw = RawCollector.from_settings(settings)
+        adapter = _adapter(chain, settings, service, raw=raw)
         try:
-            return await _adapter(chain, settings, service).get_transaction(args.hash)
-        except ValueError as error:
+            if isinstance(adapter, SolanaAdapter):
+                # A finalized transaction never changes: if it is stored, it is the answer.
+                signature = signature_of(args.hash)
+                with sessions.read() as session:
+                    stored = stored_solana_detail(session, adapter.chain_id, signature)
+                if stored is not None:
+                    return stored, True
+            detail = await adapter.get_transaction(args.hash)
+        except (ValueError, MalformedRow) as error:
             raise UserError(str(error)) from error
+        if detail is not None:
+            with sessions.write() as session:
+                commit_with_retry(session, lambda: _keep(session, detail, raw))
+        return detail, False
 
-    detail = _run_with_providers(read)
+    detail, from_storage = _run_with_providers(read)
     if detail is None:
         print("Not found, or not mined yet, by any configured source.", file=sys.stderr)
         return 1
     print(json.dumps(detail.to_dict()) if args.json else render_any_transaction(detail))
+    if from_storage and not args.json:
+        print("stored data: served from storage, no provider request made")
     return 0
+
+
+def _keep(session, detail, raw: RawCollector | None) -> None:
+    """Store a transaction that was looked up, with the answer it was decoded from."""
+    save_detail(session, detail)
+    if raw is not None:
+        save_raw(session, raw.drain())
 
 
 def _cmd_enqueue(args: argparse.Namespace) -> int:
@@ -241,6 +308,21 @@ def main(argv: list[str] | None = None) -> int:
         help="stop after about this many transfers (transactions, on Bitcoin)",
     )
     history.add_argument("--json", action="store_true", help="print JSON instead of a table")
+    history.add_argument(
+        "--refresh",
+        action="store_true",
+        help="update the stored history now, even if it was read recently",
+    )
+    history.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="read the whole history again and drop stored records the chain no longer shows",
+    )
+    history.add_argument(
+        "--no-store",
+        action="store_true",
+        help="read from the providers only: neither use nor change what is stored",
+    )
     history.set_defaults(run=_cmd_history)
 
     tx = commands.add_parser("tx", help="decode one transaction")

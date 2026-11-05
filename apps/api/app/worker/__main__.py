@@ -84,12 +84,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         write_sessions = create_session_factory(engine, write=True)
+        read_sessions = create_session_factory(engine)
         providers = ProviderService.from_settings(
             settings, usage=DbUsageSink(lambda: write_sessions)
         )
         worker = Worker(
             settings=settings,
             write_session_factory=write_sessions,
+            read_session_factory=read_sessions,
             providers=providers,
             handlers=build_default_handlers(),
         )

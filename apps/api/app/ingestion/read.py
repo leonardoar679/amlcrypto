@@ -35,6 +35,7 @@ async def read_history(
     to_block: int | None = None,
     max_items: int,
     resume: dict[str, str] | None = None,
+    verify: bool = True,
 ) -> History | UtxoHistory | SolanaHistory:
     if isinstance(adapter, SolanaAdapter):
         return await fetch_solana_history(
@@ -44,6 +45,7 @@ async def read_history(
             to_block=to_block,
             max_items=max_items,
             resume=resume,
+            verify=verify,
         )
     if isinstance(adapter, BitcoinAdapter):
         return await fetch_utxo_history(
@@ -53,6 +55,7 @@ async def read_history(
             to_block=to_block,
             max_items=max_items,
             resume=resume,
+            verify=verify,
         )
     return await fetch_history(
         adapter,

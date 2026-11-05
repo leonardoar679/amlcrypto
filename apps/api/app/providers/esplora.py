@@ -31,6 +31,7 @@ from app.chains.values import MalformedRow, raw_amount, to_int
 from app.providers.base import BudgetExceeded, ProviderBadResponse, ProviderError
 from app.providers.budget import RequestBudget
 from app.providers.client import ProviderClient, ProviderResponse
+from app.providers.rawsink import BITCOIN_TRANSACTION, RawSink
 
 NAME = "esplora"
 PAGE_SIZE = 25  # fixed by Esplora
@@ -40,9 +41,16 @@ _TXID = re.compile(r"^[0-9a-f]{64}$")
 class EsploraSource:
     name = NAME
 
-    def __init__(self, client: ProviderClient, *, budget: RequestBudget | None = None) -> None:
+    def __init__(
+        self,
+        client: ProviderClient,
+        *,
+        budget: RequestBudget | None = None,
+        raw: RawSink | None = None,
+    ) -> None:
         self._client = client
         self._budget = budget
+        self._raw = raw
 
     async def _get(self, path: str, *, accept: tuple[int, ...] = ()) -> ProviderResponse:
         return await self._client.request(NAME, "GET", path, budget=self._budget, accept=accept)
@@ -104,9 +112,13 @@ class EsploraSource:
         skipped = 0
         for row in rows:
             try:
-                transactions.append(esplora_transaction(row, chain, NAME))
+                decoded = esplora_transaction(row, chain, NAME)
             except MalformedRow:
                 skipped += 1
+                continue
+            transactions.append(decoded)
+            if self._raw is not None:
+                self._raw.offer(chain.chain_id, BITCOIN_TRANSACTION, decoded.txid, NAME, row)
 
         next_cursor = None
         if len(rows) >= PAGE_SIZE:
@@ -145,6 +157,8 @@ class EsploraSource:
             return None, None
         if not isinstance(response.data, dict):
             raise ProviderBadResponse(NAME, "unexpected response shape")
+        if self._raw is not None:
+            self._raw.offer(chain.chain_id, BITCOIN_TRANSACTION, txid, NAME, response.data)
         try:
             outspends = (await self._get(f"/tx/{txid}/outspends")).data
         except ProviderError as error:

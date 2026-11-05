@@ -191,6 +191,20 @@ class WalletFigures:
     tokens: dict[str, TokenSnapshot]  # by token program id (Token and Token-2022 are read apart)
     provider: str
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> WalletFigures:
+        """The figures as `to_dict` wrote them (a check that was stored with a history)."""
+        return cls(
+            address=data["address"],
+            sol_raw=data["sol_raw"],
+            sol_slot=data["sol_slot"],
+            tokens={
+                program: TokenSnapshot(snapshot["slot"], dict(snapshot["balances"]))
+                for program, snapshot in data["tokens"].items()
+            },
+            provider=data["provider"],
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "address": self.address,

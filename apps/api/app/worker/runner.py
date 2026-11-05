@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.core.redaction import secrets
+from app.database.connection import Sessions
 from app.database.models import JobStatus
 from app.database.repositories import jobs as queue
 from app.providers.base import ProviderError
@@ -55,9 +56,12 @@ class Worker:
         providers: ProviderService,
         handlers: HandlerRegistry,
         worker_id: str | None = None,
+        read_session_factory: sessionmaker[Session] | None = None,
     ) -> None:
         self._settings = settings
         self._sessions = write_session_factory
+        # Handlers read stored data too; without a read factory they use the write one.
+        self._data = Sessions(read_session_factory or write_session_factory, write_session_factory)
         self._providers = providers
         self._handlers = handlers
         # Must fit fetch_jobs.locked_by (80 characters).
@@ -176,6 +180,7 @@ class Worker:
             organization_id=job.organization_id,
             providers=self._providers,
             settings=self._settings,
+            sessions=self._data,
         )
         timeout = self._settings.job_timeout_seconds
         started = time.monotonic()

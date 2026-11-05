@@ -93,8 +93,8 @@ class Rig:
     def tron_adapter(self, *, budget=None):
         return build_tron_adapter(TRON, self.providers, budget=budget)
 
-    def bitcoin_adapter(self, *, budget=None):
-        return build_bitcoin_adapter(BITCOIN, self.providers, budget=budget)
+    def bitcoin_adapter(self, *, budget=None, raw=None):
+        return build_bitcoin_adapter(BITCOIN, self.providers, budget=budget, raw=raw)
 
-    def solana_adapter(self, *, budget=None):
-        return build_solana_adapter(SOLANA, self.providers, budget=budget)
+    def solana_adapter(self, *, budget=None, raw=None):
+        return build_solana_adapter(SOLANA, self.providers, budget=budget, raw=raw)

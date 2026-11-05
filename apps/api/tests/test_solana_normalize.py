@@ -73,9 +73,10 @@ def test_the_chain_lookup_knows_solana_only():
     assert get_solana_chain("ethereum") is None and get_solana_chain("nonsense") is None
 
 
-def test_sol_is_counted_in_lamports_nine_decimals_down_and_finalized_data_needs_no_reorg_margin():
+def test_sol_is_counted_in_lamports_nine_decimals_down_and_an_update_allows_for_a_lagging_index():
     assert (CHAIN.native.symbol, CHAIN.native.decimals) == ("SOL", 9)
-    assert CHAIN.incremental_start(1000) == 1000 and CHAIN.incremental_start(0) == 0
+    assert CHAIN.incremental_start(1000) == 1000 - CHAIN.lag_margin
+    assert CHAIN.lag_margin > 0 and CHAIN.incremental_start(0) == 0
 
 
 def test_program_ids_are_the_well_known_ones():

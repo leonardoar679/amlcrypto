@@ -25,6 +25,7 @@ from app.providers.base import AllProvidersFailed, ProviderError
 from app.providers.budget import RequestBudget
 from app.providers.esplora import EsploraSource
 from app.providers.fallback import first_success
+from app.providers.rawsink import RawSink
 from app.providers.service import ProviderService
 
 
@@ -122,10 +123,14 @@ class BitcoinAdapter(SourceAdapter[UtxoSource]):
 
 
 def build_bitcoin_adapter(
-    chain: BitcoinChain, providers: ProviderService, *, budget: RequestBudget | None = None
+    chain: BitcoinChain,
+    providers: ProviderService,
+    *,
+    budget: RequestBudget | None = None,
+    raw: RawSink | None = None,
 ) -> BitcoinAdapter:
     """Esplora, which needs no key. (Alchemy's Bitcoin API is a paid add-on and is not used yet.)"""
     sources: list[UtxoSource] = []
     if providers.client.is_configured("esplora"):
-        sources.append(EsploraSource(providers.client, budget=budget))
+        sources.append(EsploraSource(providers.client, budget=budget, raw=raw))
     return BitcoinAdapter(chain, sources)

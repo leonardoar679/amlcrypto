@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     # most provider requests one read may spend, and the most transfers it collects.
     history_request_budget: int = Field(default=200, ge=1, le=100_000)
     history_max_items: int = Field(default=5000, ge=1, le=1_000_000)
+    # A stored history this young is served as it is, without asking a provider anything. Older
+    # than this, only what happened since is read. 0 means always check.
+    history_fresh_seconds: int = Field(default=300, ge=0, le=30 * 24 * 3600)
+    # Keep the raw answer for the transactions this platform decodes itself (Solana, Bitcoin), so a
+    # decoder fix can be applied to what was already read. An answer over this size is not kept.
+    store_raw_responses: bool = True
+    raw_max_bytes: int = Field(default=262_144, ge=1_024, le=8_388_608)
 
     # The background worker (python -m app.worker).
     worker_concurrency: int = Field(default=4, ge=1, le=64)

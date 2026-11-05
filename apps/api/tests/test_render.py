@@ -309,13 +309,13 @@ def test_a_bitcoin_history_that_does_not_agree_with_the_node_is_not_called_compl
 
 
 def _solana_text(name, **options):
-    from app.chains.solana.adapter import _detail
+    from app.chains.solana.adapter import detail_of
     from app.chains.solana.chains import SOLANA_CHAIN
     from app.chains.solana.normalize import solana_transaction
     from app.ingestion.render import render_solana_transaction
 
     raw = load_fixture(f"solana/{name}")["item"]
-    detail = _detail(solana_transaction(raw, SOLANA_CHAIN))
+    detail = detail_of(solana_transaction(raw, SOLANA_CHAIN))
     return render_solana_transaction(detail, **options)
 
 

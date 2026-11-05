@@ -424,3 +424,188 @@ def test_solana_without_a_helius_key_says_which_to_set(cli_env, capsys):
 
     assert cli.main(["history", "solana", address(1)]) == 1
     assert "HELIUS_API_KEY" in capsys.readouterr().err
+
+
+# --- stored histories --------------------------------------------------------------------------
+
+
+def requests_made(rig) -> int:
+    return len(rig.etherscan.requests) + len(rig.alchemy.requests)
+
+
+def test_history_stores_what_it_reads_and_the_second_call_asks_nothing(providers, capsys):
+    providers.etherscan.add("txlist", tx_row(5, OTHER, ME, value="1500000000000000000"))
+
+    assert cli.main(["history", "ethereum", ME]) == 0
+    first = capsys.readouterr().out
+    asked = requests_made(providers)
+    assert cli.main(["history", "ethereum", ME]) == 0
+    second = capsys.readouterr().out
+
+    assert requests_made(providers) == asked
+    assert "stored data: never read; read: full;" in first
+    assert "stored data: served from storage: read" in second
+    assert "no provider request made" in second and "1.5 ETH" in second
+
+
+def test_history_as_json_says_what_the_sync_did(providers, capsys):
+    providers.etherscan.add("txlist", tx_row(5, OTHER, ME, value="1"))
+
+    assert cli.main(["history", "ethereum", ME, "--json"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert cli.main(["history", "ethereum", ME, "--json"]) == 0
+    second = json.loads(capsys.readouterr().out)
+
+    assert first["sync"]["mode"] == "full" and first["sync"]["requests_used"] > 0
+    assert second["sync"]["mode"] == "cached" and second["sync"]["requests_used"] == 0
+    assert second["transfers_list"] == first["transfers_list"]
+
+
+def test_refresh_updates_now_and_rebuild_reads_everything_again(providers, capsys):
+    providers.etherscan.add("txlist", tx_row(5, OTHER, ME, value="1"))
+    cli.main(["history", "ethereum", ME])
+    capsys.readouterr()
+
+    assert cli.main(["history", "ethereum", ME, "--refresh"]) == 0
+    assert "stored data: refresh requested; read: incremental;" in capsys.readouterr().out
+    assert cli.main(["history", "ethereum", ME, "--rebuild"]) == 0
+    assert "stored data: rebuild requested; read: full;" in capsys.readouterr().out
+
+
+def test_no_store_reads_from_the_providers_and_neither_uses_nor_changes_storage(providers, capsys):
+    providers.etherscan.add("txlist", tx_row(5, OTHER, ME, value="1"))
+
+    assert cli.main(["history", "ethereum", ME, "--no-store"]) == 0
+    first = capsys.readouterr().out
+    asked = requests_made(providers)
+    assert cli.main(["history", "ethereum", ME, "--no-store"]) == 0
+    capsys.readouterr()
+
+    assert "stored data" not in first
+    assert requests_made(providers) > asked  # nothing was kept, so the second one read again
+    assert cli.main(["history", "ethereum", ME]) == 0
+    assert "never read" in capsys.readouterr().out
+
+
+def test_a_block_range_is_read_as_asked_and_not_stored(providers, capsys):
+    providers.etherscan.add("txlist", *[tx_row(b, OTHER, ME, value="1") for b in (5, 6, 7)])
+
+    assert cli.main(["history", "ethereum", ME, "--from-block", "6", "--to-block", "6"]) == 0
+    assert "stored data" not in capsys.readouterr().out
+    assert cli.main(["history", "ethereum", ME]) == 0
+    assert "never read" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [["--rebuild", "--no-store"], ["--refresh", "--no-store"], ["--refresh", "--from-block", "1"]],
+)
+def test_flags_that_contradict_each_other_are_refused_before_any_request(providers, capsys, flags):
+    assert cli.main(["history", "ethereum", ME, *flags]) == 1
+
+    assert "error:" in capsys.readouterr().err
+    assert requests_made(providers) == 0
+
+
+# --- stored transactions -----------------------------------------------------------------------
+
+
+def test_a_looked_up_solana_transaction_is_stored_and_the_second_lookup_asks_nothing(
+    providers, capsys
+):
+    from tests.fake_helius import signature
+
+    _solana_flow(providers)
+
+    assert cli.main(["tx", "solana", signature(2), "--json"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    asked = len(providers.helius.requests)
+    assert cli.main(["tx", "solana", signature(2), "--json"]) == 0
+    second = json.loads(capsys.readouterr().out)
+
+    assert len(providers.helius.requests) == asked
+    assert second == first  # exactly the answer a new lookup would give
+    assert cli.main(["tx", "solana", signature(2)]) == 0
+    assert "stored data: served from storage" in capsys.readouterr().out
+
+
+def test_a_solana_transaction_read_in_a_history_answers_a_later_lookup_from_storage(
+    providers, capsys
+):
+    from tests.fake_helius import signature
+
+    wallet = _solana_flow(providers)
+    assert cli.main(["history", "solana", wallet]) == 0
+    capsys.readouterr()
+    asked = len(providers.helius.requests)
+
+    assert cli.main(["tx", "solana", signature(1)]) == 0
+
+    assert len(providers.helius.requests) == asked
+    assert "stored data: served from storage" in capsys.readouterr().out
+
+
+def test_a_looked_up_ethereum_transaction_is_stored_decoded_and_always_asked_again(
+    providers, capsys, committing_db
+):
+    from sqlalchemy import func
+
+    from app.database.models import StoredTransaction, StoredTransfer
+
+    data = load_fixture("evm/ethereum_erc20_single")
+    tx_hash = data["tx"]["hash"]
+    providers.etherscan.transactions[tx_hash] = data["tx"]
+    providers.etherscan.receipts[tx_hash] = data["receipt"]
+
+    assert cli.main(["tx", "ethereum", tx_hash]) == 0
+    capsys.readouterr()
+    asked = requests_made(providers)
+
+    with committing_db.read() as session:
+        assert session.scalar(select(func.count()).select_from(StoredTransaction)) == 1
+        stored = list(session.scalars(select(StoredTransfer)))
+    assert stored and {t.data_quality for t in stored} == {"decoded"}
+    # A receipt's notes say what it leaves out, so it is not answered from storage.
+    assert cli.main(["tx", "ethereum", tx_hash]) == 0
+    assert requests_made(providers) > asked
+    assert "served from storage" not in capsys.readouterr().out
+
+
+def test_a_looked_up_bitcoin_transaction_is_stored_with_its_inputs_and_outputs(
+    providers, capsys, committing_db
+):
+    from sqlalchemy import func
+
+    from app.database.models import StoredInput, StoredOutput
+    from tests.fake_esplora import txid
+
+    _bitcoin_flow(providers)
+
+    assert cli.main(["tx", "bitcoin", txid(2)]) == 0
+    capsys.readouterr()
+
+    with committing_db.read() as session:
+        assert session.scalar(select(func.count()).select_from(StoredInput)) == 1
+        outputs = list(session.scalars(select(StoredOutput)))
+    assert len(outputs) == 2
+    assert {o.spend_state for o in outputs} <= {None, "spent", "unspendable"}  # never "unspent"
+
+
+def test_an_unconfirmed_bitcoin_transaction_is_shown_but_not_stored(
+    providers, capsys, committing_db
+):
+    from sqlalchemy import func
+
+    from app.database.models import StoredTransaction
+    from tests.fake_esplora import p2pkh, pay, spend, tx, txid
+
+    providers.esplora.add(
+        tx(5, [spend(txid(905), 0, p2pkh(2), 9_000)], [pay(p2pkh(3), 8_000)], height=None)
+    )
+
+    assert cli.main(["tx", "bitcoin", txid(5)]) == 0
+
+    capsys.readouterr()
+    with committing_db.read() as session:
+        # It may never be mined, and nothing would ever remove it.
+        assert session.scalar(select(func.count()).select_from(StoredTransaction)) == 0

@@ -12,6 +12,7 @@ up to the slot it was read at, so a wallet that transacts during the read is not
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -19,6 +20,7 @@ from app.chains.models import Transfer, iso
 from app.chains.solana.activity import WalletActivity, wallet_activity
 from app.chains.solana.adapter import SolanaAdapter
 from app.chains.solana.models import SolanaTransaction, WalletFigures
+from app.ingestion.partial import attach_partial
 from app.providers.base import BudgetExceeded, ProviderError
 
 STREAM = "transactions"
@@ -95,6 +97,7 @@ async def fetch_solana_history(
     to_block: int | None = None,
     max_items: int = 5000,
     resume: dict[str, str] | None = None,
+    verify: bool = True,
 ) -> SolanaHistory:
     coverage: list[str] = []
     try:
@@ -136,28 +139,38 @@ async def fetch_solana_history(
         unfinished[STREAM] = cursor or ""
         complete = False
         _remember(coverage, ("stopped: the request budget for this read was used up",))
+    except ProviderError as error:
+        # The pages already read are good data that cost real quota: hand them to a caller that
+        # keeps histories. The failed page is the one to read again.
+        unfinished[STREAM] = cursor or ""
+        _remember(coverage, (f"stopped: {error.reason}",))
+        transactions, activity = assemble_solana(found.values(), address)
+        _note_limits(coverage, transactions, address)
+        attach_partial(
+            error,
+            SolanaHistory(
+                chain_id=adapter.chain_id,
+                address=address,
+                transactions=transactions,
+                activity=activity,
+                coverage=coverage,
+                complete=False,
+                head_block=head,
+                synced_through_block=None,
+                resume=unfinished,
+            ),
+        )
+        raise
 
-    transactions = sorted(
-        found.values(), key=lambda tx: (tx.slot, tx.transaction_index or 0, tx.signature)
-    )
-    activity = {tx.signature: wallet_activity(tx, address) for tx in transactions}
+    transactions, activity = assemble_solana(found.values(), address)
     _note_limits(coverage, transactions, address)
 
     # Only a read of the entire history can be checked against what the chain holds now.
     whole = from_block is None and to_block is None and resume is None
     figures: WalletFigures | None = None
-    if whole and complete:
-        try:
-            figures = await adapter.get_wallet_figures(address)
-        except ProviderError as error:
-            coverage.append(
-                f"the chain's own balances for this wallet could not be read ({error.reason}), so "
-                "the history was not checked against them"
-            )
-        else:
-            mismatches = _check_against_chain(address, transactions, activity, figures)
-            coverage.extend(mismatches)
-            complete = not mismatches
+    if verify and whole and complete:
+        figures, agrees = await verify_solana(adapter, address, transactions, activity, coverage)
+        complete = agrees
 
     return SolanaHistory(
         chain_id=adapter.chain_id,
@@ -171,6 +184,40 @@ async def fetch_solana_history(
         resume=unfinished,
         figures=figures,
     )
+
+
+def assemble_solana(
+    found: Iterable[SolanaTransaction], address: str
+) -> tuple[list[SolanaTransaction], dict[str, WalletActivity]]:
+    """The transactions in order, and what the wallet did in each (just read, or loaded from
+    storage: a history is put together the same way either way)."""
+    transactions = sorted(found, key=lambda tx: (tx.slot, tx.transaction_index or 0, tx.signature))
+    return transactions, {tx.signature: wallet_activity(tx, address) for tx in transactions}
+
+
+async def verify_solana(
+    adapter: SolanaAdapter,
+    address: str,
+    transactions: list[SolanaTransaction],
+    activity: dict[str, WalletActivity],
+    coverage: list[str],
+) -> tuple[WalletFigures | None, bool]:
+    """Check a whole history against what the chain says the wallet holds now.
+
+    Returns the figures (None if they could not be read, which is said in `coverage`) and whether
+    the history agrees with them; a history that could not be checked is not called wrong.
+    """
+    try:
+        figures = await adapter.get_wallet_figures(address)
+    except ProviderError as error:
+        coverage.append(
+            f"the chain's own balances for this wallet could not be read ({error.reason}), so "
+            "the history was not checked against them"
+        )
+        return None, True
+    mismatches = _check_against_chain(address, transactions, activity, figures)
+    coverage.extend(mismatches)
+    return figures, not mismatches
 
 
 def _check_against_chain(
@@ -210,7 +257,16 @@ def _check_against_chain(
 
 
 def _note_limits(coverage: list[str], transactions: list[SolanaTransaction], wallet: str) -> None:
-    """What the instruction view of these transactions cannot show, once, in words."""
+    _remember(coverage, tuple(limit_notes(transactions, wallet)))
+
+
+def limit_notes(transactions: list[SolanaTransaction], wallet: str) -> list[str]:
+    """What the instruction view of these transactions cannot show, in words.
+
+    These depend on the transactions in hand, so a history put together from storage works them out
+    again instead of trusting notes written when it was shorter.
+    """
+    notes = []
     # Other accounts' unexplained changes (a pool's) are not this wallet's concern; its own are.
     unattributed = sum(
         1
@@ -218,29 +274,21 @@ def _note_limits(coverage: list[str], transactions: list[SolanaTransaction], wal
         if any(wallet in (item.account, item.owner) for item in tx.unattributed)
     )
     if unattributed:
-        _remember(
-            coverage,
-            (
-                f"{unattributed} transactions changed this wallet's balance with no instruction to "
-                "explain it (a program moved SOL or tokens directly); the wallet's net change in "
-                "each is exact, but the listed transfers do not show where that value came from",
-            ),
+        notes.append(
+            f"{unattributed} transactions changed this wallet's balance with no instruction to "
+            "explain it (a program moved SOL or tokens directly); the wallet's net change in "
+            "each is exact, but the listed transfers do not show where that value came from"
         )
     unreadable = sum(tx.unreadable for tx in transactions)
     if unreadable:
-        _remember(
-            coverage,
-            (f"{unreadable} instructions move value in a shape this reader does not know",),
-        )
+        notes.append(f"{unreadable} instructions move value in a shape this reader does not know")
     unresolved = sum(1 for tx in transactions if tx.unresolved_owners)
     if unresolved:
-        _remember(
-            coverage,
-            (
-                f"{unresolved} transactions have token accounts whose owner they do not show; "
-                "the account itself stands in for its owner",
-            ),
+        notes.append(
+            f"{unresolved} transactions have token accounts whose owner they do not show; "
+            "the account itself stands in for its owner"
         )
+    return notes
 
 
 def _remember(coverage: list[str], notes: tuple[str, ...]) -> None:

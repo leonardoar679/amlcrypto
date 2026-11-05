@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import Settings
+from app.database.connection import Sessions
 from app.providers.service import ProviderService
 
 
@@ -24,6 +25,8 @@ class JobContext:
     organization_id: int | None
     providers: ProviderService
     settings: Settings
+    # Where a handler stores what it reads; None where a job has no use for the database.
+    sessions: Sessions | None = None
 
 
 # A handler returns the dict to store as the job's result (or None). Raising ends the attempt:

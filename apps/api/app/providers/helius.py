@@ -38,6 +38,7 @@ from app.providers.base import ProviderBadResponse, ProviderError
 from app.providers.budget import RequestBudget
 from app.providers.client import ProviderClient
 from app.providers.jsonrpc import jsonrpc_body_error
+from app.providers.rawsink import SOLANA_TRANSACTION, RawSink
 
 NAME = "helius"
 PAGE_SIZE = 100  # full transactions are large; Helius allows more, but one page stays small
@@ -58,9 +59,16 @@ def helius_body_error(provider: str, data: Any) -> ProviderError | None:
 class HeliusSource:
     name = NAME
 
-    def __init__(self, client: ProviderClient, *, budget: RequestBudget | None = None) -> None:
+    def __init__(
+        self,
+        client: ProviderClient,
+        *,
+        budget: RequestBudget | None = None,
+        raw: RawSink | None = None,
+    ) -> None:
         self._client = client
         self._budget = budget
+        self._raw = raw
 
     async def _rpc(self, method: str, params: list[Any]) -> Any:
         response = await self._client.request(
@@ -128,9 +136,13 @@ class HeliusSource:
         skipped = 0
         for row in rows:
             try:
-                transactions.append(solana_transaction(row, chain, NAME))
+                decoded = solana_transaction(row, chain, NAME)
             except MalformedRow:
                 skipped += 1
+                continue
+            transactions.append(decoded)
+            if self._raw is not None:
+                self._raw.offer(chain.chain_id, SOLANA_TRANSACTION, decoded.signature, NAME, row)
         token = result.get("paginationToken")
         # No rows means no more, whatever the token says: it cannot loop forever.
         next_cursor = token if rows and isinstance(token, str) and token else None
@@ -160,6 +172,8 @@ class HeliusSource:
             return None
         if not isinstance(result, dict):
             raise ProviderBadResponse(NAME, "unexpected response shape")
+        if self._raw is not None:
+            self._raw.offer(chain.chain_id, SOLANA_TRANSACTION, signature, NAME, result)
         return result
 
     # --- what a wallet holds -----------------------------------------------------------------

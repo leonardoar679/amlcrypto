@@ -23,6 +23,7 @@ On MySQL both factories are the same: InnoDB handles concurrent writers itself.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import Engine, create_engine, event
@@ -67,6 +68,18 @@ def for_writing(engine: Engine) -> Engine:
 def create_session_factory(engine: Engine, *, write: bool = False) -> sessionmaker[Session]:
     """Sessions for reads (default) or for writes. See the module docstring for the difference."""
     return sessionmaker(bind=for_writing(engine) if write else engine, expire_on_commit=False)
+
+
+@dataclass(frozen=True, slots=True)
+class Sessions:
+    """Where stored data is read (cheap, no write lock) and written (one short transaction)."""
+
+    read: sessionmaker[Session]
+    write: sessionmaker[Session]
+
+
+def create_sessions(engine: Engine) -> Sessions:
+    return Sessions(create_session_factory(engine), create_session_factory(engine, write=True))
 
 
 def _ensure_sqlite_directory(database: str | None) -> None:

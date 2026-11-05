@@ -94,11 +94,12 @@ def internal_row(ms: int, sender: str = CAROL, to: str = ALICE, sun: int = 7, **
 
 
 def involved(row: dict) -> set[str]:
-    """The Base58 addresses a feed row involves."""
+    """The Base58 addresses a feed row involves. A row may list more (`_also`): TronGrid returns a
+    transaction for an address that took part only through an internal call."""
     if "raw_data" in row:
         value = row["raw_data"]["contract"][0]["parameter"]["value"]
         hexes = [value.get(k) for k in ("owner_address", "to_address", "contract_address")]
-        return {b58check_encode(bytes.fromhex(h)) for h in hexes if h}
+        return {b58check_encode(bytes.fromhex(h)) for h in hexes if h} | set(row.get("_also", ()))
     if "from" in row:
         return {row["from"], row["to"]}
     return {

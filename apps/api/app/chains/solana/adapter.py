@@ -21,6 +21,7 @@ from app.providers.base import AllProvidersFailed, ProviderError
 from app.providers.budget import RequestBudget
 from app.providers.fallback import first_success
 from app.providers.helius import HeliusSource
+from app.providers.rawsink import RawSink
 from app.providers.service import ProviderService
 
 
@@ -87,7 +88,7 @@ class SolanaAdapter(SourceAdapter[SolanaSource]):
                 continue
             if item is None:
                 continue  # unknown here, or not finalized yet; another source may know
-            return _detail(solana_transaction(item, self.chain, source.name))
+            return detail_of(solana_transaction(item, self.chain, source.name))
 
         if failures:
             # A source that could not answer might have known it, so "not found" would be a guess.
@@ -95,7 +96,8 @@ class SolanaAdapter(SourceAdapter[SolanaSource]):
         return None
 
 
-def _detail(transaction: SolanaTransaction) -> SolanaDetail:
+def detail_of(transaction: SolanaTransaction) -> SolanaDetail:
+    """The transaction with the notes its own contents call for."""
     coverage: list[str] = []
     if transaction.unreadable:
         coverage.append(
@@ -115,10 +117,14 @@ def _detail(transaction: SolanaTransaction) -> SolanaDetail:
 
 
 def build_solana_adapter(
-    chain: SolanaChain, providers: ProviderService, *, budget: RequestBudget | None = None
+    chain: SolanaChain,
+    providers: ProviderService,
+    *,
+    budget: RequestBudget | None = None,
+    raw: RawSink | None = None,
 ) -> SolanaAdapter:
     """Helius, if it has a key."""
     sources: list[SolanaSource] = []
     if providers.client.is_configured("helius"):
-        sources.append(HeliusSource(providers.client, budget=budget))
+        sources.append(HeliusSource(providers.client, budget=budget, raw=raw))
     return SolanaAdapter(chain, sources)

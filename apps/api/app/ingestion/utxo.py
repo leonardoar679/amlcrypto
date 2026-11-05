@@ -14,10 +14,12 @@ is not called complete.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.chains.bitcoin.adapter import BitcoinAdapter
+from app.chains.bitcoin.chains import BitcoinChain
 from app.chains.bitcoin.models import AddressSummary, BitcoinTransaction
 from app.chains.bitcoin.normalize import with_head
 from app.chains.bitcoin.utxo import (
@@ -27,6 +29,7 @@ from app.chains.bitcoin.utxo import (
     order_transactions,
 )
 from app.chains.models import iso
+from app.ingestion.partial import attach_partial
 from app.providers.base import BudgetExceeded, ProviderError
 
 STREAM = "transactions"
@@ -103,6 +106,7 @@ async def fetch_utxo_history(
     to_block: int | None = None,
     max_items: int = 5000,
     resume: dict[str, str] | None = None,
+    verify: bool = True,
 ) -> UtxoHistory:
     coverage: list[str] = []
     try:
@@ -111,10 +115,11 @@ async def fetch_utxo_history(
         head = settled = None
         coverage.append(f"the chain's current height is unknown ({error.reason})")
 
-    # Only a read of the entire history can be checked against the node's totals.
+    # Only a read of the entire history can be checked against the node's totals. A caller that
+    # puts histories together from several reads checks the result itself (`verify=False`).
     whole = from_block is None and to_block is None and resume is None
     expected: AddressSummary | None = None
-    if whole:
+    if whole and verify:
         try:
             expected = await adapter.get_address_summary(address)
         except ProviderError as error:
@@ -156,16 +161,36 @@ async def fetch_utxo_history(
         unfinished[STREAM] = cursor or ""
         complete = False
         _remember(coverage, ("stopped: the request budget for this read was used up",))
+    except ProviderError as error:
+        # The pages already read are good data that cost real quota: hand them to a caller that
+        # keeps histories. The failed page is the one to read again.
+        unfinished[STREAM] = cursor or ""
+        _remember(coverage, (f"stopped: {error.reason}",))
+        transactions, activity = assemble_utxo(
+            found.values(), head=head, chain=adapter.chain, address=address, whole=False
+        )
+        attach_partial(
+            error,
+            UtxoHistory(
+                chain_id=adapter.chain_id,
+                address=address,
+                transactions=transactions,
+                activity=activity,
+                coverage=coverage,
+                complete=False,
+                head_block=head,
+                synced_through_block=None,
+                resume=unfinished,
+            ),
+        )
+        raise
 
-    transactions = [with_head(tx, head, adapter.chain) for tx in found.values()]
     # With the whole confirmed history in hand, an output of the address nobody spent is unspent.
-    transactions = link_spends(transactions, complete_for=address if whole and complete else None)
-    transactions = order_transactions(transactions)
-    activity = {
-        tx.txid: mine for tx in transactions if (mine := address_activity(tx, address)) is not None
-    }
+    transactions, activity = assemble_utxo(
+        found.values(), head=head, chain=adapter.chain, address=address, whole=whole and complete
+    )
 
-    if whole and complete and expected is not None:
+    if verify and whole and complete and expected is not None:
         expected, agrees = await _check_against_node(
             adapter, address, transactions, activity, expected, coverage
         )
@@ -183,6 +208,49 @@ async def fetch_utxo_history(
         resume=unfinished,
         provider_summary=expected,
     )
+
+
+def assemble_utxo(
+    found: Iterable[BitcoinTransaction],
+    *,
+    head: int | None,
+    chain: BitcoinChain,
+    address: str,
+    whole: bool,
+) -> tuple[list[BitcoinTransaction], dict[str, AddressActivity]]:
+    """Confirmations, spends and order for transactions just read or loaded from storage, and what
+    the address did in each. `whole` says they are the address's complete confirmed history, in
+    which case an output of the address that none of them spends is proven unspent."""
+    transactions = [with_head(tx, head, chain) for tx in found]
+    transactions = link_spends(transactions, complete_for=address if whole else None)
+    transactions = order_transactions(transactions)
+    activity = {
+        tx.txid: mine for tx in transactions if (mine := address_activity(tx, address)) is not None
+    }
+    return transactions, activity
+
+
+async def verify_utxo(
+    adapter: BitcoinAdapter,
+    address: str,
+    transactions: list[BitcoinTransaction],
+    activity: dict[str, AddressActivity],
+    coverage: list[str],
+) -> tuple[AddressSummary | None, bool]:
+    """Check a whole history against the node's own figures for the address.
+
+    Returns the figures (None if they could not be read, which is said in `coverage`) and whether
+    the history agrees with them; a history that could not be checked is not called wrong.
+    """
+    try:
+        expected = await adapter.get_address_summary(address)
+    except ProviderError as error:
+        coverage.append(
+            f"the provider's own figures for this address could not be read ({error.reason}), "
+            "so the history was not checked against them"
+        )
+        return None, True
+    return await _check_against_node(adapter, address, transactions, activity, expected, coverage)
 
 
 async def _check_against_node(

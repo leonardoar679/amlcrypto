@@ -12,6 +12,7 @@ from app.chains.solana.chains import SolanaChain, get_solana_chain
 from app.chains.tron.adapter import build_tron_adapter
 from app.chains.tron.chains import TronChain, get_tron_chain
 from app.providers.budget import RequestBudget
+from app.providers.rawsink import RawSink
 from app.providers.registry import PROVIDERS
 from app.providers.service import ProviderService
 
@@ -49,13 +50,16 @@ def build_adapter(
     *,
     etherscan_paid_plan: bool = False,
     budget: RequestBudget | None = None,
+    raw: RawSink | None = None,
 ) -> AccountAdapter | BitcoinAdapter | SolanaAdapter:
+    """The adapter for a chain. `raw` is offered the answers that are decoded by this platform
+    (Bitcoin and Solana transactions); the account chains' indexer rows are never offered."""
     if isinstance(chain, TronChain):
         return build_tron_adapter(chain, providers, budget=budget)
     if isinstance(chain, BitcoinChain):
-        return build_bitcoin_adapter(chain, providers, budget=budget)
+        return build_bitcoin_adapter(chain, providers, budget=budget, raw=raw)
     if isinstance(chain, SolanaChain):
-        return build_solana_adapter(chain, providers, budget=budget)
+        return build_solana_adapter(chain, providers, budget=budget, raw=raw)
     return build_evm_adapter(
         chain, providers, etherscan_paid_plan=etherscan_paid_plan, budget=budget
     )
