@@ -171,7 +171,7 @@ def test_a_cursor_that_is_not_a_transaction_id_is_refused_before_any_request():
     fake = FakeEsplora()
     source, _ = make(fake)
     # The real service answers a malformed cursor with the FIRST page again, which would loop.
-    for bad in ("xyz", "../etc", "ab" * 31, "AB" * 32, " " + "ab" * 32):
+    for bad in ("xyz", "../etc", "ab" * 31, "AB" * 32, " " + "ab" * 32, "ab" * 32 + "\n"):
         with pytest.raises(InvalidCursor):
             run(source.address_page(CHAIN, ME, cursor=bad))
     assert fake.requests == []

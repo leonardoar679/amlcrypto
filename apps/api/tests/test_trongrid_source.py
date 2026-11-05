@@ -119,7 +119,7 @@ def test_the_page_size_is_capped_at_what_tron_allows():
 def test_a_cursor_that_is_not_a_fingerprint_is_refused_before_any_request():
     fake = FakeTronGrid()
     source, _ = make(fake)
-    for bad in ("../etc", "has space", "x" * 2000, "a|b"):
+    for bad in ("../etc", "has space", "x" * 2000, "a|b", "abc\n"):
         with pytest.raises(InvalidCursor):
             run(source.account_page(CHAIN, ALICE, cursor=bad))
     assert fake.requests == []

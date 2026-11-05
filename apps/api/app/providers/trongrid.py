@@ -207,7 +207,7 @@ class TronGridSource:
         if to_block is not None:
             params["max_timestamp"] = await self._block_ms(to_block)
         if cursor:
-            if not _FINGERPRINT.match(cursor):
+            if not _FINGERPRINT.fullmatch(cursor):
                 raise InvalidCursor("not a TronGrid cursor")
             params["fingerprint"] = cursor
 

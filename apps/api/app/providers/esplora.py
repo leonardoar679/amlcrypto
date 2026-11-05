@@ -88,7 +88,7 @@ class EsploraSource:
         A block range is applied here: transactions above `to_block` are skipped (the read must go
         on through them to reach older ones), and the read ends at the first below `from_block`.
         """
-        if cursor is not None and not _TXID.match(cursor):
+        if cursor is not None and not _TXID.fullmatch(cursor):
             raise InvalidCursor("not an Esplora cursor")
         path = f"/address/{address}/txs/chain" + (f"/{cursor}" if cursor else "")
         response = await self._get(path, accept=(404,) if cursor else ())

@@ -50,7 +50,7 @@ _CURSOR = re.compile(r"^(out|in):([A-Za-z0-9._~+/=-]{0,300})$")
 def decode_cursor(cursor: str | None) -> tuple[str, str | None]:
     if not cursor:
         return "out", None
-    match = _CURSOR.match(cursor)
+    match = _CURSOR.fullmatch(cursor)
     if match is None:
         raise InvalidCursor("not an alchemy cursor")
     return match.group(1), match.group(2) or None

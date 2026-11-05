@@ -27,7 +27,7 @@ def encode_block_cursor(block: int, skip: int) -> str:
 
 
 def decode_block_cursor(cursor: str) -> tuple[int, int]:
-    match = _BLOCK_CURSOR.match(cursor)
+    match = _BLOCK_CURSOR.fullmatch(cursor)
     if match is None:
         raise InvalidCursor("not a block cursor")
     return int(match.group(1)), int(match.group(2))

@@ -226,7 +226,14 @@ def test_cursors_name_a_direction_and_a_page_key():
     assert decode_cursor(None) == ("out", None)
     assert decode_cursor("out:") == ("out", None)
     assert decode_cursor("in:abc-123_x") == ("in", "abc-123_x")
-    for bad in ("sideways:1", "out", "out:has space", "etherscan|1:2", "out:" + "x" * 400):
+    for bad in (
+        "sideways:1",
+        "out",
+        "out:has space",
+        "etherscan|1:2",
+        "out:" + "x" * 400,
+        "out:abc\n",
+    ):
         with pytest.raises(InvalidCursor):
             decode_cursor(bad)
 

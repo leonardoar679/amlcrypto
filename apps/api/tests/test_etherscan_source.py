@@ -154,8 +154,9 @@ def test_an_address_with_no_history_is_an_empty_page_not_an_error():
 
 def test_a_cursor_that_is_not_ours_is_refused():
     source, _, _ = make(FakeEtherscan())
-    with pytest.raises(InvalidCursor):
-        run(source.account_page(ETHEREUM, ME, cursor="alchemy|out:abc"))
+    for bad in ("alchemy|out:abc", "5:0\n", "5", "5:0:1"):
+        with pytest.raises(InvalidCursor):
+            run(source.account_page(ETHEREUM, ME, cursor=bad))
 
 
 # --- the result window -------------------------------------------------------------------------
