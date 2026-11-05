@@ -1,9 +1,11 @@
-"""What every account-model chain (Ethereum, BNB Smart Chain, TRON) shares in its adapter.
+"""What every chain adapter shares, and what every account-model chain (Ethereum, BNB Smart Chain,
+TRON) shares in its adapter.
 
 An adapter is the one object the rest of the platform talks to for a chain. It owns an ordered list
-of sources (Etherscan, Alchemy, TronGrid ...), sends each call to the right one, keeps a cursor
-tied to the source that issued it, and falls back to the next source when starting afresh. What
-differs per chain (how a hash looks, how a receipt is decoded) is left to the subclass.
+of sources (Etherscan, Alchemy, TronGrid, Esplora ...), sends each call to the right one, keeps a
+cursor tied to the source that issued it, and falls back to the next source when starting afresh.
+What differs per chain (how a hash looks, how a receipt is decoded) is left to the subclass. Bitcoin
+has the same base but not the account-model half: it has no transfers between accounts.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from datetime import datetime
 from functools import partial
-from typing import Any, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from app.chains.cursors import InvalidCursor, split_source, with_source
 from app.chains.models import (
@@ -27,7 +29,7 @@ from app.chains.models import (
 from app.providers.base import AllProvidersFailed, ProviderError
 from app.providers.fallback import first_success
 
-R = TypeVar("R", AccountPage, Page)
+R = TypeVar("R")  # a page: a dataclass with a `next_cursor`
 
 
 class ChainConfig(Protocol):
@@ -35,14 +37,21 @@ class ChainConfig(Protocol):
     slug: str
 
 
-class AccountSource(Protocol):
-    """A provider's view of a chain, in the terms the adapter needs."""
+class Source(Protocol):
+    """What any provider must offer for any chain: a name, and the chain's height."""
 
     name: str
 
-    def covers(self, chain: Any, kind: TransferType) -> bool: ...
-
     async def block_height(self, chain: Any) -> int: ...
+
+
+S = TypeVar("S", bound=Source)
+
+
+class AccountSource(Source, Protocol):
+    """A provider's view of an account-model chain, in the terms the adapter needs."""
+
+    def covers(self, chain: Any, kind: TransferType) -> bool: ...
 
     async def account_page(
         self,
@@ -72,13 +81,12 @@ class AccountSource(Protocol):
     ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, datetime | None]: ...
 
 
-class AccountAdapter(ABC):
-    # The kind of fungible-token event this chain has; the history's token stream is named after it.
-    token_kind: TransferType
+class SourceAdapter(ABC, Generic[S]):
+    """An ordered list of sources, the chain's height, and routing that respects cursors."""
 
-    def __init__(self, chain: ChainConfig, sources: Sequence[AccountSource]) -> None:
+    def __init__(self, chain: ChainConfig, sources: Sequence[S]) -> None:
         self.chain = chain
-        self._sources = list(sources)
+        self._sources: list[S] = list(sources)
 
     @property
     def chain_id(self) -> str:
@@ -87,13 +95,6 @@ class AccountAdapter(ABC):
     @property
     def source_names(self) -> list[str]:
         return [source.name for source in self._sources]
-
-    @property
-    def stream_kinds(self) -> frozenset[TransferType]:
-        """The kinds of movement that can be read as a stream on this chain."""
-        return frozenset({TransferType.NATIVE, TransferType.INTERNAL, self.token_kind})
-
-    # --- the chain ---------------------------------------------------------------------------
 
     async def get_block_height(self) -> int:
         _, height = await first_success(
@@ -109,6 +110,36 @@ class AccountAdapter(ABC):
         """
         head = await self.get_block_height()
         return head, head
+
+    async def _route(
+        self,
+        capability: str,
+        sources: Sequence[S],
+        cursor: str | None,
+        call: Callable[[S, str | None], Awaitable[R]],
+    ) -> R:
+        """Run `call` on the source that issued `cursor`, or else on the first that works."""
+        by_name = {source.name: source for source in sources}
+        if cursor:
+            name, inner = split_source(cursor)
+            if name not in by_name:
+                raise InvalidCursor(f"{name} is not a source for {self.chain.slug} here")
+            result = await call(by_name[name], inner)
+        else:
+            name, result = await first_success(
+                capability, [(s.name, partial(call, s, None)) for s in sources]
+            )
+        return replace(result, next_cursor=with_source(name, result.next_cursor))
+
+
+class AccountAdapter(SourceAdapter[AccountSource], ABC):
+    # The kind of fungible-token event this chain has; the history's token stream is named after it.
+    token_kind: TransferType
+
+    @property
+    def stream_kinds(self) -> frozenset[TransferType]:
+        """The kinds of movement that can be read as a stream on this chain."""
+        return frozenset({TransferType.NATIVE, TransferType.INTERNAL, self.token_kind})
 
     # --- address history ---------------------------------------------------------------------
 
@@ -230,25 +261,3 @@ class AccountAdapter(ABC):
         self, source: str, tx: dict[str, Any], receipt: dict[str, Any], when: datetime | None
     ) -> TransactionDetail:
         """Decode what a source returned for one transaction."""
-
-    # --- routing -----------------------------------------------------------------------------
-
-    async def _route(
-        self,
-        capability: str,
-        sources: Sequence[AccountSource],
-        cursor: str | None,
-        call: Callable[[AccountSource, str | None], Awaitable[R]],
-    ) -> R:
-        """Run `call` on the source that issued `cursor`, or else on the first that works."""
-        by_name = {source.name: source for source in sources}
-        if cursor:
-            name, inner = split_source(cursor)
-            if name not in by_name:
-                raise InvalidCursor(f"{name} is not a source for {self.chain.slug} here")
-            result = await call(by_name[name], inner)
-        else:
-            name, result = await first_success(
-                capability, [(s.name, partial(call, s, None)) for s in sources]
-            )
-        return replace(result, next_cursor=with_source(name, result.next_cursor))

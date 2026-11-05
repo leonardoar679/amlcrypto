@@ -101,7 +101,7 @@ class Transfer:
             "trace_id": self.trace_id,
             "block_number": self.block_number,
             "transaction_index": self.transaction_index,
-            "timestamp": _iso(self.timestamp),
+            "timestamp": iso(self.timestamp),
             "from_address": self.from_address,
             "to_address": self.to_address,
             "asset": self.asset.to_dict(),
@@ -143,7 +143,7 @@ class Transaction:
             "transaction_hash": self.transaction_hash,
             "block_number": self.block_number,
             "transaction_index": self.transaction_index,
-            "timestamp": _iso(self.timestamp),
+            "timestamp": iso(self.timestamp),
             "from_address": self.from_address,
             "to_address": self.to_address,
             "created_contract": self.created_contract,
@@ -204,7 +204,7 @@ class AccountPage:
     coverage: tuple[str, ...] = field(default=())
 
 
-def _iso(moment: datetime | None) -> str | None:
+def iso(moment: datetime | None) -> str | None:
     if moment is None:
         return None
     return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")

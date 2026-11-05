@@ -23,7 +23,7 @@ import copy
 import logging
 import random
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -200,11 +200,15 @@ class ProviderClient:
         timeout: float | None = None,
         max_retries: int | None = None,
         body_check: BodyCheck | None = None,
+        accept: Collection[int] = (),
     ) -> ProviderResponse:
         """One request with all the protections. `body_check` finds errors inside a 200 response.
 
         It receives the provider name and the parsed body and returns None if the body is fine,
         or the ProviderError that body amounts to (rate limited, bad key, ...).
+
+        `accept` lists non-2xx statuses that are an answer here rather than a failure, such as 404
+        for "there is no such transaction". They come back as a response; check `status_code`.
         """
         state = self._state(provider)
         if state.spec.needs_key and state.key is None:
@@ -244,6 +248,9 @@ class ProviderClient:
                 if 200 <= status < 300:
                     data = _parse_body(response)
                     problem = self._check_body(provider, body_check, data)
+                elif status in accept:
+                    data = _parse_body(response)
+                    problem = None
                 else:
                     problem = _problem_for_status(provider, response)
                     if body_check is not None and 400 <= status < 500 and status != 429:

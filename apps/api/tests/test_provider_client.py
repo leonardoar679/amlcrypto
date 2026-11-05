@@ -704,3 +704,35 @@ def test_a_429_and_a_5xx_are_never_second_guessed_by_the_body_check():
     with pytest.raises(ProviderUnavailable):
         run(get(rig, body_check=spy))
     assert asked == []
+
+
+def test_a_status_the_caller_accepts_comes_back_as_an_answer_not_a_failure():
+    rig = make(Reply(404, text="Transaction not found"))
+
+    response = run(get(rig, accept=(404,)))
+
+    assert response.status_code == 404 and response.data == "Transaction not found"
+    assert len(rig.server.requests) == 1  # no retry, and the provider is not marked as failing
+    assert rig.client.statuses()[0].last_error is None
+
+
+def test_accepting_one_status_does_not_excuse_the_others():
+    rig = make(Reply(400, text="bad address"))
+    with pytest.raises(ProviderBadResponse):
+        run(get(rig, accept=(404,)))
+
+    rig = make(Reply(403, text="no"))
+    with pytest.raises(ProviderAuthError):
+        run(get(rig, accept=(404,)))
+
+
+def test_an_accepted_status_is_not_second_guessed_by_the_body_check():
+    asked = []
+
+    def spy(provider, data):
+        asked.append(data)
+        return ProviderBadResponse(provider, "should not be used")
+
+    rig = make(Reply(404, json={"x": 1}))
+    assert run(get(rig, accept=(404,), body_check=spy)).status_code == 404
+    assert asked == []
