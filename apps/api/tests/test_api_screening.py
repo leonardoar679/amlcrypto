@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from app.api.v1.screening import EXPORT_COLUMNS
 from app.database.connection import Sessions
 from app.database.models import FetchJob
 from app.database.repositories import risk as store
@@ -381,3 +382,302 @@ def test_two_identical_requests_that_race_each_other_leave_one_screening(
     assert second["screening_id"] == first and second["already_requested"] is True
     assert db_session.scalars(select(RiskAssessment)).all() != []
     assert len(db_session.scalars(select(RiskAssessment)).all()) == 1
+
+
+# --- listing the screenings ---------------------------------------------------------------------
+
+
+def _org(db_session, email):
+    from sqlalchemy import select
+
+    from app.database.models import Organization, User
+
+    user = db_session.scalar(select(User).where(User.email == email))
+    return db_session.get(Organization, user.organization_id).id
+
+
+def _finished(db_session, organization, subject, report, *, kind="address", chain_id="eip155:1"):
+    row = store.create_assessment(
+        db_session,
+        organization_id=organization,
+        subject_type=kind,
+        chain_id=chain_id,
+        subject=subject,
+        options={},
+    )
+    store.complete_assessment(db_session, row.id, report)
+    db_session.commit()
+    return row
+
+
+def _reports():
+    from app.intel.model import Category
+    from tests.risk_helpers import ROOT, FakeLabels, at, flow, label, screen
+
+    def with_label(category):
+        return screen([flow(BAD, ROOT, 7, at(1))], labels=FakeLabels(label(BAD, category)))
+
+    clean = screen([flow(OTHER, ROOT, 7, at(1))])
+    return {
+        "CRITICAL": with_label(Category.SANCTIONS),
+        "HIGH": with_label(Category.SCAM),
+        "MODERATE": with_label(Category.MIXER),
+        "LOW": clean,
+    }
+
+
+def test_the_screenings_are_listed_newest_first_with_their_scores_and_without_the_report(
+    client, auth, db_session
+):
+    org = _org(db_session, "analyst@example.com")
+    reports = _reports()
+    first = _finished(db_session, org, addr(1), reports["LOW"])
+    second = _finished(db_session, org, addr(2), reports["CRITICAL"])
+
+    body = client.get("/api/v1/screenings", headers=auth).json()
+
+    assert body["success"] is True and body["total"] == 2
+    assert [item["screening_id"] for item in body["items"]] == [
+        f"scr_{second.id}",
+        f"scr_{first.id}",
+    ]
+    top = body["items"][0]
+    assert (
+        top["status"] == "COMPLETED"
+        and top["risk_score"] == 100
+        and top["risk_level"] == "CRITICAL"
+    )
+    assert top["subject"] == {
+        "type": "address",
+        "chain": "ethereum",
+        "chain_id": "eip155:1",
+        "id": addr(2),
+    }
+    assert top["findings"] == 1 and 0 < top["confidence"] <= 1
+    assert top["data_coverage"] == "COMPLETE" and top["requested_at"] and top["completed_at"]
+    assert "report" not in top
+    assert body["items"][1]["findings"] == 0 and body["items"][1]["risk_level"] == "LOW"
+
+
+def test_the_list_can_be_filtered_by_kind_chain_status_level_and_the_start_of_an_address(
+    client, auth, db_session
+):
+    org = _org(db_session, "analyst@example.com")
+    reports = _reports()
+    _finished(db_session, org, addr(0xA0A0), reports["CRITICAL"])
+    _finished(db_session, org, addr(0xB0B0), reports["HIGH"])
+    _finished(db_session, org, "0x" + "ab" * 32, reports["LOW"], kind="transaction")
+    _finished(
+        db_session,
+        org,
+        "bc1qexample",
+        reports["LOW"],
+        chain_id="bip122:000000000019d6689c085ae165831e93",
+    )
+    queued = store.create_assessment(
+        db_session, organization_id=org, subject_type="address", chain_id="eip155:1",
+        subject=addr(3), options={},
+    )  # fmt: skip
+    db_session.commit()
+
+    def ids(**params):
+        return {
+            i["subject"]["id"]
+            for i in client.get("/api/v1/screenings", params=params, headers=auth).json()["items"]
+        }
+
+    assert ids(subject_type="transaction") == {"0x" + "ab" * 32}
+    assert ids(chain="bitcoin") == {"bc1qexample"} and ids(
+        chain="bip122:000000000019d6689c085ae165831e93"
+    ) == {"bc1qexample"}
+    assert ids(status="QUEUED") == {addr(3)} and queued.status == "QUEUED"
+    assert ids(risk_level="HIGH") == {addr(0xB0B0)} and ids(risk_level="CRITICAL") == {addr(0xA0A0)}
+    assert ids(q="0x" + "0" * 36 + "A0") == {addr(0xA0A0)}  # the start of an address; case is free
+    assert ids(q="0X" + "0" * 36 + "b0") == {addr(0xB0B0)}
+    assert ids(q="0x%") == set() and ids(q="0x_") == set()  # wildcards are text
+
+
+def test_only_the_latest_screening_of_each_subject_can_be_asked_for(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    reports = _reports()
+    _finished(db_session, org, addr(1), reports["LOW"])
+    newer = _finished(db_session, org, addr(1), reports["HIGH"])
+    other = _finished(db_session, org, addr(2), reports["LOW"])
+    store.create_assessment(  # not finished: never "the latest"
+        db_session, organization_id=org, subject_type="address", chain_id="eip155:1",
+        subject=addr(1), options={},
+    )  # fmt: skip
+    db_session.commit()
+
+    body = client.get("/api/v1/screenings?latest_per_subject=true", headers=auth).json()
+
+    assert body["total"] == 2
+    assert [i["screening_id"] for i in body["items"]] == [f"scr_{other.id}", f"scr_{newer.id}"]
+    high = client.get(
+        "/api/v1/screenings?latest_per_subject=true&risk_level=HIGH", headers=auth
+    ).json()
+    assert [i["screening_id"] for i in high["items"]] == [f"scr_{newer.id}"]
+
+
+def test_the_list_is_paged_and_says_how_many_there_are(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    reports = _reports()
+    rows = [_finished(db_session, org, addr(n), reports["LOW"]) for n in range(1, 6)]
+
+    page = client.get("/api/v1/screenings?limit=2&offset=1", headers=auth).json()
+
+    assert page["total"] == 5 and page["limit"] == 2 and page["offset"] == 1
+    assert [i["screening_id"] for i in page["items"]] == [f"scr_{rows[3].id}", f"scr_{rows[2].id}"]
+    assert client.get("/api/v1/screenings?offset=99", headers=auth).json()["items"] == []
+
+
+def test_another_organizations_screenings_are_not_listed(client, auth, rival, db_session):
+    org, theirs = _org(db_session, "analyst@example.com"), _org(db_session, "spy@example.com")
+    reports = _reports()
+    _finished(db_session, org, addr(1), reports["LOW"])
+    _finished(db_session, theirs, addr(2), reports["CRITICAL"])
+
+    mine = client.get("/api/v1/screenings", headers=auth).json()
+    theirs_body = client.get("/api/v1/screenings", headers=rival).json()
+
+    assert [i["subject"]["id"] for i in mine["items"]] == [addr(1)] and mine["total"] == 1
+    assert [i["subject"]["id"] for i in theirs_body["items"]] == [addr(2)]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"limit": 0},
+        {"limit": 101},
+        {"offset": -1},
+        {"subject_type": "wallet"},
+        {"status": "DONE"},
+        {"risk_level": "MEDIUM"},
+    ],
+)
+def test_nonsense_filters_are_refused(client, auth, params):
+    assert client.get("/api/v1/screenings", params=params, headers=auth).status_code == 422
+
+
+def test_an_unknown_chain_filter_is_not_found(client, auth):
+    response = client.get("/api/v1/screenings?chain=dogecoin", headers=auth)
+
+    assert response.status_code == 404 and response.json()["error"]["code"] == "unknown_chain"
+
+
+# --- exporting a report -------------------------------------------------------------------------
+
+
+def test_a_report_can_be_downloaded_as_json(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    row = _finished(db_session, org, addr(1), _reports()["CRITICAL"])
+
+    response = client.get(f"/api/v1/screen/scr_{row.id}/export", headers=auth)
+
+    assert response.status_code == 200 and response.headers["content-type"].startswith(
+        "application/json"
+    )
+    assert (
+        response.headers["content-disposition"]
+        == f'attachment; filename="screening-scr_{row.id}.json"'
+    )
+    assert response.json() == row.report
+
+
+def test_a_reports_findings_can_be_downloaded_as_csv(client, auth, db_session):
+    import csv
+    import io
+
+    org = _org(db_session, "analyst@example.com")
+    row = _finished(db_session, org, addr(1), _reports()["CRITICAL"])
+
+    response = client.get(f"/api/v1/screen/scr_{row.id}/export?format=csv", headers=auth)
+
+    assert response.headers["content-type"].startswith("text/csv")
+    assert (
+        response.headers["content-disposition"]
+        == f'attachment; filename="screening-scr_{row.id}.csv"'
+    )
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    counted = [r for r in rows if r["counted"] == "yes"]
+    duplicates = [r for r in rows if r["counted"] == "no"]
+    assert [r["rule_id"] for r in counted] == ["AML-001"] and counted[0]["severity"] == "CRITICAL"
+    assert counted[0]["sources"] == "ofac_sdn" and counted[0]["transaction_hashes"].startswith("0x")
+    assert [r["rule_id"] for r in duplicates] == ["AML-007"] and duplicates[0][
+        "suppressed_by"
+    ] == "AML-001"
+    assert list(rows[0]) == list(EXPORT_COLUMNS)
+
+
+def test_text_from_outside_cannot_run_as_a_spreadsheet_formula(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    row = _finished(db_session, org, addr(1), _reports()["CRITICAL"])
+    report = dict(row.report)
+    report["findings"] = [
+        {
+            **report["findings"][0],
+            "description": '=HYPERLINK("http://evil")',
+            "rule_name": "+cmd",
+            "target": "-1",
+            "sources": ["@x"],
+        }
+    ]
+    row.report = report
+    db_session.commit()
+
+    text = client.get(f"/api/v1/screen/scr_{row.id}/export?format=csv", headers=auth).text
+
+    assert "'=HYPERLINK" in text and "'+cmd" in text and "'-1" in text and "'@x" in text
+    assert ",=HYPERLINK" not in text and ',"=HYPERLINK' not in text
+
+
+def test_a_screening_without_a_report_cannot_be_exported(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    queued = store.create_assessment(
+        db_session, organization_id=org, subject_type="address", chain_id="eip155:1",
+        subject=addr(1), options={},
+    )  # fmt: skip
+    db_session.commit()
+
+    response = client.get(f"/api/v1/screen/scr_{queued.id}/export", headers=auth)
+
+    assert response.status_code == 409 and response.json()["error"]["code"] == "not_completed"
+
+
+def test_another_organization_cannot_export_a_report_and_a_bad_request_is_refused(
+    client, auth, rival, db_session
+):
+    org = _org(db_session, "analyst@example.com")
+    row = _finished(db_session, org, addr(1), _reports()["LOW"])
+
+    assert client.get(f"/api/v1/screen/scr_{row.id}/export", headers=rival).status_code == 404
+    assert client.get("/api/v1/screen/nonsense/export", headers=auth).status_code == 404
+    assert (
+        client.get(f"/api/v1/screen/scr_{row.id}/export?format=pdf", headers=auth).status_code
+        == 422
+    )
+    assert client.get(f"/api/v1/screen/scr_{row.id}/export").status_code == 401
+
+
+def test_a_search_matches_the_start_of_an_address_and_not_the_middle(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    _finished(db_session, org, addr(0xA0A0), _reports()["LOW"])
+
+    def found(q):
+        return client.get("/api/v1/screenings", params={"q": q}, headers=auth).json()["total"]
+
+    assert found("0x" + "0" * 30) == 1  # a start
+    assert found("a0a0") == 0 and found("0000a") == 0  # not a middle or an end
+
+
+def test_cells_that_start_with_a_tab_or_a_return_are_defused_too(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    row = _finished(db_session, org, addr(1), _reports()["CRITICAL"])
+    report = dict(row.report)
+    report["findings"] = [{**report["findings"][0], "description": "\tcmd", "rule_name": "\rcmd"}]
+    row.report = report
+    db_session.commit()
+
+    text = client.get(f"/api/v1/screen/scr_{row.id}/export?format=csv", headers=auth).text
+
+    assert "'\tcmd" in text and "'\rcmd" in text

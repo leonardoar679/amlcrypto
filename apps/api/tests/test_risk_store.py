@@ -231,3 +231,25 @@ def test_an_override_set_again_without_a_switch_goes_back_to_the_default_switch(
     db_session.commit()
 
     assert store.rule_overrides(db_session) == {"AML-004": (None, {"min_ratio": 0.5})}
+
+
+def test_a_listing_leaves_the_large_report_unloaded_and_counts_only_counted_findings(
+    db_session, org
+):
+    from sqlalchemy import inspect
+
+    from tests.risk_helpers import FakeLabels as Labels
+
+    row = make(db_session, org)
+    many = [flow(addr(100 + n), ROOT, 1, at(n * 0.01)) for n in range(11)]  # a fan-in as well
+    made = screen([flow(BAD, ROOT, 7, at(1)), *many], labels=Labels(label(BAD, Category.SANCTIONS)))
+    store.complete_assessment(db_session, row.id, made, NOW)
+    db_session.commit()
+    db_session.expire_all()
+
+    (found,), total = store.list_assessments(db_session, org)
+    counts = store.counted_findings(db_session, [found.id])
+
+    assert total == 1 and "report" in inspect(found).unloaded
+    assert len(made.findings) == 2 and len(made.suppressed) == 1
+    assert counts == {found.id: 2} and store.counted_findings(db_session, []) == {}

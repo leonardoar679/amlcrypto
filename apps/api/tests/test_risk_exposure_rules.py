@@ -7,6 +7,7 @@ from app.graph.model import Basis
 from app.graph.reader import judge
 from app.intel.model import Category
 from app.risk.model import Level, RuleStatus, Severity
+from tests.graph_helpers import USDT
 from tests.risk_helpers import (
     ROOT,
     FakeLabels,
@@ -250,6 +251,19 @@ def test_value_sent_to_a_registered_bridge_is_a_finding_that_names_it():
     )
     assert set(item.finding.transactions) == {"0xdeposit", "0xback"}
     assert item.finding.direction is None and item.finding.factor == "other"
+
+
+def test_the_evidence_shows_amounts_as_a_person_reads_them_and_in_raw_units():
+    report = screen(
+        [flow(ROOT, BAD, 1_500_000, at(1), asset=USDT, tx="0xdeposit")],
+        registry=registry(),
+        bridges_known=True,
+    )
+
+    (item,) = findings(report, "AML-013")
+    (evidence,) = item.finding.evidence
+    assert evidence["amount"] == "1.5" and evidence["amount_raw"] == "1500000"
+    assert evidence["asset"] == "USDT"
 
 
 def test_a_route_through_a_bridge_is_a_finding_too():

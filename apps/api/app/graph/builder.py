@@ -22,6 +22,7 @@ from typing import Protocol
 from app.chains.registry import get_chain
 from app.chains.support import ReadableChain
 from app.database.connection import Sessions
+from app.graph.activity import summarize
 from app.graph.bridges import BridgeRegistry
 from app.graph.exposure import find_exposures
 from app.graph.model import (
@@ -35,7 +36,6 @@ from app.graph.model import (
     GraphEdge,
     GraphLimits,
     GraphNode,
-    NodeStats,
     node_id,
 )
 from app.graph.patterns import detect_fans
@@ -106,20 +106,6 @@ def _rank(candidates: list[_Counterparty], intel: dict[str, AddressIntel]) -> li
         return (0 if risky else 1, 0 if labels else 1, -entry.transfers, -entry.last, entry.address)
 
     return sorted(candidates, key=key)
-
-
-def _stats(address: str, flows: Sequence[Flow]) -> NodeStats:
-    received = [f for f in flows if f.target == address]
-    sent = [f for f in flows if f.source == address]
-    times = [f.timestamp for f in flows if f.timestamp is not None]
-    return NodeStats(
-        transfers_in=len(received),
-        transfers_out=len(sent),
-        counterparties_in=len({f.source for f in received}),
-        counterparties_out=len({f.target for f in sent}),
-        first_seen=min(times) if times else None,
-        last_seen=max(times) if times else None,
-    )
 
 
 async def build_graph(
@@ -200,7 +186,7 @@ async def build_graph(
         if address in data:
             item.expanded = True
             item.coverage = data[address].coverage
-            item.stats = _stats(address, data[address].flows)
+            item.stats = summarize(data[address].flows, address)
             candidates = _counterparties(address, data[address].flows, limits.direction)
             item.counterparties = len(candidates)
             item.counterparties_shown = sum(1 for c in candidates if c.address in depth_of)

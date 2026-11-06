@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from app.graph.model import Evidence, Flow, Graph, GraphNode
+from app.ingestion.render import format_amount
 from app.intel.model import RISK_CATEGORIES, Category, LabelMatch
 from app.risk.model import (
     MAX_EVIDENCE_TRANSACTIONS,
@@ -130,6 +131,7 @@ def flow_summary(flow: Flow) -> dict[str, Any]:
         "from": flow.source,
         "to": flow.target,
         "asset": flow.asset.symbol or flow.asset.key,
+        "amount": format_amount(str(flow.amount), flow.asset.decimals),
         "amount_raw": str(flow.amount),
         "timestamp": flow.timestamp.isoformat() if flow.timestamp else None,
     }

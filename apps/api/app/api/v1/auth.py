@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_session, get_settings_dep, get_write_session
+from app.api.deps import Principal, get_principal, get_session, get_settings_dep, get_write_session
 from app.api.errors import APIError
 from app.core.config import Settings
 from app.core.security import burn_password_check, create_access_token, verify_password
@@ -62,3 +62,38 @@ def login(
         settings, user_id=user.id, organization_id=user.organization_id
     )
     return TokenResponse(access_token=token, expires_in=expires_in)
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    last_login_at: datetime | None
+
+
+class OrganizationOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+
+
+class MeResponse(BaseModel):
+    user: UserOut
+    organization: OrganizationOut
+
+
+@router.get("/me", response_model=MeResponse)
+def me(
+    principal: Principal = Depends(get_principal), session: Session = Depends(get_session)
+) -> MeResponse:
+    """Who the token belongs to and which organization they act for: what a front end needs to
+    show the signed-in user. The token itself proves nothing about the account staying active, so
+    this goes back to the database every time (as every authenticated request does)."""
+    user = session.get(User, principal.user_id)
+    organization = session.get(Organization, principal.organization_id)
+    assert user is not None and organization is not None  # get_principal just loaded both
+    return MeResponse(
+        user=UserOut(id=user.id, email=user.email, last_login_at=user.last_login_at),
+        organization=OrganizationOut(
+            id=organization.id, name=organization.name, slug=organization.slug
+        ),
+    )

@@ -213,3 +213,36 @@ def test_users_with_the_same_organization_slug_share_it(db_session, user):
 def test_account_creation_rejects_bad_input(db_session, user, email, password, message):
     with pytest.raises(UserError, match=message):
         create_user(db_session, email=email, password=password, organization_name="Acme Compliance")
+
+
+# --- who am i ---------------------------------------------------------------------------------
+
+
+def test_me_says_who_the_token_belongs_to_and_for_which_organization(client, user):
+    token = login(client).json()["access_token"]
+
+    response = client.get("/api/v1/auth/me", headers=bearer(token))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user"]["email"] == "analyst@example.com" and body["user"]["id"] == user.id
+    assert body["organization"] == {
+        "id": user.organization_id,
+        "name": "Acme Compliance",
+        "slug": "acme-compliance",
+    }
+    assert body["user"]["last_login_at"] is not None  # the login just made updated it
+    assert "password" not in response.text and "hash" not in response.text
+
+
+def test_me_needs_a_valid_token(client, user):
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.get("/api/v1/auth/me", headers=bearer("not-a-token")).status_code == 401
+
+
+def test_me_stops_answering_when_the_account_is_switched_off(client, user, db_session):
+    token = login(client).json()["access_token"]
+    db_session.get(User, user.id).is_active = False
+    db_session.commit()
+
+    assert client.get("/api/v1/auth/me", headers=bearer(token)).status_code == 401

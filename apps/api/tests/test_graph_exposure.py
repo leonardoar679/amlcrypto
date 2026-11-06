@@ -233,6 +233,23 @@ def test_paths_are_part_of_the_graph_and_of_its_output():
     assert body["risk_categories"] == ["SANCTIONS"] and body["ordering_proven"] is True
 
 
+def test_a_hop_states_its_amounts_in_the_assets_own_units_and_in_raw_ones():
+    graph = run(
+        build_graph(
+            FakeReader([flow(RISKY, ROOT, 1_500_000, at(2), asset=USDT)]),
+            FakeLabels(label(RISKY, Category.SANCTIONS)),
+            ETHEREUM,
+            ROOT,
+            GraphLimits(),
+            now=NOW,
+        )
+    )
+
+    hop = graph.to_dict()["exposures"][0]["path"][0]
+    assert hop["transfer"]["amount"] == "1.5" and hop["transfer"]["amount_raw"] == "1500000"
+    assert hop["edge_total"] == "1.5" and hop["edge_total_raw"] == "1500000"
+
+
 # --- pinned down by mutation checks -------------------------------------------------------------
 
 

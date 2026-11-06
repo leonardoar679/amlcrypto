@@ -7,9 +7,13 @@ is kept exactly as it was produced and belongs to the organization that asked fo
 
 from __future__ import annotations
 
-from typing import Any
+import csv
+import io
+import json
+import re
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -261,3 +265,144 @@ def risk_rules(
     except RuleConfigError as error:
         raise APIError(500, "rule_configuration", str(error)) from error
     return {"success": True, "rules": [rule.to_dict() for rule in rules]}
+
+
+# --- listing and exporting ------------------------------------------------------------------------
+
+
+def _summary(row: RiskAssessment, findings: int) -> dict[str, Any]:
+    return {
+        "screening_id": screening_id(row.id),
+        "status": row.status,
+        "subject": _subject(row),
+        "risk_score": row.risk_score,
+        "risk_level": row.risk_level,
+        "confidence": None if row.confidence_percent is None else row.confidence_percent / 100,
+        "data_coverage": row.data_coverage,
+        "outcome": row.outcome,
+        "findings": findings,
+        "requested_at": row.created_at.isoformat(),
+        "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+        "error": row.error,
+    }
+
+
+@router.get("/screenings")
+def list_screenings(
+    subject_type: Annotated[Literal["address", "transaction"] | None, Query()] = None,
+    chain: Annotated[str | None, Query(max_length=100, description="Slug or CAIP-2 id.")] = None,
+    status: Annotated[
+        Literal["QUEUED", "PROCESSING", "COMPLETED", "FAILED"] | None, Query()
+    ] = None,
+    risk_level: Annotated[Literal["LOW", "MODERATE", "HIGH", "CRITICAL"] | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=128, description="The start of an address.")] = None,
+    latest_per_subject: Annotated[
+        bool, Query(description="Only each subject's most recent finished screening.")
+    ] = False,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
+    principal: Principal = Depends(get_principal),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """The organization's screenings, newest first, without their reports (read one with
+    `GET /screen/{screening_id}`)."""
+    chain_id = None
+    if chain is not None:
+        found = find_chain(chain)
+        if found is None:
+            raise APIError(404, "unknown_chain", "That chain is not supported.")
+        chain_id = found.chain_id
+    prefix = (q or "").strip()
+    if prefix[:2].lower() == "0x":
+        prefix = prefix.lower()  # EVM addresses are stored in lower case
+    rows, total = store.list_assessments(
+        session,
+        principal.organization_id,
+        subject_type=subject_type,
+        chain_id=chain_id,
+        status=status,
+        risk_level=risk_level,
+        prefix=prefix or None,
+        latest_per_subject=latest_per_subject,
+        limit=limit,
+        offset=offset,
+    )
+    counts = store.counted_findings(session, [row.id for row in rows])
+    return {
+        "success": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [_summary(row, counts.get(row.id, 0)) for row in rows],
+    }
+
+
+EXPORT_COLUMNS = (
+    "rule_id",
+    "rule_name",
+    "rule_version",
+    "severity",
+    "factor",
+    "hops",
+    "direction",
+    "target",
+    "confidence",
+    "contribution",
+    "counted",
+    "suppressed_by",
+    "transaction_hashes",
+    "sources",
+    "description",
+)
+
+
+def _csv_safe(value: Any) -> str:
+    """A cell a spreadsheet will not run: outside text (an entity name) can start with = + - @."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+def findings_csv(report: dict[str, Any]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\r\n")
+    writer.writerow(EXPORT_COLUMNS)
+    for finding, counted in [(f, True) for f in report.get("findings", [])] + [
+        (f, False) for f in report.get("duplicates_not_counted", [])
+    ]:
+        cells = {
+            **finding,
+            "counted": "yes" if counted else "no",
+            "transaction_hashes": " ".join(finding.get("transaction_hashes", [])),
+            "sources": " ".join(finding.get("sources", [])),
+        }
+        writer.writerow([_csv_safe(cells.get(name)) for name in EXPORT_COLUMNS])
+    return out.getvalue()
+
+
+@router.get("/screen/{screening}/export")
+def export_screening(
+    screening: str,
+    format: Annotated[Literal["json", "csv"], Query()] = "json",
+    principal: Principal = Depends(get_principal),
+    session: Session = Depends(get_session),
+) -> Response:
+    """The report of a finished screening as a download: the whole document as JSON, or its
+    findings (and the duplicates that were not counted) as CSV."""
+    number = parse_screening_id(screening)
+    row = (
+        None if number is None else store.get_assessment(session, number, principal.organization_id)
+    )
+    if row is None:
+        raise APIError(404, "screening_not_found", "No such screening.")
+    if row.report is None:
+        raise APIError(409, "not_completed", "This screening has no report (yet).")
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", screening_id(row.id))
+    if format == "csv":
+        body, media = findings_csv(row.report), "text/csv; charset=utf-8"
+    else:
+        body, media = json.dumps(row.report, indent=2), "application/json"
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="screening-{name}.{format}"'},
+    )

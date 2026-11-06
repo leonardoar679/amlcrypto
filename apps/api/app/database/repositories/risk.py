@@ -10,8 +10,8 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session, defer
 
 from app.database.models import RiskAssessment, RiskFinding, RiskRule
 from app.risk.model import Report, ScreeningStatus
@@ -141,6 +141,65 @@ def completed_assessments(
             .limit(limit)
         )
     )
+
+
+def list_assessments(
+    session: Session,
+    organization_id: int,
+    *,
+    subject_type: str | None = None,
+    chain_id: str | None = None,
+    status: str | None = None,
+    risk_level: str | None = None,
+    prefix: str | None = None,
+    latest_per_subject: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[RiskAssessment], int]:
+    """The organization's screenings, newest first, and how many match in all. The (large) report
+    document is not loaded: it is for one screening at a time. With `latest_per_subject` only each
+    address's (or transaction's) most recent finished screening is listed."""
+    query = select(RiskAssessment).where(RiskAssessment.organization_id == organization_id)
+    if latest_per_subject:
+        newest = (
+            select(func.max(RiskAssessment.id))
+            .where(
+                RiskAssessment.organization_id == organization_id,
+                RiskAssessment.status == ScreeningStatus.COMPLETED.value,
+            )
+            .group_by(RiskAssessment.chain_id, RiskAssessment.subject)
+        )
+        query = query.where(RiskAssessment.id.in_(newest))
+    if subject_type is not None:
+        query = query.where(RiskAssessment.subject_type == subject_type)
+    if chain_id is not None:
+        query = query.where(RiskAssessment.chain_id == chain_id)
+    if status is not None:
+        query = query.where(RiskAssessment.status == status)
+    if risk_level is not None:
+        query = query.where(RiskAssessment.risk_level == risk_level)
+    if prefix:
+        query = query.where(RiskAssessment.subject.startswith(prefix, autoescape=True))
+    total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = session.scalars(
+        query.options(defer(RiskAssessment.report))
+        .order_by(RiskAssessment.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(rows), total
+
+
+def counted_findings(session: Session, assessment_ids: list[int]) -> dict[int, int]:
+    """How many findings each assessment counted (duplicates are not counted)."""
+    if not assessment_ids:
+        return {}
+    rows = session.execute(
+        select(RiskFinding.assessment_id, func.count())
+        .where(RiskFinding.assessment_id.in_(assessment_ids), RiskFinding.counted.is_(True))
+        .group_by(RiskFinding.assessment_id)
+    )
+    return {assessment_id: count for assessment_id, count in rows}
 
 
 def findings_of(session: Session, assessment_id: int) -> list[RiskFinding]:

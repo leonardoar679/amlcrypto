@@ -306,9 +306,13 @@ class Hop:
             "target": self.target,
             "edge": self.edge,
             "asset": self.asset.to_dict(),
+            "edge_total": format_amount(str(self.edge_total), self.asset.decimals),
             "edge_total_raw": str(self.edge_total),
             "edge_transfers": self.edge_transfers,
-            "transfer": self.chosen.to_dict(),
+            "transfer": {
+                **self.chosen.to_dict(),
+                "amount": format_amount(self.chosen.amount_raw, self.asset.decimals),
+            },
             "ordering_proven": self.ordering_proven,
             "basis": self.basis.value,
         }
