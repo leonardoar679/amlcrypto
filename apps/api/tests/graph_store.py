@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import itertools
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.chains.models import Asset, DataQuality, StreamStatus, Transfer, TransferType
+from app.database.models import AddressLabel, LabelSource
 from app.database.repositories.acquisition import Coverage, save_coverage
 from app.database.repositories.transfers import save_transfers
 
@@ -58,5 +60,36 @@ def seed(
             )
             for stream in streams
         ],
+    )
+    session.commit()
+
+
+def label_address(
+    session: Session,
+    address: str,
+    category: str = "SANCTIONS",
+    *,
+    confidence: int = 100,
+    chain_id: str = ETHEREUM,
+    ref: str = "t1",
+) -> None:
+    """Make the OFAC source current and let it say `address` belongs to `category`."""
+    now = datetime.now(UTC)
+    source = session.scalar(select(LabelSource).where(LabelSource.slug == "ofac_sdn"))
+    source.status, source.last_checked_at, source.last_fetched_at = "ok", now, now
+    source.publish_date = date.today()
+    session.add(
+        AddressLabel(
+            chain_id=chain_id,
+            address=address,
+            category=category,
+            source_id=source.id,
+            source_ref=ref,
+            confidence=confidence,
+            listed_as="ETH",
+            first_observed=now,
+            last_verified=now,
+            active=True,
+        )
     )
     session.commit()

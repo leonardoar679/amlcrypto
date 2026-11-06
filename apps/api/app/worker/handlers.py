@@ -7,6 +7,12 @@ from typing import Any
 from app.graph.jobs import FETCH_COUNTERPARTIES, fetch_counterparties
 from app.ingestion.jobs import FETCH_ADDRESS_HISTORY, fetch_address_history
 from app.intel.jobs import REFRESH_LABEL_SOURCE, refresh_label_source
+from app.risk.jobs import (
+    SCREEN_ADDRESS,
+    SCREEN_TRANSACTION,
+    screen_address_job,
+    screen_transaction_job,
+)
 from app.worker.context import Handler, HandlerRegistry, JobContext, NonRetryable
 
 PROVIDER_PROBE = "PROVIDER_PROBE"
@@ -16,6 +22,8 @@ __all__ = [
     "FETCH_COUNTERPARTIES",
     "PROVIDER_PROBE",
     "REFRESH_LABEL_SOURCE",
+    "SCREEN_ADDRESS",
+    "SCREEN_TRANSACTION",
     "Handler",
     "HandlerRegistry",
     "JobContext",
@@ -48,4 +56,6 @@ def build_default_handlers() -> HandlerRegistry:
     registry.register(FETCH_ADDRESS_HISTORY)(fetch_address_history)
     registry.register(REFRESH_LABEL_SOURCE)(refresh_label_source)
     registry.register(FETCH_COUNTERPARTIES)(fetch_counterparties)
+    registry.register(SCREEN_ADDRESS)(screen_address_job)
+    registry.register(SCREEN_TRANSACTION)(screen_transaction_job)
     return registry

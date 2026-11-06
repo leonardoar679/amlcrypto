@@ -11,6 +11,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TypeVar
 
+from sqlalchemy import select
+
 from app.chains.adapter import AccountAdapter
 from app.chains.bitcoin.adapter import BitcoinAdapter
 from app.chains.registry import get_chain
@@ -27,7 +29,9 @@ from app.database.connection import (
     create_session_factory,
     create_sessions,
 )
+from app.database.models import Organization
 from app.database.repositories import jobs as queue
+from app.database.repositories import risk as risk_store
 from app.database.repositories.acquisition import save_raw
 from app.database.retry import commit_with_retry
 from app.graph.bridges import BridgeRegistryError
@@ -58,6 +62,17 @@ from app.providers.rawsink import RawSink
 from app.providers.registry import PROVIDERS
 from app.providers.service import ProviderService
 from app.providers.usage import DbUsageSink
+from app.risk.model import Coverage, Report
+from app.risk.render import render_report
+from app.risk.rules.registry import BY_ID, RuleConfigError, effective_rules, merge_config
+from app.risk.service import (
+    ADDRESS,
+    TRANSACTION,
+    TransactionNotFound,
+    screen_address,
+    screen_transaction_hash,
+    screening_id,
+)
 from app.services.users import UserError, create_user
 
 T = TypeVar("T")
@@ -429,6 +444,223 @@ def _cmd_graph(args: argparse.Namespace) -> int:
     return 0 if graph.complete else 2
 
 
+def _screen_exit(report: Report) -> int:
+    """0: nothing found and the data was complete. 2: findings. 3: nothing found, but the data was
+    not complete, so that is not a clearance."""
+    if report.findings:
+        return 2
+    return 0 if report.coverage is Coverage.COMPLETE else 3
+
+
+def _check_organization(sessions: Sessions, slug: str | None) -> None:
+    if slug is None:
+        return
+    with sessions.read() as session:
+        found = session.scalar(select(Organization.id).where(Organization.slug == slug))
+    if found is None:
+        raise UserError(f"there is no organization {slug!r} (see create-user --org-slug)")
+
+
+def _keep_report(
+    sessions: Sessions,
+    slug: str,
+    kind: str,
+    chain: ReadableChain,
+    subject: str,
+    options: dict,
+    report: Report,
+) -> str:
+    with sessions.write() as session:
+        organization = session.scalar(select(Organization).where(Organization.slug == slug))
+        row = risk_store.create_assessment(
+            session,
+            organization_id=organization.id,
+            subject_type=kind,
+            chain_id=chain.chain_id,
+            subject=subject,
+            options=options,
+        )
+        risk_store.complete_assessment(session, row.id, report)
+        session.commit()
+        return screening_id(row.id)
+
+
+def _cmd_screen_address(args: argparse.Namespace) -> int:
+    """Screen an address now and print the report. By default it first brings the stored histories
+    up to date (spends provider requests, within GRAPH_REQUEST_BUDGET); --no-update uses only what
+    is stored. --store-in keeps the report as that organization's screening, so the API shows it.
+    Exit 0: no findings and complete data. 2: findings. 3: no findings but the data is incomplete,
+    which is not a clearance."""
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    if args.refresh and args.no_update:
+        raise UserError("--refresh is about updating histories: drop --no-update")
+    try:
+        chain, address = resolve(args.chain, args.address)
+        registry = load_registry(settings)
+    except (GraphRequestError, BridgeRegistryError) as error:
+        raise UserError(str(error)) from error
+    limits = GraphLimits.from_settings(
+        settings,
+        depth=args.depth,
+        max_nodes=args.max_nodes,
+        max_edges=args.max_edges,
+        per_node=args.per_node,
+        window_days=args.days,
+        direction=args.direction,
+        history_items=args.history_items,
+    )
+    update = not args.no_update
+
+    async def work(settings: Settings, service: ProviderService | None, sessions: Sessions):
+        _check_organization(sessions, args.store_in)
+        report = await screen_address(
+            sessions,
+            settings,
+            service,
+            chain,
+            address,
+            limits,
+            update=update,
+            refresh=args.refresh,
+            registry=registry,
+        )
+        kept = None
+        if args.store_in:
+            options = {"update": update, "refresh": args.refresh, **limits.to_dict()}
+            kept = _keep_report(sessions, args.store_in, ADDRESS, chain, address, options, report)
+        return report, kept
+
+    try:
+        if update:
+            report, kept = _run_with_providers(work)
+        else:
+            engine = create_db_engine(settings.resolved_database_url)
+            try:
+                report, kept = asyncio.run(work(settings, None, create_sessions(engine)))
+            finally:
+                engine.dispose()
+    except GraphRequestError as error:
+        raise UserError(str(error)) from error
+    print(json.dumps(report.to_dict()) if args.json else render_report(report))
+    if kept and not args.json:
+        print(f"kept as {kept} for organization {args.store_in}")
+    return _screen_exit(report)
+
+
+def _cmd_screen_transaction(args: argparse.Namespace) -> int:
+    """Screen a transaction now: decode it and look each party up. Costs two or three provider
+    requests. Exit codes as for `screen address`."""
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    chain = _chain(args.chain)
+    text = args.hash.strip()
+    txid = text if get_chain(chain.chain_id).slug == "solana" else text.lower()
+
+    async def work(settings: Settings, service: ProviderService, sessions: Sessions):
+        _check_organization(sessions, args.store_in)
+        report = await screen_transaction_hash(sessions, settings, service, chain, txid)
+        kept = None
+        if args.store_in:
+            kept = _keep_report(sessions, args.store_in, TRANSACTION, chain, txid, {}, report)
+        return report, kept
+
+    try:
+        report, kept = _run_with_providers(work)
+    except (GraphRequestError, TransactionNotFound) as error:
+        raise UserError(str(error)) from error
+    print(json.dumps(report.to_dict()) if args.json else render_report(report))
+    if kept and not args.json:
+        print(f"kept as {kept} for organization {args.store_in}")
+    return _screen_exit(report)
+
+
+def _read_overrides() -> dict:
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_sessions(engine).read() as session:
+            return risk_store.rule_overrides(session)
+    finally:
+        engine.dispose()
+
+
+def _cmd_risk_rules(args: argparse.Namespace) -> int:
+    """The detection rules as configured now (the code's defaults plus an operator's overrides)."""
+    try:
+        rules = effective_rules(_read_overrides())
+    except RuleConfigError as error:
+        raise UserError(str(error)) from error
+    if args.json:
+        print(json.dumps([rule.to_dict() for rule in rules]))
+        return 0
+    for effective in rules:
+        rule = effective.rule
+        state = "on " if effective.enabled else "OFF"
+        print(f"{rule.id}  {state}  v{rule.version}  {rule.severity.value:<8} {rule.name}")
+        if effective.overridden:
+            changed = {k: v for k, v in effective.config.items() if v != rule.config.get(k)}
+            print(f"          changed from the defaults: {json.dumps(changed)}")
+    return 0
+
+
+def _parse_setting(item: str) -> tuple[str, object]:
+    key, separator, value = item.partition("=")
+    if not key or not separator:
+        raise UserError(f"--set expects KEY=VALUE, not {item!r}")
+    try:
+        return key, json.loads(value)  # numbers, true/false and JSON objects
+    except ValueError:
+        return key, value
+
+
+def _cmd_risk_rule_set(args: argparse.Namespace) -> int:
+    """Switch a rule on or off, or change its thresholds. Settings are merged into the rule's
+    existing overrides; `risk rule reset` goes back to the defaults."""
+    rule = BY_ID.get(args.rule)
+    if rule is None:
+        raise UserError(f"unknown rule {args.rule!r} (try one of {', '.join(BY_ID)})")
+    changes = dict(_parse_setting(item) for item in args.set)
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_sessions(engine).write() as session:
+            enabled, config = risk_store.rule_overrides(session).get(rule.id, (None, None))
+            if args.enable:
+                enabled = True
+            if args.disable:
+                enabled = False
+            merged = {**(config or {}), **changes}
+            try:
+                merge_config(rule, merged)  # refuses a setting the rule lacks or a wrong kind
+            except RuleConfigError as error:
+                raise UserError(str(error)) from error
+            risk_store.set_rule_override(
+                session, rule.id, enabled=enabled, config=merged or None, note=args.note
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+    print(
+        f"{rule.id} {rule.name}: "
+        + ("on" if enabled is not False else "OFF")
+        + f", {merged or 'defaults'}"
+    )
+    return 0
+
+
+def _cmd_risk_rule_reset(args: argparse.Namespace) -> int:
+    if args.rule not in BY_ID:
+        raise UserError(f"unknown rule {args.rule!r} (try one of {', '.join(BY_ID)})")
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_sessions(engine).write() as session:
+            removed = risk_store.clear_rule_override(session, args.rule)
+            session.commit()
+    finally:
+        engine.dispose()
+    print(f"{args.rule}: back to the defaults" if removed else f"{args.rule}: had no override")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -548,6 +780,79 @@ def main(argv: list[str] | None = None) -> int:
     )
     graph.add_argument("--json", action="store_true", help="print JSON instead of text")
     graph.set_defaults(run=_cmd_graph)
+
+    def graph_limits(command: argparse.ArgumentParser) -> None:
+        command.add_argument("--depth", type=int, help="hops from the address")
+        command.add_argument(
+            "--direction",
+            choices=[item.value for item in Direction],
+            default=Direction.BOTH.value,
+        )
+        command.add_argument("--max-nodes", type=int)
+        command.add_argument("--max-edges", type=int)
+        command.add_argument("--per-node", type=int, help="counterparties followed per address")
+        command.add_argument("--days", type=int, help="how far back the movements go")
+        command.add_argument("--history-items", type=int, help="transfers read per address")
+
+    screen = commands.add_parser(
+        "screen", help="risk-screen an address or a transaction"
+    ).add_subparsers(dest="screen_command", required=True)
+    screen_address_command = screen.add_parser(
+        "address", help="screen an address (updates stored histories first unless --no-update)"
+    )
+    screen_address_command.add_argument("chain", help="ethereum, bsc, tron, bitcoin or solana")
+    screen_address_command.add_argument("address")
+    graph_limits(screen_address_command)
+    screen_address_command.add_argument(
+        "--no-update",
+        action="store_true",
+        help="use only the stored histories (no provider request)",
+    )
+    screen_address_command.add_argument(
+        "--refresh", action="store_true", help="update every history now, even a recent one"
+    )
+    screen_address_command.add_argument(
+        "--store-in", metavar="ORG_SLUG", help="keep the report for this organization"
+    )
+    screen_address_command.add_argument(
+        "--json", action="store_true", help="print JSON instead of text"
+    )
+    screen_address_command.set_defaults(run=_cmd_screen_address)
+    screen_tx_command = screen.add_parser("transaction", help="screen one transaction")
+    screen_tx_command.add_argument("chain", help="ethereum, bsc, tron, bitcoin or solana")
+    screen_tx_command.add_argument("hash")
+    screen_tx_command.add_argument(
+        "--store-in", metavar="ORG_SLUG", help="keep the report for this organization"
+    )
+    screen_tx_command.add_argument("--json", action="store_true", help="print JSON instead of text")
+    screen_tx_command.set_defaults(run=_cmd_screen_transaction)
+
+    risk = commands.add_parser("risk", help="the risk rules").add_subparsers(
+        dest="risk_command", required=True
+    )
+    rules = risk.add_parser("rules", help="the detection rules as configured now")
+    rules.add_argument("--json", action="store_true")
+    rules.set_defaults(run=_cmd_risk_rules)
+    rule_group = risk.add_parser("rule", help="change one rule").add_subparsers(
+        dest="rule_command", required=True
+    )
+    rule_set = rule_group.add_parser("set", help="switch a rule on or off, or change its settings")
+    rule_set.add_argument("rule", help="for example AML-004")
+    switch = rule_set.add_mutually_exclusive_group()
+    switch.add_argument("--enable", action="store_true")
+    switch.add_argument("--disable", action="store_true")
+    rule_set.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="a setting (repeatable); JSON values",
+    )
+    rule_set.add_argument("--note", help="why")
+    rule_set.set_defaults(run=_cmd_risk_rule_set)
+    rule_reset = rule_group.add_parser("reset", help="go back to the rule's defaults")
+    rule_reset.add_argument("rule")
+    rule_reset.set_defaults(run=_cmd_risk_rule_reset)
 
     create = commands.add_parser("create-user", help="create a user (and its organization)")
     create.add_argument("--email", required=True)
