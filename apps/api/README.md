@@ -403,6 +403,110 @@ may never be mined and nothing would ever remove it.
   and by the tests on SQLite. The suite runs on MySQL 8.0 and 8.4 in CI; until it has run on the M8
   commits, MySQL parity is unverified.
 
+## Address intelligence (milestone M9)
+
+What the platform knows about an address from outside the chains: who it belongs to, why it
+matters, who says so, how sure they are, and how current that is. The first source is OFAC's
+sanctions list.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli labels refresh                  # download OFAC's list and update the claims
+.\.venv\Scripts\python.exe -m app.cli labels refresh --file sdn.xml   # or read a local copy
+.\.venv\Scripts\python.exe -m app.cli labels sources                  # how current each source is (no request)
+.\.venv\Scripts\python.exe -m app.cli labels lookup ethereum 0x098B716B8Aaf21512996dC57EB0615e2383E2f96
+.\.venv\Scripts\python.exe -m app.cli enqueue REFRESH_LABEL_SOURCE    # the same refresh, for the worker
+```
+
+`labels lookup` exits 0 when no source holds a claim in force and 2 when one does (1 on errors).
+`POST /api/v1/intel/lookup` (`{"chain": ..., "address": ...}`) and `GET /api/v1/intel/sources`
+give the same over HTTP, authenticated. A lookup reads only stored data, so it makes no request and
+is cheap enough to run for every counterparty of a history (`lookup_many`).
+
+An answer names, for every claim: the **category** (SANCTIONS so far; the model also has MIXER,
+DARKNET, SCAM, PHISHING, RANSOMWARE, STOLEN_FUNDS, EXCHANGE, GAMBLING, DEFI and BRIDGE), the
+**entity** (name, type, sanctions programs), the **source** and its kind, the source's own entry
+number and a link to it, the **confidence**, the currency it was listed under, when this platform
+first saw the claim and last confirmed it, and a sentence that says it all. It also lists every
+source it was checked against, with the date that source's list was published, how long ago it was
+confirmed current, and whether that counts as fresh. For example, for Lazarus Group's address:
+
+```
+SANCTIONS (100% confidence): listed by OFAC Specially Designated Nationals (SDN) list [official]
+as 'LAZARUS GROUP' (entity), programs DPRK3, listed under the currency ETH; entry 27307; first
+seen here 2026-11-06, last confirmed 2026-11-06
+Checked against: OFAC ...: published 2026-11-05, checked 2s ago (fresh)
+```
+
+**Nothing found is never "clean".** The answer says "no known label in the sources below" and
+lists them; a source that was never fetched, or whose copy is older than twice its refresh interval,
+adds a warning that a newer listing may not be reflected. Freshness and confidence are separate:
+a stale copy does not lower the confidence of a listing it still holds (a sanction stays in force
+until lifted), it only says that a new listing may be missing.
+
+### Confidence
+
+Sources are not equally reliable and no two kinds share a number: official 100, reputable
+analytics 80, community 50, inferred from behaviour 30, unknown 0 (percent, per source, so a
+particular source can be set differently). A claim from a source is stored with its confidence.
+Only official sources exist so far; the others are the shape the next sources will fit.
+
+### OFAC's list
+
+`labels refresh` downloads `SDN.XML` (about 30 MB; OFAC answers with a redirect to a signed link,
+which is followed, https only and never logged), reads the entries that name digital currency
+addresses, and makes the stored claims match. The real list of 2026-11-05 names 1,058 distinct
+addresses in 20 currencies on 109 entries. What happens to them:
+
+* OFAC names a **currency**, not a chain, and the address decides the chain: an address listed as
+  ETH is the same key on BNB Smart Chain, so it becomes a claim on each EVM chain; OFAC lists TRON
+  addresses under USDT as well as TRX, and Omni USDT sits on Bitcoin addresses; one TRON address is
+  listed under XBT. Each claim keeps the currency as listed. Together: 1,143 claims on the five
+  chains.
+* Addresses on chains this platform does not read (Monero, Litecoin, Zcash, Dash ...: 46 of them)
+  are counted in the report, not dropped silently.
+* Re-importing a list that is byte for byte the one already imported rewrites nothing and only
+  marks the source as checked now. A claim a new copy no longer contains is **withdrawn, not
+  deleted**, with the time it disappeared, and shows up as "former"; one that returns is
+  reactivated. A failed refresh leaves the stored copy alone and does not make it look newly
+  confirmed.
+* "First seen" is when this platform first saw the claim: OFAC's file carries no listing date.
+* The file is parsed defensively: a document that declares a DOCTYPE or entities is refused
+  unread, a truncated download is a bad list rather than a crash, and the size is capped
+  (`INTEL_MAX_DOWNLOAD_BYTES`).
+
+`REFRESH_LABEL_SOURCE` (payload `{"source": "ofac_sdn", "force": false}`) runs the same refresh in
+the worker: a download that failed for a reason that may pass is retried, an unreadable list is
+not. Nothing schedules it yet; run it daily (OFAC publishes when it acts), or leave `labels
+sources` to show when it is overdue.
+
+### Watchman, as a second opinion
+
+[Moov Watchman](https://github.com/moov-io/watchman) is optional (`WATCHMAN_URL`). The compose
+file adds it with `INCLUDED_LISTS=us_ofac` and **no published port**: its HTTP API has no
+authentication by design, so only the API and the worker reach it, by name (a test guards this).
+When it is configured a lookup also asks it about the address under each currency OFAC may list it
+as, and counts a hit only if the entity Watchman returns really lists that address. Watchman being
+down is shown in the answer and never fails the lookup. The platform's own table stays the
+authority for wallet addresses.
+
+**Not run against a real Watchman**, which needs Docker (absent on the development machine): the
+client is written from Watchman's published API (`GET /v2/search?cryptoAddress=CURRENCY:ADDRESS`)
+and tested against an in-memory copy. The docs do not say whether the crypto match is exact, how
+case is treated, or that OFAC is loaded by default, and the image tag `v1.2.2` has not been pulled;
+the first run against the real service may need adjusting.
+
+### Not done
+
+* Only OFAC. The UN, EU and UK lists, analytics providers, community lists and OpenSanctions (its
+  data needs a licence for business use) are not integrated; the schema and the confidence model
+  are ready for them.
+* No entity relationships or clusters; no tables `watchlist_*` or `screening_matches`: a lookup is
+  computed from the stored claims each time. Exposure through counterparties (direct and
+  indirect) is milestones M10 and M11; `lookup_many` is what they will call.
+* No scheduler for the refresh, and no alert when a source goes stale.
+* Stored claims are per chain and address; the claim for an EVM address is expanded to the EVM chains
+  at import, so a newly added EVM chain needs a re-import (`--force`).
+
 ## Testing against MySQL
 
 Point `TEST_DATABASE_URL` at an **empty, throwaway** MySQL 8 database and run the suite as usual:
@@ -424,6 +528,8 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 | `POST /auth/login` | none | email and password for a bearer token |
 | `GET /chains` | bearer | supported chains, in registry order, with `enabled` |
 | `POST /address/validate` | bearer | validate an address on one chain (`chain`: slug or CAIP-2 id) or detect every chain it is valid on |
+| `POST /intel/lookup` | bearer | what is known about an address (`chain`, `address`): each claim with its source, confidence and age, withdrawn claims, the state of every source, and Watchman's opinion when configured. A bad address is 422, an unknown chain 404 |
+| `GET /intel/sources` | bearer | each label source, when its list was published and last confirmed current, and whether that is fresh |
 | `GET /providers` | bearer | each data provider: configured or not, limits, chains (paid ones apart), circuit state, last error, 24-hour usage. Never a key |
 | `POST /providers/{name}/probe` | bearer | one live health request to that provider; the answer says what is wrong in words (`ok`, `auth_failed`, `rate_limited`, `unreachable`, `unhealthy`, `not_configured` ...) |
 
@@ -443,6 +549,7 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter base (`SourceAdapter`) and the account-model adapter on top of it, and the lookup from a chain name to its adapter |
 | `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/`, `app/chains/solana/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis; Solana its own transaction record, the instruction decoder checked against balance changes, and a wallet's per-transaction activity |
 | `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), storing and reusing it (`sync`, with `families` for what differs per chain family, `raw` for the kept provider answers, `detail` for single transactions), the history job, the text views for the CLI |
+| `app/intel/` | address intelligence: the claim model and confidence (`model`), OFAC's list reader (`ofac`), the importer and downloader (`importer`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`) and what the CLI and API share (`service`) |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
 | `app/database/repositories/` | job queue and usage counters; the stored chain data (`transfers`, `bitcoin`, `solana`, `membership`, saved by identity through `rows`); coverage, the log of reads and the raw answers (`acquisition`). `app/database/upsert.py` and `retry.py` are the bulk upserts and the deadlock retry they share |
 | `migrations/` | Alembic environment and versions |
