@@ -654,6 +654,160 @@ counterparties not followed), which is the point.
   them, each as long as was read), and there is no per-request rate limit yet (milestones M13/M14).
 * No entity clustering. A label belongs to an address, never to a group of them.
 
+## AML risk engine (milestone M11)
+
+Screening an address or a transaction gives a **report**: findings, each with the rule that fired,
+its version and the evidence (transaction hashes, the labels and where they came from); a risk
+score and level; and a separate confidence. A report is kept exactly as it was produced, so it can
+be read again, compared with an earlier one, and explained.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli screen address ethereum 0x098B716B8Aaf21512996dC57EB0615e2383E2f96 --days 3650
+.\.venv\Scripts\python.exe -m app.cli screen address ethereum <address> --no-update   # stored data only
+.\.venv\Scripts\python.exe -m app.cli screen address ethereum <address> --depth 3 --store-in <org-slug>
+.\.venv\Scripts\python.exe -m app.cli screen transaction ethereum <hash>
+.\.venv\Scripts\python.exe -m app.cli risk rules                                      # the rules as configured
+.\.venv\Scripts\python.exe -m app.cli risk rule set AML-004 --set window_seconds=600  # or --disable; `reset` undoes
+```
+
+`screen` exits 0 when nothing was found and the data was complete, **2 when there are findings**, and
+**3 when nothing was found but the data was not complete**, which is not a clearance. An address is
+screened by building the graph around it (milestone M10), bringing the stored histories up to date
+first unless `--no-update` is given (so it spends provider requests, within `GRAPH_REQUEST_BUDGET`,
+and a repeat within `HISTORY_FRESH_SECONDS` spends none), and running the rules over it. A
+transaction is decoded and each party to it is looked up.
+
+Over HTTP a screening is asynchronous, because it may read from the providers:
+
+| Endpoint | What it does |
+|---|---|
+| `POST /screen/address` | `{chain, address, options}` records the screening and queues the job `ADDRESS_SCREENING`; answers `202` with a `screening_id` (`scr_<n>`). `options`: `max_hops`, `max_transactions`, `historical_days`, `max_nodes`, `max_edges`, `counterparties`, `direction`, `update` (default true), `refresh`; unknown options are refused, and limits can only tighten the configured ones. The same request while one is queued or running returns that one (`already_requested`) |
+| `POST /screen/transaction` | `{chain, hash}`; the job is `TRANSACTION_SCREENING` |
+| `GET /screen/{screening_id}` | its status (`QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`, with the reason) and, once completed, the report |
+| `GET /address/{chain}/{address}/risk` | the organization's latest completed report on the address, as produced (not recomputed) |
+| `GET /address/{chain}/{address}/risk/history` | its finished screenings, newest first: how the score moved |
+| `GET /risk/rules` | the rules as configured, each with its version, thresholds and defaults |
+
+A screening belongs to the organization that asked: another organization's is "not found". A worker
+(`python -m app.worker`) must be running to carry it out. A provider failure is retried by the worker;
+the screening is only `FAILED` once the attempts are used up or the failure cannot pass, and says why.
+
+### What a report says
+
+* **`risk_score` (0-100) and `risk_level`** (0-19 LOW, 20-39 MODERATE, 40-69 HIGH, 70-100 CRITICAL):
+  how much concern the findings add up to. The levels follow the blueprint's table; its example showing
+  82 as HIGH contradicts that table and is not followed.
+* **`confidence` (0-1)**: a different thing, how far the evidence and the data behind the findings can
+  be trusted: the findings' own confidences (a sanction from an official list is firmer than a
+  behavioural indicator), reduced when the data is partial and when a label source is stale. It is not
+  a probability.
+* **`data_coverage`**: `COMPLETE`, `PARTIAL` (a limit cut something off or a history is not fully
+  held; `data_gaps` says what) or `INSUFFICIENT` (the subject's own history is not held).
+* **`outcome`**: `findings`, `no_findings` or `insufficient_data`. With too little data the report has
+  **no score at all** (null), because a score of 0 would read as "low risk".
+* **`rules`**: every rule, as `triggered`, `clear` or **`not_evaluated` with the reason** (the graph
+  was too shallow, the rule does not apply to the chain, a setting nobody made, switched off), so a
+  missing finding can be told from a rule that could not look. A rule that crashes is `error`, and the
+  others still count.
+* **`duplicates_not_counted`**: findings about an event another rule already reported.
+
+A report without findings says what was and was not checked and that it is not a clearance.
+Findings are indicators of risk, not proof of wrongdoing.
+
+### The fifteen rules
+
+| Rule | Reads | Notes |
+|---|---|---|
+| AML-001 direct sanctions exposure | exposure paths | the address itself listed, or one hop from a listed address, either direction, any amount |
+| AML-002 indirect sanctions exposure | exposure paths | two or more hops; needs a graph at least 2 deep |
+| AML-003 mixer interaction | exposure paths | up to 3 hops |
+| AML-004 rapid fund movement | the subject's movements | what comes in leaves within an hour, matched first in first out per asset |
+| AML-005 layering | the graph | value moving on through 3+ addresses, each soon after the last, same asset, about the same amount; needs depth 3 |
+| AML-006 peel chain | the graph | Bitcoin only; a chain of transactions each paying a small part to one address and the rest onward; needs depth 3 |
+| AML-007 / 008 high-risk incoming / outgoing funds | exposure paths | any risk category (mixer, scam, phishing, ransomware, stolen funds, darknet, sanctions) up to 3 hops |
+| AML-009 / 010 fan-in / fan-out | the subject's movements | 10 different counterparties within 24 hours |
+| AML-011 unusual velocity | the subject's movements | the busiest day against its own usual day (median of its active days) |
+| AML-012 dormant activation | the subject's movements | active again after 180 days of silence that ended in the last 30 |
+| AML-013 bridge exposure | the graph | needs bridge data; none ships, so it says so |
+| AML-014 concentration | the subject's movements | 90% or more of an asset's value in or out through one counterparty |
+| AML-015 structuring | the subject's movements | several movements just under a threshold; **needs thresholds per asset, which are not shipped**: until you set them it says so |
+
+Exposure rules read the graph's time-respecting paths (see "Transaction graph"): a hop's transfer is
+at or after the previous one's, and a path that rests on an allocated Bitcoin amount or on an unproven
+order is weaker evidence. Only the OFAC list exists as a label source so far, so in practice only the
+sanctions rules can fire on a real address until further sources (mixers, scams, ...) are added. Every
+threshold is a default to calibrate, not a regulatory limit.
+
+### How the score is made
+
+1. Two findings about the same event are counted once, by the rule with the lower priority number
+   (AML-001 over AML-007, and so on); the other is listed under `duplicates_not_counted`.
+2. A finding adds `cap x hop weight x confidence x time decay x direction weight`. The caps are the
+   blueprint's: direct sanctions 100, indirect sanctions 40, mixers 35, scams and ransomware 40,
+   layering 25, rapid movement 15, unusual behaviour 15, other 10. Hop weights are 1.0, 0.7, 0.4, 0.2
+   for 1-4 hops (0.1 beyond). Evidence older than 90 days counts for less, down to half at a year
+   (a direct sanctions finding does not age).
+3. Inside a factor, contributions combine as `1 - product(1 - c / cap)` times the cap: several weak
+   findings add up but never pass the cap, and one strong one is not diluted.
+4. The factors add up, to at most 100.
+5. **Policy override**: a direct match with a source of confidence 90 or more (an official list) sets
+   the score to 100 whatever else was found, and the report names the rule that did.
+
+All of these constants are the blueprint's illustrative values and reasonable defaults, **not
+calibrated** against reviewed cases. They are recorded in every report (`ScoringSettings` in
+`app/risk/scoring.py`) so a score can always be redone by hand, and they will change once there are
+cases to calibrate against.
+
+### Rules and their configuration
+
+The rules and their logic are code (`app/risk/rules/`), each with an id, name, description, severity,
+factor, supported chains, version and default configuration; the version is raised whenever its logic
+or defaults change. What an operator can change is kept in the `risk_rules` table as an *override*
+(switched off, a changed threshold): `risk rule set` validates it (a setting the rule lacks, or a
+value of the wrong kind, is refused) and the report records the configuration each rule actually ran
+with. The configuration is global, not per organization, and changing it is a command-line operation
+until roles exist (milestone M13).
+
+### What is kept
+
+`risk_assessments` (tenant-owned: one per screening, the report as a document, the status, the
+options, the job), `risk_findings` (the same findings as rows, with the rule version and whether each
+was counted, to ask questions across screenings) and `risk_rules` (the overrides). There is no
+`exposure_paths` table: a path is evidence inside its finding.
+
+### Screening a transaction
+
+It judges what one transaction can show: who is on each side of it (the sender and receiver, each
+transfer's two parties, a Bitcoin transaction's input and output addresses) against the label
+sources, with AML-001, 003, 007 and 008. The other rules need a history or a graph and are reported
+as not evaluated; what a receipt leaves out (internal coin movements, token symbols) is listed under
+`data_gaps`, which makes the coverage `PARTIAL`. To judge an address's wider exposure, screen the
+address.
+
+### Checked against
+
+2,118 tests with in-memory providers and the real database layer, and about 150 mutations over the
+risk code (every real gap closed, found by breaking the code on purpose; the survivors are equivalent
+mutants). Live, with the real keys on a scratch database (2026-11-06): Lazarus Group's OFAC-listed
+Ethereum address (300 transfers read per stream) scored 100 CRITICAL with eight AML-001 findings and
+behavioural indicators (rapid movement, fan-in, fan-out, velocity, concentration), confidence 0.69
+because the history was partial, and said so; screening it again used no provider request and gave the
+same findings; its busiest counterparty and a real transaction between them were also flagged by
+AML-001; two of those reports were kept for an organization. A busy Bitcoin address (the genesis
+address) scored 6 LOW on AML-009 alone with confidence 0.28.
+
+### Not done
+
+* **Calibration.** The weights, thresholds and confidence figures are uncalibrated defaults.
+* **Data.** Only the OFAC list is a label source, so mixer, scam, ransomware and similar rules have no
+  data to fire on; AML-013 needs bridge data and AML-015 needs thresholds, and neither ships.
+* AML-002, 005 and 006 are only judged when the graph is deep enough (`--depth 2` or `3`), which costs
+  more provider requests; the default screening is one hop.
+* Account histories are read oldest first (milestone M8), so for a busy address under the item cap the
+  report is built on its oldest transfers and says the history is partial.
+* No monitoring or alerts on new activity (M13), no report export (M12), no per-organization rule
+  configuration, no scheduled re-screening.
+
 ## Testing against MySQL
 
 Point `TEST_DATABASE_URL` at an **empty, throwaway** MySQL 8 database and run the suite as usual:
@@ -678,6 +832,11 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 | `POST /intel/lookup` | bearer | what is known about an address (`chain`, `address`): each claim with its source, confidence and age, withdrawn claims, the state of every source, and Watchman's opinion when configured. A bad address is 422, an unknown chain 404 |
 | `GET /intel/sources` | bearer | each label source, when its list was published and last confirmed current, and whether that is fresh |
 | `GET /graph` | bearer | the bounded transaction graph around an address (`chain`, `address`, and optionally `depth`, `direction`, `max_nodes`, `max_edges`, `counterparties`, `days`), shaped for Cytoscape, from stored histories only (no provider request): nodes with their labels, edges with proof, `exposures`, `patterns`, and `complete` / `gaps` / `scope` / `warnings` saying what it leaves out. Limits can only be tightened. A bad address is 422, an unknown chain 404 |
+| `POST /screen/address` | bearer | queue the screening of an address (`chain`, `address`, `options`); `202` with a `screening_id` |
+| `POST /screen/transaction` | bearer | queue the screening of a transaction (`chain`, `hash`) |
+| `GET /screen/{screening_id}` | bearer | its status and, once completed, the report (only for the organization that asked) |
+| `GET /address/{chain}/{address}/risk` | bearer | the organization's latest completed report on the address, as produced; `/risk/history` lists its finished screenings, newest first |
+| `GET /risk/rules` | bearer | the detection rules as configured: version, thresholds, defaults, whether on |
 | `GET /providers` | bearer | each data provider: configured or not, limits, chains (paid ones apart), circuit state, last error, 24-hour usage. Never a key |
 | `POST /providers/{name}/probe` | bearer | one live health request to that provider; the answer says what is wrong in words (`ok`, `auth_failed`, `rate_limited`, `unreachable`, `unhealthy`, `not_configured` ...) |
 
@@ -699,6 +858,7 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), storing and reusing it (`sync`, with `families` for what differs per chain family, `raw` for the kept provider answers, `detail` for single transactions), the history job, the text views for the CLI |
 | `app/intel/` | address intelligence: the claim model and confidence (`model`), OFAC's list reader (`ofac`), the importer and downloader (`importer`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`) and what the CLI and API share (`service`) |
 | `app/graph/` | the transaction graph: movements from stored records (`flows`), where histories come from and how complete they are (`reader`), the bounded expansion (`builder`), exposure paths (`exposure`), fan-in and fan-out (`patterns`), bridges (`bridges`), the text output (`render`), what the CLI, API and job share (`service`) and the job (`jobs`) |
+| `app/risk/` | the risk engine: the records of a report (`model`), the fifteen rules and their registry (`rules/`), scoring and confidence (`scoring`), screening a graph (`engine`) or a transaction (`transactions`), the text output (`render`), what the CLI, API and job share (`service`) and the screening jobs (`jobs`) |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
 | `app/database/repositories/` | job queue and usage counters; the stored chain data (`transfers`, `bitcoin`, `solana`, `membership`, saved by identity through `rows`); coverage, the log of reads and the raw answers (`acquisition`). `app/database/upsert.py` and `retry.py` are the bulk upserts and the deadlock retry they share |
 | `migrations/` | Alembic environment and versions |
@@ -726,9 +886,9 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 ## Known gaps (tracked in the project plan)
 
 * No login rate limiting or lockout yet.
-* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `e7927ad`; the
-  first M3 run found two concurrency bugs and a test-fixture flaw, the first M8 and M9 run two more
-  fixture problems; none was in the code under test after M3).
+* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `9dabdc7`). The
+  first M3 run found two concurrency bugs in the code and a flaw in the test fixture; the first M8
+  and M9 run found two problems, both in the tests.
 * **Docker:** CI builds `Dockerfile`, runs the container, calls `/health` and `/version`, runs the
   worker on a job that needs no network, and checks that `deployment/docker-compose.yml` parses.
   Nothing has been run with Docker on the development machine, and the compose file's worker service
