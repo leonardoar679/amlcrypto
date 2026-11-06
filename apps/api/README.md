@@ -802,11 +802,45 @@ address) scored 6 LOW on AML-009 alone with confidence 0.28.
 * **Data.** Only the OFAC list is a label source, so mixer, scam, ransomware and similar rules have no
   data to fire on; AML-013 needs bridge data and AML-015 needs thresholds, and neither ships.
 * AML-002, 005 and 006 are only judged when the graph is deep enough (`--depth 2` or `3`), which costs
-  more provider requests; the default screening is one hop.
+  more provider requests; the default screening is one hop (the web form asks for two).
 * Account histories are read oldest first (milestone M8), so for a busy address under the item cap the
   report is built on its oldest transfers and says the history is partial.
-* No monitoring or alerts on new activity (M13), no report export (M12), no per-organization rule
-  configuration, no scheduled re-screening.
+* No monitoring or alerts on new activity (M13), no per-organization rule configuration, no scheduled
+  re-screening. (Reports export as JSON and CSV since M12; a PDF is the browser's print dialog, there is
+  no PDF library on the server.)
+
+## Serving the web app (milestone M12)
+
+The Next.js app (`apps/web`) is the first client of this API, and the endpoints below were added for it.
+All are tenant-scoped (another organization's screening or job is simply not found), all are tested, and
+none of them makes a provider request except through a queued job.
+
+| Endpoint | What it is for |
+|---|---|
+| `GET /auth/me` | who the token belongs to and for which organization: `{user: {id, email, last_login_at}, organization: {id, name, slug}}`. It goes back to the database every time, so a deactivated account stops working at once. The web app calls it on every page render |
+| `GET /screenings` | the organization's screenings, newest first, **without** their reports (a report can be large): `subject_type`, `chain`, `status`, `risk_level`, `q` (the start of an address; an EVM `0x` prefix is lower-cased, `%` and `_` are literal), `latest_per_subject` (only each subject's newest finished screening), `limit` (1-100), `offset`. Each item has the subject, score, level, confidence, coverage, outcome and the number of **counted** findings |
+| `GET /screen/{id}/export?format=json\|csv` | the report as an attachment: the whole document, or its findings (and the duplicates that were not counted) as CSV. A cell that begins `=`, `+`, `-`, `@`, tab or CR is prefixed with `'` so a spreadsheet does not run it. A screening with no report yet is 409 `not_completed` |
+| `GET /address/{chain}/{address}` | what is stored about an address: its labels (with each source's freshness), how much of its history is held and how it was read (`history`: `complete`, `partial` or `not_read`, per stream), what that history shows (`activity`: transfers and distinct counterparties each way, first and last seen), the gaps, and the organization's latest finished screening. Stored data only |
+| `GET /address/{chain}/{address}/transactions` | the stored movements of value, newest first (undated last): `direction` (`both`, `in`, `out`), `days`, `limit` (1-200), `offset`. Each item has its counterparty, the labels the sources give that counterparty, the asset, the amount in units and in raw units, and whether the amount is exact or an allocated share (Bitcoin). `coverage`, `gaps` and `ignored` (zero-value events, movements to itself) say what the list leaves out |
+| `GET /address/{chain}/{address}/labels` | every claim about the address and the state of every source: `POST /intel/lookup` as a GET, with the optional Watchman opinion |
+| `POST /graph/update` | queue `FETCH_COUNTERPARTIES` to read the histories a graph is missing: the same options as `GET /graph` plus `history_items` and `refresh`. `202` with a `job_id`; the same request while one is queued or running returns that job (`already_requested`) |
+| `GET /jobs/{job_id}` | where a job of the organization stands (`QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`), its attempts, and its result or error |
+
+Report evidence now carries a formatted `amount` next to `amount_raw` (and `edge_total` and
+`transfer.amount` on the hops of an exposure path), so a report reads "1.5 USDT" in the JSON and the CSV
+as well as on screen. The raw integer stays, because it is the exact value.
+
+The web app's session design (an httpOnly cookie held by the Next.js server, which adds the bearer token
+when it forwards an allow-listed set of endpoints) needs nothing from this API beyond `POST /auth/login`
+and `GET /auth/me`: see `shared/documentation/frontend-integration-map.md`.
+
+### Checked against
+
+2,173 tests (55 more than before M12: the endpoints above, their organization isolation, the CSV
+formula defusing, the stored-history paging, the job and queue semantics, the formatted amounts), and
+mutations of the new code in which every real gap was closed. The endpoints were also used by the web
+app in a real browser, against the real chain (a sanctioned address screened through the UI), as recorded
+in the integration map. Not yet run in CI.
 
 ## Testing against MySQL
 
@@ -827,16 +861,22 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 | `GET /health` | none | liveness plus a database round trip (503 when the database is down) |
 | `GET /version` | none | app version and schema revision (`schema_up_to_date`) |
 | `POST /auth/login` | none | email and password for a bearer token |
+| `GET /auth/me` | bearer | the signed-in user and their organization |
 | `GET /chains` | bearer | supported chains, in registry order, with `enabled` |
 | `POST /address/validate` | bearer | validate an address on one chain (`chain`: slug or CAIP-2 id) or detect every chain it is valid on |
 | `POST /intel/lookup` | bearer | what is known about an address (`chain`, `address`): each claim with its source, confidence and age, withdrawn claims, the state of every source, and Watchman's opinion when configured. A bad address is 422, an unknown chain 404 |
 | `GET /intel/sources` | bearer | each label source, when its list was published and last confirmed current, and whether that is fresh |
 | `GET /graph` | bearer | the bounded transaction graph around an address (`chain`, `address`, and optionally `depth`, `direction`, `max_nodes`, `max_edges`, `counterparties`, `days`), shaped for Cytoscape, from stored histories only (no provider request): nodes with their labels, edges with proof, `exposures`, `patterns`, and `complete` / `gaps` / `scope` / `warnings` saying what it leaves out. Limits can only be tightened. A bad address is 422, an unknown chain 404 |
+| `GET /screenings` | bearer | the organization's screenings, newest first, without their reports; filters and paging (see "Serving the web app") |
 | `POST /screen/address` | bearer | queue the screening of an address (`chain`, `address`, `options`); `202` with a `screening_id` |
 | `POST /screen/transaction` | bearer | queue the screening of a transaction (`chain`, `hash`) |
 | `GET /screen/{screening_id}` | bearer | its status and, once completed, the report (only for the organization that asked) |
+| `GET /screen/{screening_id}/export` | bearer | the report as a JSON or CSV download |
+| `GET /address/{chain}/{address}` | bearer | what is stored about the address (labels, history coverage, activity, latest screening); `/transactions` pages its stored movements; `/labels` lists every claim and source |
 | `GET /address/{chain}/{address}/risk` | bearer | the organization's latest completed report on the address, as produced; `/risk/history` lists its finished screenings, newest first |
 | `GET /risk/rules` | bearer | the detection rules as configured: version, thresholds, defaults, whether on |
+| `POST /graph/update` | bearer | queue the reading of the histories a graph is missing; `202` with a `job_id` |
+| `GET /jobs/{job_id}` | bearer | the state, result or error of a job the organization queued |
 | `GET /providers` | bearer | each data provider: configured or not, limits, chains (paid ones apart), circuit state, last error, 24-hour usage. Never a key |
 | `POST /providers/{name}/probe` | bearer | one live health request to that provider; the answer says what is wrong in words (`ok`, `auth_failed`, `rate_limited`, `unreachable`, `unhealthy`, `not_configured` ...) |
 
@@ -886,7 +926,7 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 ## Known gaps (tracked in the project plan)
 
 * No login rate limiting or lockout yet.
-* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `9dabdc7`). The
+* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `12a9a8f`, 2,118 tests; the M12 additions have not run in CI yet). The
   first M3 run found two concurrency bugs in the code and a flaw in the test fixture; the first M8
   and M9 run found two problems, both in the tests.
 * **Docker:** CI builds `Dockerfile`, runs the container, calls `/health` and `/version`, runs the
