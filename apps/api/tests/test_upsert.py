@@ -120,7 +120,8 @@ def test_rows_go_in_in_key_order_so_overlapping_writers_lock_in_the_same_order(c
     @event.listens_for(committing_db.engine, "before_cursor_execute")
     def capture(connection, cursor, statement, parameters, context, executemany):
         if executemany and "INSERT INTO data_coverage" in statement:
-            seen.append([p[2] for p in parameters])  # the stream column
+            # SQLite binds by position, PyMySQL by name.
+            seen.append([p["stream"] if isinstance(p, dict) else p[2] for p in parameters])
 
     rows = [coverage_row(stream=name) for name in ("internal", "erc20", "account")]
     with committing_db.write() as session:

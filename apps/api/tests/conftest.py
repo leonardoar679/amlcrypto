@@ -44,6 +44,7 @@ from app.database.models import (
     StoredTransfer,
     StoredUnattributed,
 )
+from app.intel.importer import OFAC_SLUG
 from app.main import create_app
 
 TEST_SECRET = "test-secret-key-that-is-comfortably-over-32-characters"
@@ -180,8 +181,9 @@ def committing_db(database_url: str) -> Iterator[CommittingDb]:
             with handle.write() as session:
                 for model in WRITTEN_BY_TESTS:
                     session.execute(delete(model))
-                # The sources are seeded by a migration, so they stay; what imports changed in them
-                # does not.
+                # The OFAC source is seeded by a migration, so it stays; the sources a test made
+                # and what imports changed in the seeded one do not.
+                session.execute(delete(LabelSource).where(LabelSource.slug != OFAC_SLUG))
                 session.execute(
                     update(LabelSource).values(
                         publish_date=None,
