@@ -50,6 +50,22 @@ class Category(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+# The categories whose presence on an address is a reason for concern. The others say what an
+# address is (an exchange, a bridge, a protocol), which is context, not a warning: a path through
+# one is still reported, with the context attached.
+RISK_CATEGORIES = frozenset(
+    {
+        Category.SANCTIONS,
+        Category.MIXER,
+        Category.DARKNET,
+        Category.SCAM,
+        Category.PHISHING,
+        Category.RANSOMWARE,
+        Category.STOLEN_FUNDS,
+    }
+)
+
+
 class Freshness(StrEnum):
     FRESH = "fresh"  # confirmed current within twice the source's refresh interval
     STALE = "stale"  # older: a newer listing may not be here yet

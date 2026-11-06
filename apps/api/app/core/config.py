@@ -79,6 +79,28 @@ class Settings(BaseSettings):
     watchman_url: str | None = None
     watchman_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
+    # The transaction graph (python -m app.cli graph, GET /graph, the FETCH_COUNTERPARTIES job).
+    # These are engineering safeguards against a graph that would cost millions of provider
+    # requests, not AML thresholds; a request may tighten them but never raise them.
+    graph_default_depth: int = Field(default=1, ge=1, le=6)
+    graph_max_depth: int = Field(default=3, ge=1, le=6)
+    graph_max_nodes: int = Field(default=500, ge=2, le=50_000)
+    graph_max_edges: int = Field(default=2000, ge=1, le=500_000)
+    # The counterparties of one address that are followed (the rest are counted, not shown).
+    graph_max_counterparties: int = Field(default=25, ge=1, le=1_000)
+    graph_window_days: int = Field(default=365, ge=1, le=36_500)
+    graph_max_window_days: int = Field(default=3650, ge=1, le=36_500)
+    # Reading the histories a graph needs: transfers per address, and provider requests in all.
+    graph_history_items: int = Field(default=500, ge=1, le=1_000_000)
+    graph_request_budget: int = Field(default=300, ge=1, le=100_000)
+    # A fan-in or fan-out is this many different counterparties within this many seconds. Defaults
+    # to judge by, to be calibrated; exchanges and payment services do both all day.
+    graph_fan_threshold: int = Field(default=10, ge=2, le=10_000)
+    graph_fan_window_seconds: int = Field(default=86_400, ge=1, le=30 * 86_400)
+    # A JSON file of bridge contracts (see app/graph/bridges.py). None: no bridge is known, and
+    # nothing is reported as crossing one.
+    bridge_registry_file: str | None = None
+
     # The background worker (python -m app.worker).
     worker_concurrency: int = Field(default=4, ge=1, le=64)
     worker_poll_interval_seconds: float = Field(default=2.0, ge=0.05, le=60)
@@ -98,6 +120,7 @@ class Settings(BaseSettings):
         "helius_api_key",
         "esplora_base_url",
         "watchman_url",
+        "bridge_registry_file",
         mode="before",
     )
     @classmethod
