@@ -484,3 +484,11 @@ def test_a_history_that_was_cut_off_by_the_providers_window_is_partial_too():
     state = judge({"account": row("account", StreamStatus.TRUNCATED)}, "n")
 
     assert state[0].state == "partial" and [g.code for g in state[1]] == ["history_partial"]
+
+
+def test_the_graph_keeps_each_expanded_addresss_own_movements_for_the_rules():
+    graph, _ = build([flow(A, ROOT), flow(ROOT, B)], limits=GraphLimits(depth=2))
+
+    assert sorted(graph.histories) == sorted([ROOT, A, B])
+    assert len(graph.histories[ROOT]) == 2 and len(graph.histories[A]) == 1
+    assert "histories" not in graph.to_dict()

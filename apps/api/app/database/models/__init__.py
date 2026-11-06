@@ -14,6 +14,7 @@ from app.database.models.chain_data import (
 from app.database.models.chains import Chain, ChainAsset
 from app.database.models.intel import AddressLabel, Entity, LabelImport, LabelSource
 from app.database.models.jobs import FetchJob, JobStatus
+from app.database.models.risk import RiskAssessment, RiskFinding, RiskRule
 from app.database.models.tenancy import Organization, User
 from app.database.models.usage import ApiUsage
 
@@ -33,6 +34,9 @@ __all__ = [
     "LabelSource",
     "Organization",
     "RawResponse",
+    "RiskAssessment",
+    "RiskFinding",
+    "RiskRule",
     "StoredBalanceChange",
     "StoredInput",
     "StoredOutput",

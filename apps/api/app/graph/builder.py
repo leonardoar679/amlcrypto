@@ -269,6 +269,7 @@ async def build_graph(
         sources=sources,
         requests_used=reader.requests_used,
         ignored=dict(ignored),
+        histories={address: data[address].flows for address in expanded},
     )
     graph.exposures = find_exposures(graph)
     for address in expanded:

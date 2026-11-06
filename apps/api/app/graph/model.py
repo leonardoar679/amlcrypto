@@ -412,6 +412,8 @@ class Graph:
     sources: tuple[SourceStatus, ...] = ()
     requests_used: int = 0
     ignored: dict[str, int] = field(default_factory=dict)  # movements left out, and why
+    # Each expanded address's own movements in the window, for the rules that judge behaviour.
+    histories: dict[str, list[Flow]] = field(default_factory=dict, repr=False)
 
     @property
     def complete(self) -> bool:

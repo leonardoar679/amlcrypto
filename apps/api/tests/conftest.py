@@ -36,13 +36,18 @@ from app.database.models import (
     FetchRun,
     LabelImport,
     LabelSource,
+    Organization,
     RawResponse,
+    RiskAssessment,
+    RiskFinding,
+    RiskRule,
     StoredBalanceChange,
     StoredInput,
     StoredOutput,
     StoredTransaction,
     StoredTransfer,
     StoredUnattributed,
+    User,
 )
 from app.intel.importer import OFAC_SLUG
 from app.main import create_app
@@ -58,6 +63,9 @@ WRITTEN_BY_TESTS = (
     RawResponse,
     FetchRun,
     DataCoverage,
+    RiskFinding,
+    RiskAssessment,
+    RiskRule,
     FetchJob,
     ApiUsage,
     AddressTransaction,
@@ -67,6 +75,8 @@ WRITTEN_BY_TESTS = (
     StoredInput,
     StoredTransfer,
     StoredTransaction,
+    User,
+    Organization,
 )
 
 # Every setting can come from the environment; none of the developer's may leak into a test.
