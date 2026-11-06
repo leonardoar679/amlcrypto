@@ -400,8 +400,10 @@ may never be mined and nothing would ever remove it.
 * Stored provider data may not be shared between tenants without a licensing review (milestone M14).
 * **MySQL:** the new tables and statements are checked offline (identifier and key lengths, row
   width, the exact statements PyMySQL will send and that none takes a parameter after `VALUES`)
-  and by the tests on SQLite. The suite runs on MySQL 8.0 and 8.4 in CI; until it has run on the M8
-  commits, MySQL parity is unverified.
+  and by the tests on SQLite. The suite then ran on MySQL 8.0 and 8.4 in CI: all but four tests
+  passed at once (the bulk upserts, the schema and the migrations among them), and the four were
+  problems in the tests (PyMySQL hands a bulk insert's rows over as dicts, not tuples; the cleanup
+  of the shared MySQL database left test-made label sources behind). Fixed, and green from `e7927ad`.
 
 ## Address intelligence (milestone M9)
 
@@ -507,6 +509,151 @@ the first run against the real service may need adjusting.
 * Stored claims are per chain and address; the claim for an EVM address is expanded to the EVM chains
   at import, so a newly added EVM chain needs a re-import (`--force`).
 
+## Transaction graph (milestone M10)
+
+Who an address paid and was paid by, out to a few hops, drawn from the histories already stored,
+with every limit that cut something off stated in the answer. Nothing about a graph is stored: it is
+computed from the stored transfers each time, so there is no table and no migration.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli graph ethereum 0x098B716B8Aaf21512996dC57EB0615e2383E2f96 --days 3650
+.\.venv\Scripts\python.exe -m app.cli graph ethereum <address> --update --depth 2   # read what is missing first
+.\.venv\Scripts\python.exe -m app.cli graph bitcoin <address> --json                # the Cytoscape shape
+.\.venv\Scripts\python.exe -m app.cli enqueue FETCH_COUNTERPARTIES --set chain=ethereum --set address=<address>
+```
+
+`GET /api/v1/graph?chain=&address=&depth=&direction=&max_nodes=&max_edges=&counterparties=&days=`
+returns the same graph as JSON, authenticated. It reads **stored data only**: it never contacts a
+provider, so it is cheap and cannot be made to spend a quota. An address whose history is not
+stored is in the graph but unexpanded, and the graph says it is incomplete.
+`FETCH_COUNTERPARTIES` (or `graph --update`) is what reads the missing histories, through the sync
+engine of M8: what is fresh is reused, so repeating it costs no provider request, and one
+investigation spends at most `GRAPH_REQUEST_BUDGET` requests in all. `graph` exits 0 when the graph
+is complete within its scope and 2 when it leaves something out.
+
+### What a graph is
+
+* **Nodes** are addresses (`<chain>:<address>`), **edges** are everything one address sent another in
+  one asset inside the window, with the count, the total, the first and last time, and the five most
+  recent transfers as proof. The shape is the blueprint's (section 8.3): `nodes`, `edges`, each node
+  with its `labels` from the sources of M9, and `risk_level` **null until the scoring of M11**: a
+  node carries evidence, not a verdict.
+* **Expansion** is breadth-first. An address closer to the root than `depth` is *expanded*: its own
+  stored history is used to find its counterparties, of which `counterparties` per address are
+  followed. An address at the depth limit is shown, marked unexpanded, and nothing about its other
+  links is known. So the edges are the movements of expanded addresses between addresses the graph
+  holds; a link between two unexpanded addresses is not shown, because it is not known.
+* **Which counterparties are followed**: addresses a source calls risky first, then any labelled
+  address, then the busiest, then the most recent, then by address (so the same data always gives the
+  same graph). Value is not used: amounts in different assets cannot be compared without prices. A
+  cap can therefore never hide a known-risky counterparty (until there are more of those than the
+  cap), and a spam token can crowd out the quiet ones.
+* **Direction**: `both`, `in` (follow money that arrived: where did it come from) or `out`.
+* **Zero-value events** (address poisoning leaves them), movements to oneself and mints and burns
+  are not links; they are counted under `ignored`.
+
+| Limit | Default (setting) | A request may |
+|---|---|---|
+| depth | 1 (`GRAPH_DEFAULT_DEPTH`), at most 3 (`GRAPH_MAX_DEPTH`) | lower it, or raise it up to the maximum |
+| nodes / edges | 500 / 2,000 (`GRAPH_MAX_NODES`, `GRAPH_MAX_EDGES`) | only lower them |
+| counterparties followed per address | 25 (`GRAPH_MAX_COUNTERPARTIES`) | only lower it |
+| window | 365 days (`GRAPH_WINDOW_DAYS`), at most 3650 (`GRAPH_MAX_WINDOW_DAYS`) | choose within that |
+| transfers read per address | 500 (`GRAPH_HISTORY_ITEMS`), up to `HISTORY_MAX_ITEMS` | only when updating |
+| provider requests per investigation | 300 (`GRAPH_REQUEST_BUDGET`) | no |
+
+These are engineering safeguards against a graph that would cost millions of requests (blueprint
+3.1), not AML thresholds.
+
+### Incomplete is said, never hidden
+
+`complete` is false, and `gaps` says what and where, whenever a limit cut something off or an
+expanded address's history is not fully held:
+
+| `gaps[].code` | Meaning |
+|---|---|
+| `counterparties_not_followed` | an address has more counterparties than are followed (and the rest are not in the graph some other way) |
+| `node_limit`, `edge_limit` | the graph reached its size limit |
+| `history_not_read` | an expanded address has no stored history, or its only read failed |
+| `history_partial` | a stream of its history was stopped by a limit or by the provider's window |
+| `stream_unavailable` | no configured source provides a stream (for example BNB Smart Chain's internal transfers) |
+| `history_mismatch` | a Bitcoin or Solana history disagrees with the chain's own totals |
+| `request_budget`, `acquisition_failed` | updating stopped for want of budget, or a provider could not be read |
+
+The depth and the window are the *scope* of the question, not gaps: the answer states them in
+`scope`, and `warnings` notes a history last read more than a day ago and a label source that is
+stale or never fetched. An error reading the root itself, when nothing of it is stored, is raised
+(so a job is retried as the provider error says) instead of returning an empty graph.
+
+### Bitcoin
+
+Bitcoin records no payment from one address to another, so the graph shows a **link the chain
+proves** (this address was an input and that one an output of one transaction) with an amount:
+`exact` when the transaction has one paying address, `allocated` when it has several (each output's
+value shared in proportion to what each paying address contributed, rounded down to a satoshi, so
+the same link has the same amount from either end). **No ownership heuristic is applied**: change
+detection, CoinJoin detection and common-input clustering are inferences, and the graph shows only
+what is proven. Change back to the paying address is not a link.
+
+### Exposure paths
+
+For every address in the graph that carries a risk label (sanctions, mixer, darknet, scam, phishing,
+ransomware, stolen funds), `exposures` holds the shortest route by which value could have gone
+**from** it to the root (`incoming`) or **from** the root to it (`outgoing`), and each hop's
+supporting transfer. A path respects time: a hop's transfer is at or after the previous hop's (the
+same second counts), so money is never routed through an address before it got there. A transfer with
+no known time may have happened whenever, and the path then says `ordering_proven: false`. A path
+also reports the transfers on it, the time between hops, whether every hop is one asset (and if so
+the most that could have followed it: the smallest hop total), whether every link is exact, whether
+it passes a bridge, and the labels of the addresses in between (an exchange in the middle matters).
+It is a route funds **could** have taken: it does not show that they did, that the addresses in
+between share an owner, or that the funds were the same coins. Nothing is scored here.
+
+### Patterns
+
+`patterns` reports a fan-in (many different addresses paying one) or a fan-out (one paying many) when
+`GRAPH_FAN_THRESHOLD` (10) different counterparties fall inside `GRAPH_FAN_WINDOW_SECONDS` (24 h),
+for the busiest such window of each expanded address, with a sample of who and the first transfers
+as proof. Exchanges, payment services and airdrops look like this too: it is an indicator. The
+thresholds are defaults to calibrate, not rules. Movements with no known time are left out.
+
+### Bridges
+
+`app/graph/bridges.py` is a **framework**: a registry of bridge contracts (loaded from the JSON file
+named by `BRIDGE_REGISTRY_FILE`, format in the module) and a conservative pairing of a deposit on one
+chain with a withdrawal on another: the same token by the registry's own mapping, within the bridge's
+delay, for the deposited amount less a fee inside a tolerance, and nothing else that fits; where more
+than one pairing fits, none is made and they are reported as ambiguous. A pairing is an inference,
+never an attribution (the depositor and the recipient may be different people). **No bridge data
+ships with the platform**: addresses and token mappings must come from the bridges' own documentation
+and be checked by whoever loads them, so until a file is configured nothing is a bridge and nothing
+is correlated. The graph marks a registered contract and flags paths through one; the pairing is a
+library function that no command, endpoint or job calls yet.
+
+### Checked against
+
+1,870 tests with in-memory providers and the real database layer, and about 130 mutations over the graph
+code (every real gap closed; the survivors are equivalent mutants). Live, with the real keys on a
+scratch database (2026-11-05): around Lazarus Group's OFAC-listed Ethereum address (300 transfers
+read per stream) a one-hop graph took about 10 provider requests and held 26 addresses and 35 links, found
+sanctioned counterparties it had paid (hop 1, order proven) and a fan-in of 97 different addresses
+in 24 hours; the same command again used 0 requests, `graph` without `--update` returned identical
+edges, and from its busiest counterparty the graph found Lazarus as an incoming exposure. Each of
+those graphs was reported incomplete (the ERC-20 stream stopped at the item limit; 195 further
+counterparties not followed), which is the point.
+
+### Not done
+
+* **Scoring** (milestone M11): nothing here is a score; `risk_level` is null.
+* **Account histories are read oldest first** (milestone M8), so for a busy address under the item
+  cap the graph shows its oldest transfers, which a 365-day window may exclude entirely; the graph
+  then says the history is partial. A newest-first or windowed read is not built.
+* No graph is stored, so no `exposure_paths` table; a graph is recomputed (cheaply) on each request.
+* No cross-chain graph: bridge pairing is a library function over events, and no real bridge data.
+* Counterparties are expanded one after another (the providers' rate limits are the bottleneck).
+* The work of a request grows with the stored histories of the addresses it expands (up to 500 of
+  them, each as long as was read), and there is no per-request rate limit yet (milestones M13/M14).
+* No entity clustering. A label belongs to an address, never to a group of them.
+
 ## Testing against MySQL
 
 Point `TEST_DATABASE_URL` at an **empty, throwaway** MySQL 8 database and run the suite as usual:
@@ -530,6 +677,7 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 | `POST /address/validate` | bearer | validate an address on one chain (`chain`: slug or CAIP-2 id) or detect every chain it is valid on |
 | `POST /intel/lookup` | bearer | what is known about an address (`chain`, `address`): each claim with its source, confidence and age, withdrawn claims, the state of every source, and Watchman's opinion when configured. A bad address is 422, an unknown chain 404 |
 | `GET /intel/sources` | bearer | each label source, when its list was published and last confirmed current, and whether that is fresh |
+| `GET /graph` | bearer | the bounded transaction graph around an address (`chain`, `address`, and optionally `depth`, `direction`, `max_nodes`, `max_edges`, `counterparties`, `days`), shaped for Cytoscape, from stored histories only (no provider request): nodes with their labels, edges with proof, `exposures`, `patterns`, and `complete` / `gaps` / `scope` / `warnings` saying what it leaves out. Limits can only be tightened. A bad address is 422, an unknown chain 404 |
 | `GET /providers` | bearer | each data provider: configured or not, limits, chains (paid ones apart), circuit state, last error, 24-hour usage. Never a key |
 | `POST /providers/{name}/probe` | bearer | one live health request to that provider; the answer says what is wrong in words (`ok`, `auth_failed`, `rate_limited`, `unreachable`, `unhealthy`, `not_configured` ...) |
 
@@ -550,6 +698,7 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/`, `app/chains/solana/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis; Solana its own transaction record, the instruction decoder checked against balance changes, and a wallet's per-transaction activity |
 | `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), storing and reusing it (`sync`, with `families` for what differs per chain family, `raw` for the kept provider answers, `detail` for single transactions), the history job, the text views for the CLI |
 | `app/intel/` | address intelligence: the claim model and confidence (`model`), OFAC's list reader (`ofac`), the importer and downloader (`importer`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`) and what the CLI and API share (`service`) |
+| `app/graph/` | the transaction graph: movements from stored records (`flows`), where histories come from and how complete they are (`reader`), the bounded expansion (`builder`), exposure paths (`exposure`), fan-in and fan-out (`patterns`), bridges (`bridges`), the text output (`render`), what the CLI, API and job share (`service`) and the job (`jobs`) |
 | `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
 | `app/database/repositories/` | job queue and usage counters; the stored chain data (`transfers`, `bitcoin`, `solana`, `membership`, saved by identity through `rows`); coverage, the log of reads and the raw answers (`acquisition`). `app/database/upsert.py` and `retry.py` are the bulk upserts and the deadlock retry they share |
 | `migrations/` | Alembic environment and versions |
@@ -577,8 +726,9 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 ## Known gaps (tracked in the project plan)
 
 * No login rate limiting or lockout yet.
-* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `7292b18`, which
-  includes the two concurrency bugs and the test-fixture flaw that the first M3 run found).
+* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `e7927ad`; the
+  first M3 run found two concurrency bugs and a test-fixture flaw, the first M8 and M9 run two more
+  fixture problems; none was in the code under test after M3).
 * **Docker:** CI builds `Dockerfile`, runs the container, calls `/health` and `/version`, runs the
   worker on a job that needs no network, and checks that `deployment/docker-compose.yml` parses.
   Nothing has been run with Docker on the development machine, and the compose file's worker service
