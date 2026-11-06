@@ -11,6 +11,9 @@ x-aml-environment: &aml-environment
   ALCHEMY_API_KEY: ${ALCHEMY_API_KEY:-}
   TRONGRID_API_KEY: ${TRONGRID_API_KEY:-}
   HELIUS_API_KEY: ${HELIUS_API_KEY:-}
+  # A second opinion on sanctions. Watchman has no authentication, so it is reachable only from
+  # inside this compose project (it publishes no port); an empty value turns the second opinion off.
+  WATCHMAN_URL: ${WATCHMAN_URL-http://watchman:8084}
 
 services:
   api:
@@ -47,6 +50,17 @@ services:
         condition: service_healthy
     # WORKER_SHUTDOWN_GRACE_SECONDS (20) plus time to hand unfinished jobs back.
     stop_grace_period: 30s
+    restart: unless-stopped
+
+  # Moov Watchman: screens against sanctions lists over HTTP. Its API is UNAUTHENTICATED BY DESIGN,
+  # so it must never get a `ports:` entry; only the api and worker reach it, by name. It needs
+  # outbound access to download the lists, so the network is not marked internal.
+  # The image tag follows the latest release (v1.2.2) and has not been pulled on the development
+  # machine; INCLUDED_LISTS is set explicitly because the docs do not say OFAC is loaded by default.
+  watchman:
+    image: moov/watchman:v1.2.2
+    environment:
+      INCLUDED_LISTS: us_ofac
     restart: unless-stopped
 
 volumes:

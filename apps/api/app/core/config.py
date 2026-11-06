@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     store_raw_responses: bool = True
     raw_max_bytes: int = Field(default=262_144, ge=1_024, le=8_388_608)
 
+    # Address intelligence: label sources such as OFAC's sanctions list are downloaded by
+    # `python -m app.cli labels refresh` or the REFRESH_LABEL_SOURCE job.
+    intel_download_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
+    intel_max_download_bytes: int = Field(default=200 * 1024 * 1024, ge=1_048_576)
+    # Moov Watchman, a second opinion on sanctions. Its HTTP service is unauthenticated by design:
+    # point this only at an instance reachable from the backend alone (the compose file's internal
+    # network), never a published port. Unset means no second opinion.
+    watchman_url: str | None = None
+    watchman_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+
     # The background worker (python -m app.worker).
     worker_concurrency: int = Field(default=4, ge=1, le=64)
     worker_poll_interval_seconds: float = Field(default=2.0, ge=0.05, le=60)
@@ -87,6 +97,7 @@ class Settings(BaseSettings):
         "trongrid_api_key",
         "helius_api_key",
         "esplora_base_url",
+        "watchman_url",
         mode="before",
     )
     @classmethod
@@ -107,6 +118,13 @@ class Settings(BaseSettings):
     def _esplora_url_is_http(cls, value: str | None) -> str | None:
         if value is not None and not value.startswith(("http://", "https://")):
             raise ValueError("ESPLORA_BASE_URL must start with http:// or https://")
+        return value
+
+    @field_validator("watchman_url")
+    @classmethod
+    def _watchman_url_is_http(cls, value: str | None) -> str | None:
+        if value is not None and not value.startswith(("http://", "https://")):
+            raise ValueError("WATCHMAN_URL must start with http:// or https://")
         return value
 
     @model_validator(mode="after")

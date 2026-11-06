@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx2
 import pytest
@@ -609,3 +610,99 @@ def test_an_unconfirmed_bitcoin_transaction_is_shown_but_not_stored(
     with committing_db.read() as session:
         # It may never be mined, and nothing would ever remove it.
         assert session.scalar(select(func.count()).select_from(StoredTransaction)) == 0
+
+
+# --- address intelligence ------------------------------------------------------------------------
+
+SDN_SAMPLE = Path(__file__).parent / "fixtures" / "intel" / "sdn_sample.xml"
+LAZARUS = "0x098B716B8Aaf21512996dC57EB0615e2383E2f96"
+
+
+def test_labels_refresh_reads_a_local_copy_and_labels_lookup_explains_what_it_found(
+    cli_env, capsys, committing_db
+):
+    assert cli.main(["labels", "refresh", "--file", str(SDN_SAMPLE)]) == 0
+    assert "published 2026-11-05" in capsys.readouterr().out
+
+    assert cli.main(["labels", "lookup", "ethereum", LAZARUS]) == 2  # a label in force: exit 2
+    out = capsys.readouterr().out
+    assert "LAZARUS GROUP" in out and "DPRK3" in out and "[official]" in out
+    assert "Checked against:" in out and "OFAC" in out and "(fresh)" in out
+
+
+def test_an_address_with_no_label_exits_zero_and_says_it_is_not_proof(
+    cli_env, capsys, committing_db
+):
+    cli.main(["labels", "refresh", "--file", str(SDN_SAMPLE)])
+    capsys.readouterr()
+
+    assert cli.main(["labels", "lookup", "ethereum", "0x" + "ab" * 20]) == 0
+
+    assert "not proof" in capsys.readouterr().out
+
+
+def test_labels_lookup_as_json(cli_env, capsys, committing_db):
+    cli.main(["labels", "refresh", "--file", str(SDN_SAMPLE)])
+    capsys.readouterr()
+
+    assert cli.main(["labels", "lookup", "bsc", LAZARUS, "--json"]) == 2
+
+    body = json.loads(capsys.readouterr().out)
+    assert body["known"] and body["labels"][0]["source"]["slug"] == "ofac_sdn"
+
+
+def test_the_second_refresh_of_the_same_list_changes_nothing(cli_env, capsys, committing_db):
+    cli.main(["labels", "refresh", "--file", str(SDN_SAMPLE)])
+    capsys.readouterr()
+
+    assert cli.main(["labels", "refresh", "--file", str(SDN_SAMPLE), "--json"]) == 0
+
+    assert json.loads(capsys.readouterr().out)["outcome"] == "unchanged"
+
+
+def test_labels_sources_shows_how_current_each_is_without_any_request(
+    cli_env, capsys, committing_db
+):
+    assert cli.main(["labels", "sources"]) == 0
+    assert "never fetched" in capsys.readouterr().out
+
+    cli.main(["labels", "refresh", "--file", str(SDN_SAMPLE)])
+    capsys.readouterr()
+    assert cli.main(["labels", "sources"]) == 0
+    assert "published 2026-11-05" in capsys.readouterr().out
+
+
+def test_labels_commands_refuse_what_cannot_work(cli_env, capsys, committing_db, tmp_path):
+    junk = tmp_path / "junk.xml"
+    junk.write_text("<html/>", encoding="utf-8")
+
+    assert cli.main(["labels", "refresh", "--file", str(junk)]) == 1
+    assert "could not bring ofac_sdn up to date" in capsys.readouterr().err
+    assert cli.main(["labels", "refresh", "--source", "nope"]) == 1
+    assert cli.main(["labels", "lookup", "bitcoin", LAZARUS]) == 1
+    assert "not a valid bitcoin address" in capsys.readouterr().err
+    assert cli.main(["labels", "lookup", "dogecoin", LAZARUS]) == 1
+
+
+def test_labels_lookup_adds_watchmans_opinion_when_one_is_configured(
+    cli_env, capsys, committing_db, monkeypatch
+):
+    from app.intel.watchman import WatchmanClient
+
+    cli.main(["labels", "refresh", "--file", str(SDN_SAMPLE)])
+    capsys.readouterr()
+
+    def down(request):
+        raise httpx2.ConnectError("no route")
+
+    monkeypatch.setattr(
+        cli,
+        "watchman_client",
+        lambda settings: WatchmanClient(
+            "http://watchman:8084", transport=httpx2.MockTransport(down)
+        ),
+    )
+
+    assert cli.main(["labels", "lookup", "ethereum", LAZARUS]) == 2
+
+    assert "Watchman second opinion unavailable" in capsys.readouterr().out

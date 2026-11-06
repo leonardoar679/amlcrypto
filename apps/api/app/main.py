@@ -18,6 +18,7 @@ from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.database.connection import create_db_engine, create_session_factory
+from app.intel.service import watchman_client
 from app.providers.service import ProviderService
 from app.providers.usage import DbUsageSink
 
@@ -36,6 +37,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
         await app.state.providers.aclose()
+        if app.state.watchman is not None:
+            await app.state.watchman.aclose()
         app.state.engine.dispose()
 
     is_prod = settings.environment == "prod"
@@ -53,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.session_factory = create_session_factory(engine)
     app.state.write_session_factory = create_session_factory(engine, write=True)
     # Provider calls are counted in api_usage, through whichever write factory is current.
+    app.state.watchman = watchman_client(settings)
     app.state.providers = ProviderService.from_settings(
         settings, usage=DbUsageSink(lambda: app.state.write_session_factory)
     )

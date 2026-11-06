@@ -8,6 +8,7 @@ import getpass
 import json
 import sys
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TypeVar
 
 from app.chains.adapter import AccountAdapter
@@ -38,6 +39,9 @@ from app.ingestion.read import (
     render_any_transaction,
 )
 from app.ingestion.sync import SyncPolicy, sync_history
+from app.intel.importer import OFAC_SLUG, ImportFailed, refresh_source
+from app.intel.lookup import UnknownAddress, lookup, source_statuses
+from app.intel.service import watchman_client, with_second_opinion
 from app.providers.base import ProviderError
 from app.providers.budget import RequestBudget
 from app.providers.rawsink import RawSink
@@ -280,6 +284,79 @@ def _cmd_enqueue(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_labels_refresh(args: argparse.Namespace) -> int:
+    """Download a label source (OFAC's sanctions list) and bring the stored claims up to date."""
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    engine = create_db_engine(settings.resolved_database_url)
+    try:
+        try:
+            report = asyncio.run(
+                refresh_source(
+                    create_sessions(engine),
+                    args.source,
+                    data_dir=settings.resolved_data_dir / "downloads",
+                    max_bytes=settings.intel_max_download_bytes,
+                    timeout=settings.intel_download_timeout_seconds,
+                    file=None if args.file is None else Path(args.file),
+                    url=args.url,
+                    force=args.force,
+                )
+            )
+        except ImportFailed as error:
+            raise UserError(f"could not bring {args.source} up to date: {error}") from error
+        except ValueError as error:
+            raise UserError(str(error)) from error
+    finally:
+        engine.dispose()
+    print(json.dumps(report.to_dict()) if args.json else report.describe())
+    return 0
+
+
+def _cmd_labels_sources(args: argparse.Namespace) -> int:
+    """The label sources and how current each is. Makes no network request."""
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_sessions(engine).read() as session:
+            statuses = source_statuses(session)
+    finally:
+        engine.dispose()
+    if args.json:
+        print(json.dumps([status.to_dict() for status in statuses]))
+    else:
+        for status in statuses:
+            print(f"{status.slug:<10} {status.kind.value:<9} {status.describe()}")
+    return 0
+
+
+def _cmd_labels_lookup(args: argparse.Namespace) -> int:
+    """What is known about an address, who says so, how sure and how current. Exit 0 when it is
+    clean as far as the sources go, 2 when it carries a label in force. Reads only stored data (and
+    asks Watchman, if one is configured)."""
+    settings = get_settings()
+    engine = create_db_engine(settings.resolved_database_url)
+
+    async def go():
+        with create_sessions(engine).read() as session:
+            found = lookup(session, args.chain, args.address)
+        client = watchman_client(settings)
+        try:
+            return await with_second_opinion(found, client)
+        finally:
+            if client is not None:
+                await client.aclose()
+
+    try:
+        try:
+            intel = asyncio.run(go())
+        except UnknownAddress as error:
+            raise UserError(str(error)) from error
+    finally:
+        engine.dispose()
+    print(json.dumps(intel.to_dict()) if args.json else intel.explain())
+    return 2 if intel.known else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -345,6 +422,27 @@ def main(argv: list[str] | None = None) -> int:
     enqueue.add_argument("--max-attempts", type=int, default=3)
     enqueue.add_argument("--dedupe-key", help="skip if an identical job is already active")
     enqueue.set_defaults(run=_cmd_enqueue)
+
+    labels = commands.add_parser(
+        "labels", help="address intelligence: sanctions lists and other label sources"
+    ).add_subparsers(dest="labels_command", required=True)
+    refresh = labels.add_parser(
+        "refresh", help="download OFAC's sanctions list and update the stored claims"
+    )
+    refresh.add_argument("--source", default=OFAC_SLUG, help="the label source (default: OFAC)")
+    refresh.add_argument("--file", help="read this local copy of the list instead of downloading")
+    refresh.add_argument("--url", help="download from here instead of the source's own address")
+    refresh.add_argument("--force", action="store_true", help="import even an unchanged list")
+    refresh.add_argument("--json", action="store_true", help="print JSON instead of a sentence")
+    refresh.set_defaults(run=_cmd_labels_refresh)
+    sources = labels.add_parser("sources", help="the label sources and how current each is")
+    sources.add_argument("--json", action="store_true")
+    sources.set_defaults(run=_cmd_labels_sources)
+    find = labels.add_parser("lookup", help="what is known about an address, and who says so")
+    find.add_argument("chain", help="ethereum, bsc, tron, bitcoin or solana")
+    find.add_argument("address")
+    find.add_argument("--json", action="store_true", help="print JSON instead of text")
+    find.set_defaults(run=_cmd_labels_lookup)
 
     create = commands.add_parser("create-user", help="create a user (and its organization)")
     create.add_argument("--email", required=True)
