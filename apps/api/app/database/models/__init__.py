@@ -12,20 +12,25 @@ from app.database.models.chain_data import (
     StoredUnattributed,
 )
 from app.database.models.chains import Chain, ChainAsset
+from app.database.models.intel import AddressLabel, Entity, LabelImport, LabelSource
 from app.database.models.jobs import FetchJob, JobStatus
 from app.database.models.tenancy import Organization, User
 from app.database.models.usage import ApiUsage
 
 __all__ = [
+    "AddressLabel",
     "AddressTransaction",
     "ApiUsage",
     "Base",
     "Chain",
     "ChainAsset",
     "DataCoverage",
+    "Entity",
     "FetchJob",
     "FetchRun",
     "JobStatus",
+    "LabelImport",
+    "LabelSource",
     "Organization",
     "RawResponse",
     "StoredBalanceChange",

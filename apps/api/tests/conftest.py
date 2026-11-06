@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, delete
+from sqlalchemy import Engine, delete, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
@@ -27,11 +27,15 @@ from app.core.redaction import secrets
 from app.database import migrations
 from app.database.connection import create_db_engine, create_session_factory
 from app.database.models import (
+    AddressLabel,
     AddressTransaction,
     ApiUsage,
     DataCoverage,
+    Entity,
     FetchJob,
     FetchRun,
+    LabelImport,
+    LabelSource,
     RawResponse,
     StoredBalanceChange,
     StoredInput,
@@ -47,6 +51,9 @@ MYSQL_URL = os.environ.get("TEST_DATABASE_URL")
 
 # What tests that commit for real write, children first; MySQL's shared database must be left empty.
 WRITTEN_BY_TESTS = (
+    AddressLabel,
+    Entity,
+    LabelImport,
     RawResponse,
     FetchRun,
     DataCoverage,
@@ -173,6 +180,19 @@ def committing_db(database_url: str) -> Iterator[CommittingDb]:
             with handle.write() as session:
                 for model in WRITTEN_BY_TESTS:
                     session.execute(delete(model))
+                # The sources are seeded by a migration, so they stay; what imports changed in them
+                # does not.
+                session.execute(
+                    update(LabelSource).values(
+                        publish_date=None,
+                        last_checked_at=None,
+                        last_fetched_at=None,
+                        content_sha256=None,
+                        record_count=0,
+                        status="never",
+                        last_error=None,
+                    )
+                )
                 session.commit()
         engine.dispose()
 
