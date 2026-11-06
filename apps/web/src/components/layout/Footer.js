@@ -40,8 +40,8 @@ export default function Footer() {
       </div>
       <div className="container footer-note">
         <p>
-          Preview build: results, balances and history on these screens are demonstration data stored in your
-          browser.
+          Screening results are risk indicators computed from the data that could be read, not legal or
+          compliance advice. Finding nothing is not a clearance.
         </p>
       </div>
     </footer>

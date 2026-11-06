@@ -81,6 +81,8 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci
       - run: npm audit --audit-level=high
+      # The unit tests of the proxy's rules and of the pure code the pages are built from.
+      - run: npm test
       - run: npm run build
       # The frontend began as a copy of a commercial site; fail if its names ever come back.
       # (Terms are listed in shared/documentation/branding-ip-register.md.)

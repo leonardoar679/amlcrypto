@@ -35,10 +35,10 @@ export default function Header({ navItems, menuOpen, setMenuOpen }) {
             {theme === 'dark' ? '☀️' : '🌙'}
           </button>
           <Link className="ghost-btn" href="/auth">
-            Login
+            Sign in
           </Link>
-          <Link className="primary-btn" href="/auth">
-            Create account
+          <Link className="primary-btn" href="/check">
+            Screen an address
           </Link>
         </div>
       </div>

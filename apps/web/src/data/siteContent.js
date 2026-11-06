@@ -90,7 +90,7 @@ export const faqs = [
   {
     question: 'Is what I see on this site real data?',
     answer:
-      'Not yet. Sign-in, results, balances and history in this build are demonstration data kept in your browser. They will be replaced by live data as the platform comes online.'
+      'Yes. Once you are signed in, screenings read the transaction history of the address from blockchain data providers and match it against official sanctions listings. The weights and thresholds behind the score are still being calibrated, so read a score as an indicator to review, not as a verdict.'
   },
   {
     question: 'Does a clean result mean an address is safe?',
@@ -100,7 +100,7 @@ export const faqs = [
   {
     question: 'Which networks are supported?',
     answer:
-      'Address validation covers Ethereum, BNB Smart Chain, TRON, Bitcoin and Solana. Transaction history and screening are being added network by network.'
+      'Ethereum, BNB Smart Chain, TRON, Bitcoin and Solana. How much history can be read for an address depends on the data providers behind your deployment, and every result states how complete its data was.'
   },
   {
     question: 'What is the difference between screening an address and a transaction?',

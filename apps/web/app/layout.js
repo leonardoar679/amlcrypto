@@ -1,5 +1,6 @@
 import './globals.css';
 import { Inter, Unbounded } from 'next/font/google';
+import ThemeScript from '../src/components/layout/ThemeScript';
 import { brand } from '../src/config/brand';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-body' });
@@ -9,7 +10,7 @@ const title = `${brand.name} | ${brand.tagline}`;
 
 // No canonical or Open Graph URL until NEXT_PUBLIC_SITE_URL names a real domain, and the whole site
 // is noindex for now. At launch, allow indexing for the marketing routes only; the signed-in app
-// routes must stay noindex, which needs route-group layouts (client pages cannot export metadata).
+// routes (the (app) group) set their own noindex.
 export const metadata = {
   title,
   description: brand.description,
@@ -27,7 +28,11 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    // The theme script sets data-theme before hydration, so React must keep what is in the DOM.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <ThemeScript />
+      </head>
       <body className={`${inter.variable} ${unbounded.variable}`}>{children}</body>
     </html>
   );

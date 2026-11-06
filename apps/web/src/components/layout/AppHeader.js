@@ -1,19 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { signOut } from '../../lib/api';
 import { useTheme } from '../../lib/useTheme';
-import { clearStoredUser, truncateAddress } from '../../lib/demoAuth';
-import { SearchIcon, ChevronDownIcon, MenuIcon, BellIcon } from '../icons/Icons';
+import { MenuIcon, LogoutIcon } from '../icons/Icons';
 import BrandMark from './BrandMark';
 
-export default function AppHeader({ collapsed, onToggleSidebar, quota, wallet }) {
+export default function AppHeader({ collapsed, onToggleSidebar, user, organization }) {
   const [theme, toggleTheme] = useTheme();
-  const router = useRouter();
+  const [leaving, setLeaving] = useState(false);
 
-  const handleLogout = () => {
-    clearStoredUser();
-    router.push('/');
+  const handleLogout = async () => {
+    setLeaving(true);
+    try {
+      await signOut();
+    } finally {
+      // Whatever the answer, leave the signed-in pages: a cookie that could not be cleared here is
+      // refused by the backend as soon as it expires.
+      window.location.assign('/');
+    }
   };
 
   return (
@@ -28,30 +34,20 @@ export default function AppHeader({ collapsed, onToggleSidebar, quota, wallet })
         </Link>
       ) : null}
 
-      <div className="app-header-quota">
-        <SearchIcon width={16} height={16} />
-        <span>{quota}</span>
-      </div>
-
-      <Link href="/pricing" className="app-header-more">
-        Need more checks
-        <ChevronDownIcon width={14} height={14} />
-      </Link>
-
       <div className="app-header-spacer" />
 
       <button className="icon-btn" type="button" aria-label="Toggle color theme" onClick={toggleTheme}>
         {theme === 'dark' ? '☀️' : '🌙'}
       </button>
 
-      <button className="icon-btn app-header-bell" type="button" aria-label="Notifications">
-        <BellIcon width={18} height={18} />
-      </button>
+      <div className="app-header-user" title={`${user.email} - ${organization.name}`}>
+        <span className="app-header-org">{organization.name}</span>
+        <span className="app-header-email">{user.email}</span>
+      </div>
 
-      {wallet ? <span className="app-header-wallet">{truncateAddress(wallet, 13, 0)}</span> : null}
-
-      <button className="primary-btn" type="button" onClick={handleLogout}>
-        Logout
+      <button className="primary-btn" type="button" onClick={handleLogout} disabled={leaving}>
+        <LogoutIcon width={16} height={16} />
+        Sign out
       </button>
     </header>
   );

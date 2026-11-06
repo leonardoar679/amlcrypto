@@ -4,30 +4,23 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { brand } from '../../config/brand';
 import { supportedChains } from '../../data/siteContent';
-import { getStoredQuota, setStoredQuota } from '../../lib/demoAuth';
 
+// The public page only hands the address to the screening page. Screening needs an account, so a
+// visitor who is not signed in is sent to sign in first and comes back to the same address.
 export default function CheckBanner({ heading }) {
   const [walletAddress, setWalletAddress] = useState('');
   const [status, setStatus] = useState('');
   const router = useRouter();
 
-  const handleCheck = () => {
+  const handleCheck = (event) => {
+    event.preventDefault();
     const trimmedAddress = walletAddress.trim();
 
     if (!trimmedAddress) {
       setStatus('Please enter a wallet address to continue.');
       return;
     }
-
-    const quota = getStoredQuota();
-    if (quota <= 0) {
-      setStatus('Your free checks are used up for today. Sign in to continue or come back tomorrow.');
-      router.push('/auth');
-      return;
-    }
-
-    setStoredQuota(quota - 1);
-    router.push(`/check/${encodeURIComponent(trimmedAddress)}?source=banner`);
+    router.push(`/check?address=${encodeURIComponent(trimmedAddress)}`);
   };
 
   return (
@@ -38,17 +31,18 @@ export default function CheckBanner({ heading }) {
         <p className="check-banner-sub">
           Recognises addresses on <strong>{supportedChains.join(', ')}</strong>
         </p>
-        <div className="check-banner-form">
+        <form className="check-banner-form" onSubmit={handleCheck}>
           <input
             type="text"
             value={walletAddress}
             onChange={(event) => setWalletAddress(event.target.value)}
             placeholder="Check wallet address"
+            aria-label="Wallet address"
+            autoComplete="off"
+            spellCheck={false}
           />
-          <button type="button" onClick={handleCheck}>
-            Check
-          </button>
-        </div>
+          <button type="submit">Check</button>
+        </form>
         {status ? <p className="check-banner-status">{status}</p> : null}
       </div>
     </section>
