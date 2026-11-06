@@ -30,6 +30,16 @@ from app.database.connection import (
 from app.database.repositories import jobs as queue
 from app.database.repositories.acquisition import save_raw
 from app.database.retry import commit_with_retry
+from app.graph.bridges import BridgeRegistryError
+from app.graph.model import Direction, GraphLimits
+from app.graph.render import render_graph
+from app.graph.service import (
+    GraphRequestError,
+    graph_after_update,
+    graph_from_storage,
+    load_registry,
+    resolve,
+)
 from app.ingestion.detail import save_detail, stored_solana_detail
 from app.ingestion.raw import RawCollector
 from app.ingestion.read import (
@@ -357,6 +367,68 @@ def _cmd_labels_lookup(args: argparse.Namespace) -> int:
     return 2 if intel.known else 0
 
 
+def _cmd_graph(args: argparse.Namespace) -> int:
+    """The bounded transaction graph around an address. By default it uses only what is stored and
+    makes no provider request; --update first brings the needed histories up to date, within
+    GRAPH_REQUEST_BUDGET requests. Exit 0 when the graph is complete within its scope, 2 when it
+    leaves something out (the output says what)."""
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    if args.refresh and not args.update:
+        raise UserError("--refresh is about updating histories: add --update")
+    try:
+        chain, address = resolve(args.chain, args.address)
+        registry = load_registry(settings)
+    except (GraphRequestError, BridgeRegistryError) as error:
+        raise UserError(str(error)) from error
+    limits = GraphLimits.from_settings(
+        settings,
+        depth=args.depth,
+        max_nodes=args.max_nodes,
+        max_edges=args.max_edges,
+        per_node=args.per_node,
+        window_days=args.days,
+        direction=args.direction,
+        history_items=args.history_items,
+    )
+
+    try:
+        if args.update:
+
+            async def update(settings: Settings, service: ProviderService, sessions: Sessions):
+                return await graph_after_update(
+                    sessions,
+                    settings,
+                    service,
+                    chain,
+                    address,
+                    limits,
+                    registry=registry,
+                    refresh=args.refresh,
+                )
+
+            graph = _run_with_providers(update)
+        else:
+            engine = create_db_engine(settings.resolved_database_url)
+            try:
+                graph = asyncio.run(
+                    graph_from_storage(
+                        create_sessions(engine),
+                        settings,
+                        chain,
+                        address,
+                        limits,
+                        registry=registry,
+                    )
+                )
+            finally:
+                engine.dispose()
+    except GraphRequestError as error:
+        raise UserError(str(error)) from error
+    print(json.dumps(graph.to_dict()) if args.json else render_graph(graph))
+    return 0 if graph.complete else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -443,6 +515,39 @@ def main(argv: list[str] | None = None) -> int:
     find.add_argument("address")
     find.add_argument("--json", action="store_true", help="print JSON instead of text")
     find.set_defaults(run=_cmd_labels_lookup)
+
+    graph = commands.add_parser(
+        "graph",
+        help="the bounded transaction graph around an address (stored data unless --update)",
+    )
+    graph.add_argument("chain", help="ethereum, bsc, tron, bitcoin or solana")
+    graph.add_argument("address")
+    graph.add_argument(
+        "--depth", type=int, help="hops from the address (default: GRAPH_DEFAULT_DEPTH)"
+    )
+    graph.add_argument(
+        "--direction",
+        choices=[item.value for item in Direction],
+        default=Direction.BOTH.value,
+        help="follow money that arrived (in), that left (out), or both",
+    )
+    graph.add_argument("--max-nodes", type=int, help="at most this many addresses")
+    graph.add_argument("--max-edges", type=int, help="at most this many links")
+    graph.add_argument("--per-node", type=int, help="counterparties followed per address")
+    graph.add_argument("--days", type=int, help="how far back the movements go")
+    graph.add_argument("--history-items", type=int, help="transfers read per address when updating")
+    graph.add_argument(
+        "--update",
+        action="store_true",
+        help="first bring the stored histories up to date (spends provider requests)",
+    )
+    graph.add_argument(
+        "--refresh",
+        action="store_true",
+        help="with --update: update every history now and carry on any a limit stopped",
+    )
+    graph.add_argument("--json", action="store_true", help="print JSON instead of text")
+    graph.set_defaults(run=_cmd_graph)
 
     create = commands.add_parser("create-user", help="create a user (and its organization)")
     create.add_argument("--email", required=True)

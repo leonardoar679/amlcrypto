@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.jobs import FETCH_COUNTERPARTIES, fetch_counterparties
 from app.ingestion.jobs import FETCH_ADDRESS_HISTORY, fetch_address_history
 from app.intel.jobs import REFRESH_LABEL_SOURCE, refresh_label_source
 from app.worker.context import Handler, HandlerRegistry, JobContext, NonRetryable
@@ -12,6 +13,7 @@ PROVIDER_PROBE = "PROVIDER_PROBE"
 
 __all__ = [
     "FETCH_ADDRESS_HISTORY",
+    "FETCH_COUNTERPARTIES",
     "PROVIDER_PROBE",
     "REFRESH_LABEL_SOURCE",
     "Handler",
@@ -45,4 +47,5 @@ def build_default_handlers() -> HandlerRegistry:
     registry.register(PROVIDER_PROBE)(provider_probe)
     registry.register(FETCH_ADDRESS_HISTORY)(fetch_address_history)
     registry.register(REFRESH_LABEL_SOURCE)(refresh_label_source)
+    registry.register(FETCH_COUNTERPARTIES)(fetch_counterparties)
     return registry

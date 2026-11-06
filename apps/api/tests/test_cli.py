@@ -706,3 +706,86 @@ def test_labels_lookup_adds_watchmans_opinion_when_one_is_configured(
     assert cli.main(["labels", "lookup", "ethereum", LAZARUS]) == 2
 
     assert "Watchman second opinion unavailable" in capsys.readouterr().out
+
+
+# --- graph -------------------------------------------------------------------------------------
+
+
+def _stored_graph(committing_db):
+    from tests.graph_helpers import addr
+    from tests.graph_store import move, seed
+
+    friend = addr(0xF1)
+    with committing_db.write() as session:
+        seed(session, ME, [move(friend, ME, str(2 * 10**18)), move(ME, friend, str(10**18))])
+    return friend
+
+
+def test_graph_shows_the_stored_neighbourhood_and_asks_the_providers_nothing(
+    cli_env, capsys, committing_db
+):
+    friend = _stored_graph(committing_db)
+
+    assert cli.main(["graph", "ethereum", ME]) == 0
+
+    out = capsys.readouterr().out
+    assert "complete within that scope" in out and "0 provider requests" in out
+    assert friend in out and "2 ETH" in out and "1 ETH" in out
+    assert "Addresses:" in out and "Links" in out
+
+
+def test_graph_as_json_is_the_graph_the_api_returns(cli_env, capsys, committing_db):
+    friend = _stored_graph(committing_db)
+
+    assert cli.main(["graph", "ethereum", ME, "--json", "--direction", "in"]) == 0
+
+    body = json.loads(capsys.readouterr().out)
+    assert body["complete"] is True and body["scope"]["direction"] == "in"
+    assert [n["address"].lower() for n in body["nodes"]] == [ME, friend]
+    assert len(body["edges"]) == 1
+
+
+def test_graph_of_an_address_that_was_never_read_exits_2_and_says_why(
+    cli_env, capsys, committing_db
+):
+    assert cli.main(["graph", "ethereum", ME]) == 2
+
+    out = capsys.readouterr().out
+    assert "INCOMPLETE" in out and "no history is stored" in out
+
+
+def test_graph_update_reads_the_histories_first_and_a_repeat_costs_nothing(providers, capsys):
+    providers.etherscan.add("txlist", tx_row(5, OTHER, ME, value="1500000000000000000"))
+    args = ["graph", "ethereum", ME, "--update", "--days", "3650", "--json"]
+
+    assert cli.main(args) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert cli.main(args) == 0
+    again = json.loads(capsys.readouterr().out)
+
+    assert first["requests_used"] > 0 and again["requests_used"] == 0
+    assert first["edges"][0]["amount"] == "1.5" and again["edges"] == first["edges"]
+
+
+def test_graph_refuses_what_cannot_work_before_spending_any_request(providers, capsys):
+    assert cli.main(["graph", "dogecoin", ME]) == 1
+    assert "not a chain this platform reads" in capsys.readouterr().err
+    assert cli.main(["graph", "ethereum", "0x123", "--update"]) == 1
+    assert "not a valid ethereum address" in capsys.readouterr().err
+    assert cli.main(["graph", "ethereum", ME, "--refresh"]) == 1
+    assert "add --update" in capsys.readouterr().err
+    assert providers.etherscan.requests == [] and providers.alchemy.requests == []
+
+
+def test_graph_update_without_any_key_says_which_to_set(cli_env, capsys):
+    assert cli.main(["graph", "ethereum", ME, "--update"]) == 1
+    assert "ETHERSCAN_API_KEY or ALCHEMY_API_KEY" in capsys.readouterr().err
+
+
+def test_graph_refuses_a_bridge_registry_it_cannot_read(cli_env, capsys, tmp_path):
+    broken = tmp_path / "bridges.json"
+    broken.write_text("{")
+    cli_env.setenv("BRIDGE_REGISTRY_FILE", str(broken))
+
+    assert cli.main(["graph", "ethereum", ME]) == 1
+    assert "cannot read the bridge registry" in capsys.readouterr().err
