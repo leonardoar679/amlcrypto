@@ -42,6 +42,17 @@ export async function POST(request) {
     if (upstream.status === 401) {
       return failure(401, 'invalid_credentials', 'Incorrect email or password.');
     }
+    if (upstream.status === 429) {
+      const seconds = Number.parseInt(upstream.headers.get('retry-after') || '', 10);
+      const minutes = Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.ceil(seconds / 60)) : null;
+      return failure(
+        429,
+        'too_many_attempts',
+        minutes
+          ? `Too many failed sign-ins for this account. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+          : 'Too many failed sign-ins for this account. Try again later.'
+      );
+    }
     return failure(upstream.status >= 500 ? 502 : upstream.status, 'login_failed', 'Sign-in failed. Try again.');
   }
 

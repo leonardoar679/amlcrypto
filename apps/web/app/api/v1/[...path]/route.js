@@ -55,7 +55,7 @@ async function forward(request, { params }) {
     upstream = await backendFetch(`/api/v1/${relative}${new URL(request.url).search}`, {
       method,
       headers: forwardedRequestHeaders(request.headers),
-      body,
+      body: body || undefined,
       token,
       signal: request.signal
     });
@@ -79,5 +79,13 @@ export async function GET(request, context) {
 }
 
 export async function POST(request, context) {
+  return forward(request, context);
+}
+
+export async function PATCH(request, context) {
+  return forward(request, context);
+}
+
+export async function DELETE(request, context) {
   return forward(request, context);
 }

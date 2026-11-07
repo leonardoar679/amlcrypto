@@ -8,6 +8,9 @@ import { useApi } from '../../lib/useApi';
 import { SeverityChip } from '../risk/Chips';
 import { safeHref } from '../../lib/links';
 import { ErrorNotice, Loading } from '../ui/Notice';
+import { roleLabel, roleSentence } from '../../lib/permissions';
+import ChangePassword from './ChangePassword';
+import SettingsTabs from './SettingsTabs';
 
 function Section({ title, state, children, intro }) {
   return (
@@ -48,6 +51,13 @@ function Account() {
               <dd>{organization.name}</dd>
             </div>
             <div>
+              <dt>Role</dt>
+              <dd>
+                {roleLabel(user.role)}
+                <div className="muted small">{roleSentence(user.role)}</div>
+              </dd>
+            </div>
+            <div>
               <dt>Last signed in</dt>
               <dd>{user.last_login_at ? formatWhen(user.last_login_at) : '-'}</dd>
             </div>
@@ -56,6 +66,7 @@ function Account() {
             Accounts and passwords are managed by your organization&apos;s administrator. Everything you screen belongs to the
             organization: colleagues see it, other organizations do not.
           </p>
+          <ChangePassword />
           <button className="btn btn-secondary" type="button" onClick={logout} disabled={leaving}>
             Sign out
           </button>
@@ -248,6 +259,7 @@ export default function SettingsView() {
   return (
     <div className="app-page">
       <h1>Settings</h1>
+      <SettingsTabs />
       <Account />
       <Providers />
       <LabelSources />

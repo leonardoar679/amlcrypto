@@ -1017,6 +1017,7 @@ img {
 }
 
 .app-sidebar-link {
+  position: relative; /* holds the hidden text of the alerts badge inside the scrolling strip */
   display: flex;
   align-items: center;
   gap: 0.8rem;
@@ -1884,6 +1885,7 @@ img {
 
 .field input,
 .field select,
+.field textarea,
 .inline-field select {
   width: 100%;
   min-height: 2.7rem;
@@ -1909,6 +1911,7 @@ img {
 
 .field input:focus-visible,
 .field select:focus-visible,
+.field textarea:focus-visible,
 .inline-field select:focus-visible,
 .btn:focus-visible,
 .link-btn:focus-visible,
@@ -2006,7 +2009,11 @@ img {
 
 /* ---------- Tables ---------- */
 
+/* Positioned, so that the visually hidden text inside a table (the sr-only header of an actions
+   column) is clipped with it: an absolutely positioned element otherwise escapes the overflow
+   and lets the whole page scroll sideways on a phone. */
 .table-wrap {
+  position: relative;
   overflow-x: auto;
 }
 
@@ -2752,4 +2759,242 @@ img {
   .home-products-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------- Settings sections, forms inside cards, one-time secrets ---------- */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab {
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-soft);
+  border: 1px solid transparent;
+  border-bottom: 0;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab.is-active {
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.role-tag {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--bg-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.inline-form h2,
+.inline-form h3 {
+  margin: 0;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.row-actions {
+  white-space: nowrap;
+}
+
+.row-off {
+  opacity: 0.65;
+}
+
+.table select,
+.inline-reset input {
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+}
+
+.inline-reset {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.confirm {
+  font-size: 0.85rem;
+}
+
+.secret-box {
+  border-color: var(--orange);
+}
+
+.secret {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 1rem;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+
+.audit-details {
+  margin: 0.4rem 0 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  max-width: 48ch;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.field textarea {
+  resize: vertical;
+  font: inherit;
+}
+
+/* ---------- Monitoring and alerts ---------- */
+
+.nav-badge {
+  margin-left: auto;
+  min-width: 1.4rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.4rem;
+  text-align: center;
+}
+
+.app-sidebar.is-collapsed .nav-badge {
+  margin-left: 0;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.app-page .stat.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem 1.2rem;
+  margin: 0;
+}
+
+.stat-number {
+  font-family: var(--font-heading);
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.close-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.close-box legend {
+  padding: 0 0.4rem;
+  font-weight: 700;
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin: 0 0 1.4rem;
+  padding: 0 0 0 1.2rem;
+  border-left: 2px solid var(--border);
+  list-style: none;
+}
+
+.timeline li {
+  position: relative;
+}
+
+.timeline li::before {
+  content: '';
+  position: absolute;
+  left: -1.55rem;
+  top: 0.45rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--border);
+  border: 2px solid var(--bg);
+}
+
+.timeline-note {
+  margin: 0.3rem 0 0;
+  padding: 0.5rem 0.8rem;
+  border-left: 3px solid var(--border);
+  background: var(--bg-alt);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  overflow-wrap: anywhere;
+}
+
+.case-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.link-list li {
+  margin-bottom: 0.4rem;
 }

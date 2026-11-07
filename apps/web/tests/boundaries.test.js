@@ -1,6 +1,7 @@
 // Edges of the pure modules that a mutation check showed nothing was pinning down: a limit one off,
 // a default, a branch no other test reached. Each test names the behaviour, not the mutation.
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
 import test, { afterEach } from 'node:test';
 import { ApiError, apiFetch, signIn, signOut } from '../src/lib/api.js';
 import { explorerAddressUrl, explorerTxUrl, looksLikeTxHash } from '../src/lib/chains.js';
@@ -177,6 +178,44 @@ test('gaps keep their wording when it does not start with the address, and expla
   assert.equal(describeGap(two[0]), 'only part of the history was read (erc20) (2 addresses)');
   assert.equal(describeGap({ code: 'x', message: 'm', nodes: ['a:x'], count: 0 }), 'm');
   assert.equal(describeGap({ code: 'counterparties_not_followed', message: 'm', nodes: ['a:x'], count: 0 }), '1 address had more counterparties than were followed: only the most relevant of each are.');
+});
+
+// --- the pages the proxy watches ------------------------------------------------------------------
+
+test('every page group of the signed-in app is covered by proxy.js, for sign-in and for broken links', () => {
+  const groups = readdirSync(new URL('../app/(app)/', import.meta.url), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const source = readFileSync(new URL('../proxy.js', import.meta.url), 'utf8');
+  assert.ok(groups.length >= 8, `only ${groups.length} page groups found`);
+  for (const group of groups) {
+    // proxy.js cannot be imported here (it needs Next), and its matcher must be a literal for Next
+    // to read it, so the text is what can be checked: the group is a prefix that needs a session,
+    // and it is in the matcher (without which a link with a broken % is a server error, not a 404).
+    assert.ok(source.includes(`'/${group}'`), `/${group} is not in APP_PREFIXES`);
+    assert.ok(source.includes(`'/${group}/:path*'`), `/${group} is not in the matcher`);
+  }
+});
+
+// --- the admin sections of Settings ---------------------------------------------------------------
+
+test('each admin-only section of Settings is guarded by the permission its tab asks for', () => {
+  const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+  const tabs = read('../src/components/settings/SettingsTabs.js');
+  const sections = [
+    ['PeopleView.js', '/settings/people', 'usersManage'],
+    ['ApiKeysView.js', '/settings/api-keys', 'apiKeysManage'],
+    ['AuditView.js', '/settings/audit', 'auditRead']
+  ];
+  for (const [file, href, permission] of sections) {
+    // the page refuses a role without the permission, instead of showing a form the platform would refuse ...
+    assert.ok(
+      read(`../src/components/settings/${file}`).includes(`<Restricted permission={PERMISSIONS.${permission}}`),
+      `${file} is not guarded by ${permission}`
+    );
+    // ... and the tab that leads to it is hidden from the same roles
+    assert.ok(tabs.includes(`href: '${href}'`) && tabs.includes(`needs: PERMISSIONS.${permission}`), `the ${href} tab does not need ${permission}`);
+  }
 });
 
 // --- what the proxy forwards ----------------------------------------------------------------------

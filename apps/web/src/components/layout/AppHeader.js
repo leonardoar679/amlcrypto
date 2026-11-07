@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { signOut } from '../../lib/api';
+import { roleLabel } from '../../lib/permissions';
 import { useTheme } from '../../lib/useTheme';
 import { MenuIcon, LogoutIcon } from '../icons/Icons';
 import BrandMark from './BrandMark';
 
-export default function AppHeader({ collapsed, onToggleSidebar, user, organization }) {
+export default function AppHeader({ collapsed, onToggleSidebar, user, organization, role }) {
   const [theme, toggleTheme] = useTheme();
   const [leaving, setLeaving] = useState(false);
 
@@ -41,7 +42,10 @@ export default function AppHeader({ collapsed, onToggleSidebar, user, organizati
       </button>
 
       <div className="app-header-user" title={`${user.email} - ${organization.name}`}>
-        <span className="app-header-org">{organization.name}</span>
+        <span className="app-header-org">
+          {organization.name}
+          {role ? <span className="role-tag">{roleLabel(role)}</span> : null}
+        </span>
         <span className="app-header-email">{user.email}</span>
       </div>
 

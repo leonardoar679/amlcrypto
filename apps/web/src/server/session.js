@@ -25,7 +25,13 @@ export const getSession = cache(async () => {
       return { state: 'unavailable' };
     }
     const body = await response.json();
-    return { state: 'signed-in', user: body.user, organization: body.organization };
+    return {
+      state: 'signed-in',
+      user: body.user,
+      organization: body.organization,
+      role: body.role,
+      permissions: Array.isArray(body.permissions) ? body.permissions : []
+    };
   } catch {
     return { state: 'unavailable' };
   }

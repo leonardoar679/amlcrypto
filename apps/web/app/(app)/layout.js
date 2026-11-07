@@ -40,7 +40,7 @@ export default async function AppLayout({ children }) {
   }
 
   return (
-    <AppShell user={session.user} organization={session.organization}>
+    <AppShell user={session.user} organization={session.organization} role={session.role} permissions={session.permissions}>
       {children}
     </AppShell>
   );

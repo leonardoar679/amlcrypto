@@ -71,7 +71,9 @@ export async function apiFetch(path, { method = 'GET', body, signal } = {}) {
 
 export const api = {
   get: (path, options) => apiFetch(path, { ...options, method: 'GET' }),
-  post: (path, body, options) => apiFetch(path, { ...options, method: 'POST', body: body === undefined ? {} : body })
+  post: (path, body, options) => apiFetch(path, { ...options, method: 'POST', body: body === undefined ? {} : body }),
+  patch: (path, body, options) => apiFetch(path, { ...options, method: 'PATCH', body: body === undefined ? {} : body }),
+  del: (path, options) => apiFetch(path, { ...options, method: 'DELETE' })
 };
 
 // Sign in and out go through this site's own routes, not through /api/v1: the token is put in an

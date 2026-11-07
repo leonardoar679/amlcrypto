@@ -19,9 +19,41 @@ const ALLOWED = {
     /^screenings$/,
     new RegExp(`^screen/${ID}$`),
     new RegExp(`^screen/${ID}/export$`),
-    /^jobs\/\d{1,18}$/
+    /^jobs\/\d{1,18}$/,
+    /^monitoring\/addresses$/,
+    /^monitoring\/addresses\/\d{1,18}$/,
+    /^alerts$/,
+    /^alerts\/summary$/,
+    /^alerts\/\d{1,18}$/,
+    /^cases$/,
+    /^cases\/summary$/,
+    /^cases\/\d{1,18}$/,
+    /^cases\/\d{1,18}\/export$/,
+    /^users$/,
+    /^api-keys$/,
+    /^audit$/
   ],
-  POST: [/^address\/validate$/, /^intel\/lookup$/, /^screen\/(address|transaction)$/, /^graph\/update$/]
+  POST: [
+    /^address\/validate$/,
+    /^intel\/lookup$/,
+    /^screen\/(address|transaction)$/,
+    /^graph\/update$/,
+    /^monitoring\/addresses$/,
+    /^monitoring\/addresses\/\d{1,18}\/check$/,
+    /^cases$/,
+    /^cases\/\d{1,18}\/(notes|links)$/,
+    /^auth\/password$/,
+    /^users$/,
+    /^users\/\d{1,18}\/password$/,
+    /^api-keys$/
+  ],
+  PATCH: [
+    /^users\/\d{1,18}$/,
+    /^monitoring\/addresses\/\d{1,18}$/,
+    /^alerts\/\d{1,18}$/,
+    /^cases\/\d{1,18}$/
+  ],
+  DELETE: [/^api-keys\/\d{1,18}$/, /^monitoring\/addresses\/\d{1,18}$/, /^cases\/\d{1,18}\/links\/\d{1,18}$/]
 };
 
 export function isAllowed(method, path) {
