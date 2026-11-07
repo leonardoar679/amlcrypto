@@ -1,9 +1,9 @@
 # apps/web
 
 The platform's web app: Next.js 16 (App Router, plain JavaScript) with React 19. The signed-in screens
-(screening, reports, checks history, addresses, the transaction graph, settings) show data from the API in
-`apps/api`; the public pages (`/`, `/faq`, `/products/*`) are static marketing pages. How the two halves
-fit together, route by route, is in
+(screening, reports, checks history, addresses, the transaction graph, monitoring, alerts, cases, and
+settings with people, API keys and the audit log) show data from the API in `apps/api`; the public pages
+(`/`, `/faq`, `/products/*`) are static marketing pages. How the two halves fit together, route by route, is in
 [shared/documentation/frontend-integration-map.md](../../shared/documentation/frontend-integration-map.md).
 
 ## Run it
@@ -48,7 +48,10 @@ Screenings and "read from the providers" run in the API's background worker, so 
   unit formatting. These modules use **relative imports** so that `node --test` can load them; the `@/*`
   alias (`./src/*`) is for the pages and the server code.
 * `src/components/` is organised by screen: `check/`, `risk/` (the report), `address/`, `graph/`,
-  `settings/`, `ui/` (small shared pieces), `layout/`.
+  `monitoring/`, `alerts/`, `cases/`, `settings/`, `ui/` (small shared pieces), `layout/`.
+* What a person sees follows what their role may do. `GET /auth/me` lists the permissions; the sidebar
+  (`src/data/appNav.js`), the forms and the buttons show only what the person can use. That is a courtesy:
+  the API refuses the rest whatever the page shows, so never rely on a hidden link for protection.
 
 ## Rules that keep it safe
 

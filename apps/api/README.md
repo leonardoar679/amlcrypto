@@ -15,7 +15,9 @@ copy .env.example .env      # then edit; SECRET_KEY is optional only while ENVIR
 
 ```powershell
 .\.venv\Scripts\python.exe -m app.cli migrate                          # create/upgrade the database
-.\.venv\Scripts\python.exe -m app.cli create-user --email you@example.com --org-name "Your Org"
+.\.venv\Scripts\python.exe -m app.cli create-user --email you@example.com --org-name "Your Org"   # the first user is an admin
+.\.venv\Scripts\python.exe -m app.cli user list                       # people, roles, active or not (also: set-role, deactivate, activate, set-password)
+.\.venv\Scripts\python.exe -m app.cli audit list --limit 20           # the latest entries of the audit log
 .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --reload   # http://127.0.0.1:8000/api/docs
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check . ; .\.venv\Scripts\python.exe -m ruff format --check .
@@ -59,7 +61,11 @@ SQLite and MySQL, runs async handlers with no database transaction open, retries
 backoff (or at the time a provider asked for), gives up at once on failures that waiting cannot fix
 (bad key, missing key, malformed request), cancels a handler after `JOB_TIMEOUT_SECONDS`, hands jobs
 back on shutdown, and requeues the jobs of a worker that died. Handlers are registered in
-`app/worker/handlers.py`; `PROVIDER_PROBE` and `FETCH_ADDRESS_HISTORY` exist so far.
+`app/worker/handlers.py`: `PROVIDER_PROBE`, `FETCH_ADDRESS_HISTORY`, `REFRESH_LABEL_SOURCE`,
+`FETCH_COUNTERPARTIES`, `ADDRESS_SCREENING`, `TRANSACTION_SCREENING` and `ADDRESS_MONITORING`. A worker
+that keeps running also has **scheduled tasks** (`Periodic` in `app/worker/context.py`): every
+`MONITORING_TICK_SECONDS` it queues the checks of monitored addresses that are due (see "Monitored
+addresses" below). `--once` runs what is queued and exits, without the schedule.
 
 Things to know:
 
@@ -67,8 +73,8 @@ Things to know:
   so two workers would each use the full allowance.
 * The circuit and last-error fields of `GET /providers` describe the API process only; `usage_24h`
   comes from the database and includes the worker's calls.
-* Any authenticated user can read provider status and trigger a probe (one request of quota) until
-  roles arrive in M13.
+* Reading the provider list needs the `providers:read` permission (analysts and admins); a probe, which
+  spends a request of quota, needs `providers:probe` (admins).
 
 ## Reading address histories (Ethereum, BNB Smart Chain, TRON, Bitcoin and Solana)
 
@@ -805,9 +811,9 @@ address) scored 6 LOW on AML-009 alone with confidence 0.28.
   more provider requests; the default screening is one hop (the web form asks for two).
 * Account histories are read oldest first (milestone M8), so for a busy address under the item cap the
   report is built on its oldest transfers and says the history is partial.
-* No monitoring or alerts on new activity (M13), no per-organization rule configuration, no scheduled
-  re-screening. (Reports export as JSON and CSV since M12; a PDF is the browser's print dialog, there is
-  no PDF library on the server.)
+* No per-organization rule configuration (M13 added monitoring, alerts and cases, which re-screen on a
+  schedule). (Reports export as JSON and CSV since M12; a PDF is the browser's print dialog, there is no
+  PDF library on the server.)
 
 ## Serving the web app (milestone M12)
 
@@ -840,7 +846,173 @@ and `GET /auth/me`: see `shared/documentation/frontend-integration-map.md`.
 formula defusing, the stored-history paging, the job and queue semantics, the formatted amounts), and
 mutations of the new code in which every real gap was closed. The endpoints were also used by the web
 app in a real browser, against the real chain (a sanctioned address screened through the UI), as recorded
-in the integration map. Not yet run in CI.
+in the integration map. CI ran on it and all five jobs are green, MySQL 8.0 and 8.4 included (`fda1108`).
+
+## Access control, monitoring, alerts and cases (milestone M13)
+
+M13 makes the platform something a team can use together: who may do what, an audit trail, addresses kept
+under watch with alerts when something is new, and cases to investigate them. Everything here is
+tenant-owned: another organization's monitor, alert, case or key is simply not found.
+
+### Who may do what
+
+Every user has a role, and a role is a fixed list of permissions in code (`app/access/permissions.py`), so
+what a role means is reviewed like any other change.
+
+| Role | May |
+|---|---|
+| `viewer` | read reports, addresses, graphs, monitored addresses, alerts and cases |
+| `analyst` | also screen, update graphs, read the provider list, watch addresses, work alerts and cases |
+| `admin` | also probe providers, manage people and API keys, read the audit log |
+
+Every route under `/api/v1` names the permission it needs (`require(...)` in `app/api/deps.py`), or is
+listed as public (`/health`, `/version`, login, and the signed provider webhook) or as open to anyone
+signed in. `tests/test_access_control.py` walks every route and fails for a route that says nothing, then
+calls every route as every role and checks that a role without the permission gets 403 and one with it
+gets past the check. A role change, a deactivated account and a revoked key take effect on the next
+request: the role and the permissions are read from the database every time, not from the token.
+
+* **API keys** (`X-API-Key: aml_<8 hex>_<43 characters>`) are for programs. The secret is shown once; only
+  its SHA-256 is stored. A key has a role no higher than its creator's, can expire or be revoked, stops
+  working when its creator is switched off, and can **never** manage people or keys whatever its role.
+  What a key does is attributed to the key in the audit log, and to the person who made it where a record
+  needs a person.
+* **The audit log** (`GET /audit`, admins; `python -m app.cli audit list`) only grows: nothing in the
+  application changes or removes a row. It records sign-ins (and failures), refusals (403), changes to
+  people and keys, screenings and exports, graph updates, provider probes, and every monitoring, alert and
+  case action, with who, from where, and the outcome. An entry never carries a secret: anything named like
+  a password, token or key is dropped, and what is kept is capped. An entry made by an endpoint that
+  changes something is written in the endpoint's own transaction, so it exists exactly when the change
+  does.
+* **Sign-in lockout.** `LOGIN_MAX_FAILURES` (10) failures of one account inside
+  `LOGIN_FAILURE_WINDOW_SECONDS` (900) refuse it for the rest of the window, with 429 and `Retry-After`; the
+  count comes from the audit log, by a hash of the email (whether or not the account exists), and attempts
+  made while locked do not extend the lock. It protects an account from being guessed, at the price that
+  someone who knows an email can lock that account out for a few minutes; limiting one client across many
+  accounts is the reverse proxy's job (M14). `TRUSTED_PROXY_HOPS` says how many proxies add to
+  `X-Forwarded-For` (default 0: the address of the connection).
+* **People.** `GET/POST /users`, `PATCH /users/{id}` (role, on or off), `POST /users/{id}/password`,
+  `POST /auth/password` (your own). An organization always keeps an active admin: the last one cannot be
+  demoted or switched off. The CLI does the same (`create-user --role`,
+  `user list|set-role|deactivate|activate|set-password`) for the first admin and for emergencies.
+
+### Monitored addresses
+
+`POST /monitoring/addresses` starts watching an address (`chain`, `address`, and optionally `name`,
+`check_interval_seconds`, `depth`, `min_severity`). The worker (`python -m app.worker`) does the rest:
+
+1. A scheduler tick inside the worker, every `MONITORING_TICK_SECONDS` (30), queues an
+   `ADDRESS_MONITORING` job for every active monitor whose time has come (at most `MONITORING_BATCH` at a
+   time, one per monitor at a time) and moves each monitor's next time on by its interval at once, so a
+   check that fails does not come back every tick. A person's request, a registration or a provider
+   webhook queues a check ahead of the routine ones.
+2. A check **screens the address** with the same code as any screening (which first brings the stored
+   histories of the address and the counterparties it follows up to date through the providers), then
+   compares what it found with what the last check found.
+3. A report is **kept only when something changed** (a new finding, a different score or level, newer
+   stored activity), or at least every `MONITORING_HEARTBEAT_DAYS` (7) so that a quiet address still has a
+   recent one. A check that finds the same as before changes nothing but the time it last looked.
+4. An **alert** is raised for what is *new* since the last check, never for what the team has already
+   seen (a finding is identified by its rule, the other end and the direction, and a finding that went
+   away and came back is not new again):
+   * a finding that was not known before, at or above the monitor's `min_severity` (`LOW`, `MEDIUM`
+     (default), `HIGH`, `CRITICAL`);
+   * the risk level having risen to one worth hearing about;
+   * the score having risen by `MONITORING_SCORE_DELTA` (15) or more within a level worth hearing about;
+   * at the first check, the address already being at a level worth hearing about (`baseline_risk`).
+
+   An alert carries the findings that raised it, what changed (reasons, and the score and level before
+   and after), and links to the report that raised it and the one before. Findings below the threshold are
+   still in the stored reports; they only do not raise an alert.
+5. **A watch that cannot look is not a quiet address.** A check that cannot be completed is retried by the
+   worker like any job; only a whole failed attempt counts against the monitor, and
+   `MONITORING_DEGRADED_AFTER` (3) in a row raise one `monitoring_degraded` alert (not another while one is
+   unresolved), which the system closes as `recovered` when a check works again.
+
+Limits: an interval of `MONITORING_MIN_INTERVAL_SECONDS` (900) to 30 days, `MONITORING_MAX_ADDRESSES`
+(100) per organization, depth up to `GRAPH_MAX_DEPTH`. Each check spends provider requests, so these are
+the control on the bill. No alert is not a clearance: the web app says so on the page.
+
+**Provider events.** `POST /webhooks/alchemy` accepts an Alchemy Address Activity webhook for the EVM
+chains Alchemy covers (Ethereum and BNB Smart Chain) once `ALCHEMY_WEBHOOK_SIGNING_KEY` is set (404
+otherwise). It is a *doorbell*, not a source of truth: the signature (HMAC-SHA256 of the raw body, compared
+in constant time) is checked before anything is read, the body is capped (`WEBHOOK_MAX_BODY_BYTES`), and an
+event only queues an immediate check for the monitors on the addresses it names; the check reads the chain
+through the same providers as any other. A forged or replayed event can therefore cost at most one check of
+an address that is monitored anyway. Bitcoin, TRON and Solana are checked on schedule only. The endpoint
+writes nothing to the audit log (anyone can call an unauthenticated endpoint, so it must not be able to fill
+a table); the checks it triggers are audited through the alerts they raise.
+
+### Alerts
+
+An alert is `open`, `acknowledged` or `closed` with a resolution (`true_positive`, `false_positive`,
+`accepted_risk`; `recovered` is the system's, for the monitoring alert). A closed alert can only be
+reopened, so its history reads in one direction. `PATCH /alerts/{id}` acknowledges, assigns, closes,
+reopens, or (with a `note` alone) comments; a request with one bad part changes none of it. Every change is
+in the audit log and an alert's **activity** (`GET /alerts/{id}`) is read back from there, so the alert has
+no second history to keep in step. `GET /alerts` filters by status (`unresolved` is open and acknowledged),
+severity, kind, monitor and assignee (`mine`); `GET /alerts/summary` is what a badge shows.
+
+### Cases
+
+A case is an investigation: `open`, `in_progress` or `closed` with an outcome (`confirmed`, `dismissed`,
+`escalated`), a priority, an assignee, a description, and **links** to what it is about and relied on
+(addresses, transactions, screenings, alerts, each checked to exist in the organization). Opening one from
+an alert (`alert_id`) takes the alert's address, links the alert and the report that raised it, and
+acknowledges the alert; an alert has one unfinished case at a time. Its **timeline** (`case_events`) only
+grows: that it was opened, every change of status, owner and priority, edits, links added and removed, and
+the notes people wrote, which cannot be changed or removed afterwards (a mistake is corrected by another
+note). `GET /cases/{id}/export` is the case file as JSON: the case with its timeline and links, the linked
+alerts with their evidence, and the linked reports exactly as they were kept, with when and by whom the
+file was produced. There are no file attachments.
+
+### Endpoints added in M13
+
+| Endpoint | Permission | What it does |
+|---|---|---|
+| `GET /auth/me` | signed in (not a key) | also returns `role` and `permissions` |
+| `POST /auth/password` | signed in | change your own password |
+| `GET/POST /users`, `PATCH /users/{id}`, `POST /users/{id}/password` | `users:manage` | the people of the organization |
+| `GET/POST /api-keys`, `DELETE /api-keys/{id}` | `apikeys:manage` | API keys (the secret is returned once, on creation) |
+| `GET /audit` | `audit:read` | the audit log, with filters |
+| `POST/GET /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST .../{id}/check` | `monitoring:write` / `monitoring:read` | watch addresses; pause, resume, change, stop; check now |
+| `GET /alerts`, `/alerts/summary`, `/alerts/{id}`; `PATCH /alerts/{id}` | `alerts:read` / `alerts:manage` | read and work alerts |
+| `POST/GET /cases`, `/cases/summary`, `/cases/{id}`, `PATCH /cases/{id}`, `POST /cases/{id}/notes`, `POST /cases/{id}/links`, `DELETE /cases/{id}/links/{link}`, `GET /cases/{id}/export` | `cases:write` / `cases:read` | investigations |
+| `POST /webhooks/alchemy` | a signature | the provider's doorbell |
+
+### Checked against
+
+2,701 tests (528 more than before M13), run on SQLite; the 90 frontend unit tests; and about 585 mutations of
+the new backend code (access control, monitoring, alerts, cases, the webhook and the worker's schedule) in
+which every real gap was closed. The survivors left are equivalent changes, such as a check that a second
+layer repeats (the service re-checks that an alert is the caller's organization's, as the route does) or the
+rollback of a session that is closed anyway. What the mutations found: a webhook signature header that is not
+ASCII would have been a 500 (`hmac.compare_digest` on text), a cap on the addresses of an event that could be
+overrun by its last item, an alert summary that lowercased "CRITICAL" (`str.capitalize`), the recovery of a
+monitoring alert that somebody had acknowledged recording "from open", the `mine` filter of a key listing
+everyone's alerts, and a timeline, a link count and a summary that were not scoped to their own case or
+organization. Migrations `0008`-`0010` round-trip (up, down to `0007`, up) and `alembic check` finds no drift
+on SQLite. The screens were driven in a real browser against the real chain (83 checks, see the integration
+map). **MySQL is checked only by CI, which has not run on these commits yet.** One existing worker test
+(`test_draining_runs_every_due_job_within_the_concurrency_limit`) failed once in a full run under load and
+passed on every rerun; it asserts a degree of concurrency that a slow machine can miss.
+
+### Not done
+
+* **No outbound delivery.** Alerts are in the app (and the API); there are no customer webhooks, email or
+  Telegram notifications. A badge and the Alerts page are how a team sees them.
+* No file attachments on cases; no per-organization rule configuration (rule settings stay global); no
+  custom roles; no SSO or two-factor sign-in; no revocable sessions (a token stays valid until it expires,
+  though a deactivated account or a changed role is noticed at once); no refresh tokens.
+* **Webhooks:** only Alchemy's Address Activity (Ethereum and BNB Smart Chain); Bitcoin, TRON and Solana
+  are polled. The endpoint was tested with signed fixtures, **not against a live Alchemy webhook** (that
+  needs a public URL and Alchemy's dashboard).
+* Monitoring is as good as the labels it can see: with only OFAC as a label source, only the sanctions
+  rules can raise an alert on real data. The thresholds are uncalibrated defaults.
+* Alerts and cases can be assigned to yourself in the web app; assigning to a colleague is possible through
+  the API (`assignee_id`), but the web app has no people picker for non-admins, because only admins may
+  list people.
+* Rate limiting is the reverse proxy's job (M14), and so is a nonce-based content security policy.
 
 ## Testing against MySQL
 
@@ -860,8 +1032,16 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 |---|---|---|
 | `GET /health` | none | liveness plus a database round trip (503 when the database is down) |
 | `GET /version` | none | app version and schema revision (`schema_up_to_date`) |
-| `POST /auth/login` | none | email and password for a bearer token |
-| `GET /auth/me` | bearer | the signed-in user and their organization |
+| `POST /auth/login` | none | email and password for a bearer token (429 with `Retry-After` while the account is locked) |
+| `GET /auth/me` | bearer (not a key) | the signed-in user, their organization, role and permissions |
+| `POST /auth/password` | bearer | change your own password |
+| `GET/POST /users`, `PATCH /users/{id}`, `POST /users/{id}/password` | `users:manage` | the people of the organization (see "Access control, monitoring, alerts and cases") |
+| `GET/POST /api-keys`, `DELETE /api-keys/{id}` | `apikeys:manage` | API keys; the secret is returned once |
+| `GET /audit` | `audit:read` | the audit log |
+| `POST/GET /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST /monitoring/addresses/{id}/check` | `monitoring:write` / `monitoring:read` | monitored addresses |
+| `GET /alerts`, `GET /alerts/summary`, `GET /alerts/{id}`, `PATCH /alerts/{id}` | `alerts:read` / `alerts:manage` | alerts and the analyst's workflow on them |
+| `POST/GET /cases`, `GET /cases/summary`, `GET/PATCH /cases/{id}`, `POST /cases/{id}/notes`, `POST /cases/{id}/links`, `DELETE /cases/{id}/links/{link}`, `GET /cases/{id}/export` | `cases:write` / `cases:read` | cases |
+| `POST /webhooks/alchemy` | a signature | Alchemy's Address Activity webhook: wakes the checks of monitored addresses it names |
 | `GET /chains` | bearer | supported chains, in registry order, with `enabled` |
 | `POST /address/validate` | bearer | validate an address on one chain (`chain`: slug or CAIP-2 id) or detect every chain it is valid on |
 | `POST /intel/lookup` | bearer | what is known about an address (`chain`, `address`): each claim with its source, confidence and age, withdrawn claims, the state of every source, and Watchman's opinion when configured. A bad address is 422, an unknown chain 404 |
@@ -899,7 +1079,10 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/intel/` | address intelligence: the claim model and confidence (`model`), OFAC's list reader (`ofac`), the importer and downloader (`importer`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`) and what the CLI and API share (`service`) |
 | `app/graph/` | the transaction graph: movements from stored records (`flows`), where histories come from and how complete they are (`reader`), the bounded expansion (`builder`), exposure paths (`exposure`), fan-in and fan-out (`patterns`), bridges (`bridges`), the text output (`render`), what the CLI, API and job share (`service`) and the job (`jobs`) |
 | `app/risk/` | the risk engine: the records of a report (`model`), the fifteen rules and their registry (`rules/`), scoring and confidence (`scoring`), screening a graph (`engine`) or a transaction (`transactions`), the text output (`render`), what the CLI, API and job share (`service`) and the screening jobs (`jobs`) |
-| `app/worker/` | the job runner (`python -m app.worker`) and its handlers |
+| `app/worker/` | the job runner (`python -m app.worker`), its handlers and its scheduled tasks |
+| `app/access/` | roles and permissions (`permissions`), API keys (`apikeys`), the audit log (`audit`) and the sign-in lockout (`lockout`) |
+| `app/monitoring/` | monitored addresses: deciding what is new (`detect`), registering and queueing checks (`service`), the check job and the worker's tick (`jobs`), the alert workflow (`workflow`) and the provider doorbell (`webhooks`) |
+| `app/cases/` | cases: opening, changing, noting and linking them, and their timeline (`service`) |
 | `app/database/repositories/` | job queue and usage counters; the stored chain data (`transfers`, `bitcoin`, `solana`, `membership`, saved by identity through `rows`); coverage, the log of reads and the raw answers (`acquisition`). `app/database/upsert.py` and `retry.py` are the bulk upserts and the deadlock retry they share |
 | `migrations/` | Alembic environment and versions |
 | `tests/` | pytest suite |
@@ -925,8 +1108,9 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 
 ## Known gaps (tracked in the project plan)
 
-* No login rate limiting or lockout yet.
-* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `12a9a8f`, 2,118 tests; the M12 additions have not run in CI yet). The
+* **No rate limiting in front of the API** (milestone M14, at the reverse proxy). What exists: a sign-in
+  lockout per account (see "Access control"), request-size caps on the webhook and on the web app's proxy.
+* **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `fda1108`, 2,173 tests). The
   first M3 run found two concurrency bugs in the code and a flaw in the test fixture; the first M8
   and M9 run found two problems, both in the tests.
 * **Docker:** CI builds `Dockerfile`, runs the container, calls `/health` and `/version`, runs the

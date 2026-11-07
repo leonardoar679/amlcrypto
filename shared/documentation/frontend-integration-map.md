@@ -54,7 +54,15 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 | `/addresses` | `(app)` | open any address; the addresses screened so far | `POST /address/validate`, `GET /screenings` |
 | `/addresses/[chain]/[address]` | `(app)` | labels and their sources, latest screening, stored history and its coverage, main counterparties, paged transactions, "read from the providers" | `GET /address/{chain}/{address}` (+ `/transactions`), `GET /graph`, `POST /graph/update`, `GET /jobs/{id}` |
 | `/graph` | `(app)` | the bounded transaction graph (Cytoscape.js, loaded in the browser only), its gaps, exposure paths and patterns, node and link detail, PNG and JSON export, the same data as tables | `GET /graph`, `POST /graph/update`, `GET /jobs/{id}` |
-| `/settings` | `(app)` | who is signed in, data providers (configured, usage; never a key), label sources and their freshness, the risk rules (read only) | `GET /auth/me`, `/providers`, `/intel/sources`, `/risk/rules` |
+| `/monitoring` | `(app)` | the addresses the team watches: a form to watch one (chain detection as in a screening, name, how often, how far to look, the lowest severity that raises an alert), a table with each one's state (Waiting, Watching, Paused, Not working), its unresolved alerts, its latest risk and report, when it was last and will next be checked; check now, pause, resume, edit, stop | `POST /address/validate`, `GET/POST /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST /monitoring/addresses/{id}/check` |
+| `/alerts` | `(app)` | what monitoring found that is new: counts by status and severity, filters (status, severity, kind, assigned to me, one monitored address), paging | `GET /alerts`, `GET /alerts/summary` |
+| `/alerts/[id]` | `(app)` | one alert: why it was raised, the findings behind it, the reports before and after, the cases opened from it, acknowledge / assign / close with how it ended / reopen / add a note, and its activity | `GET /alerts/{id}`, `PATCH /alerts/{id}`, `POST /cases` |
+| `/cases` | `(app)` | investigations: counts, filters (status, priority, assigned to me, title), a form to open one by hand | `GET /cases`, `GET /cases/summary`, `POST /cases`, `POST /address/validate` |
+| `/cases/[id]` | `(app)` | one case: description, who has it, start work / close with an outcome / reopen / priority / assign, what it relies on (links), the timeline with notes, the case file as JSON | `GET/PATCH /cases/{id}`, `POST /cases/{id}/notes`, `POST /cases/{id}/links`, `DELETE /cases/{id}/links/{link}`, `GET /cases/{id}/export` |
+| `/settings` | `(app)` | who is signed in and their role, change your own password, data providers (configured, usage; never a key), label sources and their freshness, the risk rules (read only) | `GET /auth/me`, `POST /auth/password`, `/providers`, `/intel/sources`, `/risk/rules` |
+| `/settings/people` | `(app)` | admins: the people of the organization, add one, change a role, switch an account on or off, reset a password | `GET/POST /users`, `PATCH /users/{id}`, `POST /users/{id}/password` |
+| `/settings/api-keys` | `(app)` | admins: make a key (shown once), see the keys and when they were last used, revoke one | `GET/POST /api-keys`, `DELETE /api-keys/{id}` |
+| `/settings/audit` | `(app)` | admins: the audit log with filters | `GET /audit` |
 | `/api/session/{login,logout,expired}` | route handlers | set, clear, and clear-then-redirect for the session cookie | `POST /auth/login` |
 | `/api/v1/[...path]` | route handler | the allow-listed proxy | see `proxyRules.js` |
 
@@ -64,7 +72,12 @@ signed-in routes `noindex`, which the marketing routes will not be at launch. `e
 sit in the group. A link with a broken `%` is answered with a 404 by `proxy.js` (without that, the router
 fails with a server error).
 
-The sidebar is **Check, Checks history, Addresses, Graph, Settings**.
+The sidebar is **Check, Checks history, Addresses, Graph, Monitoring, Alerts, Cases, Settings**, filtered by
+what the signed-in person's role may do (`GET /auth/me` lists the permissions; `src/data/appNav.js` says what
+each entry needs): a viewer is not offered "Check", because they cannot ask for a screening. This is a
+courtesy, never the protection: the API refuses what a role may not do whatever the page shows, and the
+browser run below checks that a viewer's direct request is refused. The Alerts entry carries a badge with the
+number of unresolved alerts, refreshed every minute.
 
 ## 3. What the screens show
 
@@ -112,6 +125,14 @@ All tenant-scoped, all tested (including that another organization's data is not
 Report evidence also gained a formatted `amount` next to `amount_raw` (and `edge_total` / `transfer.amount`
 on exposure hops), so a report reads "1.5 USDT" in the JSON and CSV as well as on screen.
 
+### Added for M13 (access control, monitoring, alerts and cases)
+
+`GET /auth/me` now also returns the role and the permissions. The rest are the endpoints of the pages above;
+the API README ("Access control, monitoring, alerts and cases") describes each. The proxy allow-list
+(`src/lib/proxyRules.js`) gained them one by one, with their methods (`PATCH` and `DELETE` are new to it),
+and **deliberately does not list `POST /webhooks/alchemy`**: that endpoint is for the data provider, which
+calls the API directly and proves itself with a signature, not for a browser. A test pins this.
+
 ## 5. Decisions
 
 * **The consumer screens were removed** (user decision, 2026-11-06): pricing, top-up and fake checkout,
@@ -129,10 +150,12 @@ on exposure hops), so a report reads "1.5 USDT" in the JSON and CSV as well as o
 
 ## 6. How it was checked
 
-* **Unit tests** (`npm test`, Node's runner, 64 tests, run in CI): the proxy's allow-list, path cleaning, origin
+* **Unit tests** (`npm test`, Node's runner, 90 tests, run in CI): the proxy's allow-list, path cleaning, origin
   rule and header filtering; the session cookie options; the safe-redirect rule; the risk bands and
   wording; transaction-hash shapes; exact unit formatting; the graph helpers (node kinds, counterparties,
-  gap grouping); the link and path guards; the API client. About 360 mutations of these modules (a limit one
+  gap grouping); the link and path guards; the API client; and, since M13, the permission names, the menu a
+  role is shown, the wording of monitors, alerts, cases and their activity, and a structural test that every
+  page group of the signed-in app is covered by `proxy.js`. About 360 mutations of the M12 modules (a limit one
   off, a swapped comparison, a changed default) were run against them: the first pass left 79 alive, tests
   closed 62 of those, and the 17 that survive are equivalent changes or checks that a stricter one makes
   unreachable (for example the redirect guard that the URL check also enforces).
@@ -159,8 +182,30 @@ on exposure hops), so a report reads "1.5 USDT" in the JSON and CSV as well as o
   screening it again used **no** provider request and found the same thing; "read from the providers" went
   queued, running, up to date and the page showed the fresh read; no provider key appeared in any of the 240
   responses.
-* Not covered: Firefox and Safari were not used; screen readers were not used; the browser runs are scripts
-  kept outside the repository (they need Edge, a running API and a seeded database), not part of CI.
+* **The M13 screens in a browser** (2026-11-06; headless Edge on a production build; a real API and worker on a
+  scratch database with an admin, an analyst and a viewer, OFAC's real list and the real provider keys, held by
+  the API only; 83 checks, all passing at the end). An anonymous visit to a new page is sent to sign in and every
+  new endpoint is refused at the proxy; the provider webhook is not reachable through the site. A **viewer**
+  sees Monitoring, Alerts and Cases but not "Screen an address", has no forms, and a direct request to write is
+  refused with 403 and recorded as denied in the audit log. An **analyst** watched Lazarus Group's OFAC-listed
+  address through the form; the worker's scheduler checked it against the real chain, found it CRITICAL by the
+  sanctions policy and raised an alert (a badge counted it); the alert page showed the finding and its source; a
+  case was opened from the alert (which acknowledged it and linked the alert, the address and the report), worked
+  through (start, priority, assign, a note, a link to nothing refused with a message and a good one added,
+  close with an outcome, reopen), and its case file downloaded as JSON holding the alert and the report as kept;
+  the alert was then put back, acknowledged, assigned and closed as a true positive, and the badge went away;
+  the monitor was checked now, paused, resumed and edited. An **admin** saw the people, made an API key (shown
+  once, accepted by the API, a viewer's key refused a write, revoked and refused at once) and read the audit log
+  with every action above, the alert as raised by the system. No sideways scroll at 390 px on the five new
+  pages; light and dark screenshots read; and **none of the four provider keys appears in any of the 1,627
+  responses or in the build**. The run found and fixed three things: the proxy did not cover the new pages
+  (an anonymous visit to `/alerts` lost its `next`, and a link ending in a broken `%` was a 500 instead of a
+  404: a test now compares the page groups with `proxy.js`), the monitoring page scrolled sideways on a
+  phone (the hidden header text of the table's actions column escaped the table's scroll container), and the
+  system's name began with a lowercase letter in an activity list.
+* Not covered: Firefox and Safari were not used; screen readers were not used; a live Alchemy webhook was not
+  received (that needs a public URL); the browser runs are scripts kept outside the repository (they need Edge,
+  a running API and worker, a seeded database and provider keys), not part of CI.
 
 ## 7. What the audit found, and what became of it
 
@@ -191,11 +236,14 @@ Still open:
 * `app/layout.js` loads Google Fonts through `next/font/google`, so `next build` needs internet.
 * There are no images (all artwork was removed in the rebrand); add `next/image` when real artwork exists.
 * The marketing pages keep their older relative imports and a design that was only rebranded, not redesigned.
-* No rate limiting, no CSRF token beyond `SameSite=Lax` plus the origin check, no refresh tokens: when the
-  token expires the person signs in again. (Rate limiting and API keys are M13/M14.)
+* No rate limiting (the reverse proxy's job, M14), no CSRF token beyond `SameSite=Lax` plus the origin check, no
+  refresh tokens: when the token expires the person signs in again. (API keys, roles, the audit log and a
+  sign-in lockout arrived with M13.)
 * Signing out forgets the cookie, but the token itself stays valid until it expires: the API keeps no session
   to end. The token is httpOnly, so page script cannot copy it, but a token that had been copied some other way
-  would still work until then. Revocable sessions arrive with M13.
+  would still work until then. M13 did **not** add revocable sessions; what it added is that a deactivated
+  account, a changed role and a revoked key are noticed on the very next request, because the API reads them
+  from the database every time.
 * The graph is limited to three hops in the UI (the API allows six) and to a few hundred addresses on screen.
 * `next dev` writes an `AGENTS.md` into `apps/web` (a Next.js 16 feature; `agentRules: false` in
   `next.config.mjs` turns it off). It is not part of this work and is not committed.
