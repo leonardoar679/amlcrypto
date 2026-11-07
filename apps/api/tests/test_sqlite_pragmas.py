@@ -35,7 +35,9 @@ def test_foreign_keys_are_enforced(database_url):
     engine = create_db_engine(database_url)
     try:
         with create_session_factory(engine, write=True)() as session:
-            session.add(User(organization_id=999, email="a@example.com", password_hash="x"))
+            session.add(
+                User(organization_id=999, email="a@example.com", password_hash="x", role="viewer")
+            )
             with pytest.raises(IntegrityError):
                 session.commit()
     finally:
@@ -202,6 +204,7 @@ def test_concurrent_read_then_write_units_of_work_do_not_collide(database_url):
                             organization_id=organization_id,
                             email=f"t{thread_index}-{i}@example.com",
                             password_hash="x",
+                            role="viewer",
                         )
                     )
                     session.commit()

@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import Principal, get_principal, get_session
+from app.api.deps import Principal, get_session, screening_read
 from app.api.errors import APIError
 from app.database.models import FetchJob
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.get("/{job_id}")
 def get_job(
     job_id: int,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Where a job stands (`QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`) and, when it has finished,

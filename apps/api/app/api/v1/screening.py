@@ -17,7 +17,15 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import Principal, get_principal, get_session, get_write_session
+from app.api.deps import (
+    Audit,
+    Principal,
+    get_audit,
+    get_session,
+    get_write_session,
+    screening_read,
+    screening_run,
+)
 from app.api.errors import APIError
 from app.chains.registry import get_chain
 from app.chains.support import find_chain
@@ -97,8 +105,9 @@ def _queued(row: RiskAssessment, created: bool) -> dict[str, Any]:
 @router.post("/screen/address", status_code=202)
 def screen_address(
     body: ScreenAddressRequest,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_run),
     session: Session = Depends(get_write_session),
+    audit: Audit = Depends(get_audit),
 ) -> dict[str, Any]:
     """Queue the screening of an address and return its id. The worker reads the address's history
     and its counterparties', builds the graph, runs the rules and keeps the report; read it with
@@ -118,14 +127,28 @@ def screen_address(
         subject=address,
         options=_address_options(body.options),
     )
+    audit.add(
+        session,
+        "screening.request",
+        target_type="screening",
+        target_id=screening_id(row.id),
+        details={
+            "kind": ADDRESS,
+            "chain": get_chain(chain.chain_id).slug,
+            "subject": address,
+            "already_requested": not created,
+        },
+    )
+    session.commit()
     return _queued(row, created)
 
 
 @router.post("/screen/transaction", status_code=202)
 def screen_transaction(
     body: ScreenTransactionRequest,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_run),
     session: Session = Depends(get_write_session),
+    audit: Audit = Depends(get_audit),
 ) -> dict[str, Any]:
     """Queue the screening of a transaction: it is decoded, and each party to it is looked up
     against the label sources. This judges the transaction itself; to judge an address's wider
@@ -143,6 +166,19 @@ def screen_transaction(
         subject=subject,
         options={},
     )
+    audit.add(
+        session,
+        "screening.request",
+        target_type="screening",
+        target_id=screening_id(row.id),
+        details={
+            "kind": TRANSACTION,
+            "chain": get_chain(chain.chain_id).slug,
+            "subject": subject,
+            "already_requested": not created,
+        },
+    )
+    session.commit()
     return _queued(row, created)
 
 
@@ -158,7 +194,7 @@ def _subject(row: RiskAssessment) -> dict[str, Any]:
 @router.get("/screen/{screening}")
 def get_screening(
     screening: str,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """A screening: where it stands and, once COMPLETED, the report. A screening of another
@@ -196,7 +232,7 @@ def _resolved(chain: str, address: str):
 def address_risk(
     chain: str,
     address: str,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """The organization's most recent completed screening of the address, as it was produced. It
@@ -225,7 +261,7 @@ def address_risk_history(
     chain: str,
     address: str,
     limit: int = Query(20, ge=1, le=100),
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """The organization's finished screenings of the address, newest first: how its score moved."""
@@ -255,7 +291,7 @@ def address_risk_history(
 @router.get("/risk/rules")
 def risk_rules(
     request: Request,
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(screening_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """The detection rules as they are configured now: what each does, its version, whether it is
@@ -301,7 +337,7 @@ def list_screenings(
     ] = False,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """The organization's screenings, newest first, without their reports (read one with
@@ -383,8 +419,9 @@ def findings_csv(report: dict[str, Any]) -> str:
 def export_screening(
     screening: str,
     format: Annotated[Literal["json", "csv"], Query()] = "json",
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(screening_read),
     session: Session = Depends(get_session),
+    audit: Audit = Depends(get_audit),
 ) -> Response:
     """The report of a finished screening as a download: the whole document as JSON, or its
     findings (and the duplicates that were not counted) as CSV."""
@@ -396,6 +433,12 @@ def export_screening(
         raise APIError(404, "screening_not_found", "No such screening.")
     if row.report is None:
         raise APIError(409, "not_completed", "This screening has no report (yet).")
+    audit.now(
+        "screening.export",
+        target_type="screening",
+        target_id=screening_id(row.id),
+        details={"format": format},
+    )
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", screening_id(row.id))
     if format == "csv":
         body, media = findings_csv(row.report), "text/csv; charset=utf-8"

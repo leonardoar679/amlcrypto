@@ -35,5 +35,7 @@ class User(TimestampMixin, Base):
     )
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)  # stored lowercase
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # admin, analyst or viewer (app.access.permissions). Never defaulted: whoever makes a user says.
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

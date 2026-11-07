@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import Principal, get_principal, get_session
+from app.api.deps import Principal, authenticated, get_session
 from app.chains.registry import CHAINS
 from app.database.models import Chain
 
@@ -26,7 +26,7 @@ class ChainOut(BaseModel):
 
 @router.get("", response_model=list[ChainOut])
 def list_chains(
-    _principal: Principal = Depends(get_principal), session: Session = Depends(get_session)
+    _principal: Principal = Depends(authenticated), session: Session = Depends(get_session)
 ) -> list[Chain]:
     """Every chain the platform knows, in registry order, with whether it is switched on."""
     position = {spec.id: index for index, spec in enumerate(CHAINS)}

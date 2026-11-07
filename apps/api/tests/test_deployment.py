@@ -36,3 +36,14 @@ def test_the_backend_is_pointed_at_watchman_by_its_internal_name():
 
 def test_watchman_is_told_which_list_to_load():
     assert "INCLUDED_LISTS: us_ofac" in service_block("watchman")
+
+
+def test_the_webhook_key_and_the_proxy_count_reach_both_services_and_are_off_by_default():
+    text = COMPOSE.read_text(encoding="utf-8")
+    shared = re.search(r"^x-aml-environment: &aml-environment\n((?:  .*\n)+)", text, re.MULTILINE)
+    assert shared, "the environment shared by the api and the worker is gone"
+
+    # In the block both services use, so the worker (which checks the monitors) sees them too.
+    assert "ALCHEMY_WEBHOOK_SIGNING_KEY: ${ALCHEMY_WEBHOOK_SIGNING_KEY:-}" in shared.group(1)
+    assert "TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-0}" in shared.group(1)
+    assert text.count("environment: *aml-environment") == 2

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import Principal, get_principal, get_session
+from app.api.deps import Principal, address_read, get_session
 from app.api.errors import APIError
 from app.intel.lookup import UnknownAddress, lookup, source_statuses
 from app.intel.service import with_second_opinion
@@ -26,7 +26,7 @@ class LookupRequest(BaseModel):
 async def lookup_address(
     body: LookupRequest,
     request: Request,
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(address_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Every claim about the address (sanctions listings so far), each with its source, confidence
@@ -45,7 +45,8 @@ async def lookup_address(
 
 @router.get("/sources")
 def label_sources(
-    _principal: Principal = Depends(get_principal), session: Session = Depends(get_session)
+    _principal: Principal = Depends(address_read),
+    session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
     """Each source of labels, when its data was published and last confirmed current, and whether
     that counts as fresh. Makes no network request."""

@@ -6,8 +6,17 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import Principal, get_principal, get_providers, get_session
+from app.api.deps import (
+    Audit,
+    Principal,
+    get_audit,
+    get_providers,
+    get_session,
+    providers_probe,
+    providers_read,
+)
 from app.api.errors import APIError
 from app.database.repositories.usage import UsageTotals, usage_since
 from app.providers.service import ProbeResult, ProviderService
@@ -55,7 +64,7 @@ class ProbeOut(BaseModel):
 @router.get("", response_model=list[ProviderOut])
 def list_providers(
     providers: ProviderService = Depends(get_providers),
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(providers_read),
     session: Session = Depends(get_session),
 ) -> list[ProviderOut]:
     """Every data provider: whether it is configured, its limits and what it has been used for.
@@ -78,9 +87,11 @@ def list_providers(
 async def probe_provider(
     name: str,
     providers: ProviderService = Depends(get_providers),
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(providers_probe),
+    audit: Audit = Depends(get_audit),
 ) -> ProbeResult:
     """Make the provider's single cheap health request. Costs one request of its quota."""
     if name not in providers.names():
         raise APIError(404, "provider_not_found", "There is no provider with that name.")
+    await run_in_threadpool(audit.now, "provider.probe", target_type="provider", target_id=name)
     return await providers.probe(name)

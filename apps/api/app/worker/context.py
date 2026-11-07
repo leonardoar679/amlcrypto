@@ -29,6 +29,17 @@ class JobContext:
     sessions: Sessions | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Periodic:
+    """Something the worker does on a schedule rather than for a job (queueing the checks that are
+    due, say). `run` is called on a thread every `every` seconds, first at once when the worker
+    starts. It does short database work; a failure is logged and the schedule goes on."""
+
+    name: str
+    every: float
+    run: Callable[[], Any]
+
+
 # A handler returns the dict to store as the job's result (or None). Raising ends the attempt:
 # NonRetryable and ProviderError decide for themselves whether the job is tried again.
 Handler = Callable[[JobContext], Awaitable[dict[str, Any] | None]]

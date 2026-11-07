@@ -15,7 +15,7 @@ from app.database.connection import create_db_engine, create_session_factory
 from app.providers.service import ProviderService
 from app.providers.usage import DbUsageSink
 from app.worker import Worker
-from app.worker.handlers import build_default_handlers
+from app.worker.handlers import build_default_handlers, build_default_periodic
 
 logger = logging.getLogger("app.worker")
 
@@ -94,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             read_session_factory=read_sessions,
             providers=providers,
             handlers=build_default_handlers(),
+            periodic=build_default_periodic(settings, write_sessions),
         )
         try:
             asyncio.run(

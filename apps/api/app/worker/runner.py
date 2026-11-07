@@ -17,6 +17,7 @@ import os
 import socket
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -30,7 +31,7 @@ from app.database.models import JobStatus
 from app.database.repositories import jobs as queue
 from app.providers.base import ProviderError
 from app.providers.service import ProviderService
-from app.worker.context import HandlerRegistry, JobContext, NonRetryable
+from app.worker.context import HandlerRegistry, JobContext, NonRetryable, Periodic
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +58,10 @@ class Worker:
         handlers: HandlerRegistry,
         worker_id: str | None = None,
         read_session_factory: sessionmaker[Session] | None = None,
+        periodic: Sequence[Periodic] = (),
     ) -> None:
         self._settings = settings
+        self._periodic = tuple(periodic)
         self._sessions = write_session_factory
         # Handlers read stored data too; without a read factory they use the write one.
         self._data = Sessions(read_session_factory or write_session_factory, write_session_factory)
@@ -113,15 +116,24 @@ class Worker:
                     await _sleep_or_stop(stop, poll)
 
         slots = [asyncio.create_task(slot()) for _ in range(self._settings.worker_concurrency)]
-        maintenance = None if drain else asyncio.create_task(self._maintain(stop))
+        # Recovery and the scheduled tasks belong to a worker that keeps running; a drain is "do
+        # what is due and leave".
+        background = (
+            []
+            if drain
+            else [
+                asyncio.create_task(self._maintain(stop)),
+                *(asyncio.create_task(self._schedule(stop, item)) for item in self._periodic),
+            ]
+        )
         try:
             # If this coroutine is cancelled, gather cancels the slots and waits for them to hand
             # their jobs back before the cancellation reaches us.
             await asyncio.gather(*slots)
         finally:
-            if maintenance is not None:
-                maintenance.cancel()
-                await asyncio.gather(maintenance, return_exceptions=True)
+            for task in background:
+                task.cancel()
+            await asyncio.gather(*background, return_exceptions=True)
         return processed
 
     async def run_until_stopped(self, stop: asyncio.Event, *, grace: float) -> None:
@@ -160,6 +172,14 @@ class Worker:
             except Exception:
                 logger.exception("could not recover stale jobs")
             await _sleep_or_stop(stop, interval)
+
+    async def _schedule(self, stop: asyncio.Event, item: Periodic) -> None:
+        while not stop.is_set():
+            try:
+                await asyncio.to_thread(item.run)
+            except Exception:
+                logger.exception("scheduled task failed", extra={"task": item.name})
+            await _sleep_or_stop(stop, item.every)
 
     # --- one job ---------------------------------------------------------------------------------
 

@@ -99,3 +99,25 @@ def test_offline_mysql_migration_sql_matches_the_models():
     assert "chain_id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in script
     assert "tron:728126428" in script
     assert script.count("INSERT INTO chains") == 5
+
+
+def test_mysql_monitored_addresses_and_alerts_keep_addresses_case_sensitive():
+    monitors = ddl("monitored_addresses", mysql.dialect())
+    alerts = ddl("alerts", mysql.dialect())
+    for sql in (monitors, alerts):
+        assert "chain_id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in sql
+        assert "address VARCHAR(128) COLLATE utf8mb4_bin NOT NULL" in sql
+    # JSON columns cannot carry a literal default on MySQL; the application always supplies a value
+    assert "known_findings JSON NOT NULL" in monitors
+    assert "evidence JSON NOT NULL" in alerts
+
+
+def test_mysql_cases_keep_addresses_and_link_keys_case_sensitive():
+    cases = ddl("cases", mysql.dialect())
+    links = ddl("case_links", mysql.dialect())
+    events = ddl("case_events", mysql.dialect())
+    assert "address VARCHAR(128) COLLATE utf8mb4_bin" in cases
+    assert "chain_id VARCHAR(64) COLLATE utf8mb4_bin" in cases
+    assert "reference VARCHAR(128) COLLATE utf8mb4_bin NOT NULL" in links
+    assert "link_key VARCHAR(300) COLLATE utf8mb4_bin NOT NULL" in links
+    assert "data JSON NOT NULL" in events

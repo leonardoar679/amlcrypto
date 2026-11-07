@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import Principal, get_principal, get_write_session
+from app.api.deps import Audit, Principal, address_read, get_audit, get_write_session, graph_update
 from app.api.errors import APIError
 from app.database.connection import Sessions
 from app.database.repositories import jobs as queue
@@ -34,7 +34,7 @@ async def transaction_graph(
     max_edges: Annotated[int | None, Query(ge=1)] = None,
     counterparties: Annotated[int | None, Query(ge=1, description="Followed per address.")] = None,
     days: Annotated[int | None, Query(ge=1, description="How far back the movements go.")] = None,
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(address_read),
 ) -> dict[str, Any]:
     """The bounded transaction graph around an address, shaped for Cytoscape, from the histories
     already stored: this makes no provider request. An address whose history is not stored is
@@ -85,8 +85,9 @@ class GraphUpdateRequest(BaseModel):
 @router.post("/update", status_code=202)
 def update_graph(
     body: GraphUpdateRequest,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(graph_update),
     session: Session = Depends(get_write_session),
+    audit: Audit = Depends(get_audit),
 ) -> dict[str, Any]:
     """Queue the reading of the histories a graph needs (`FETCH_COUNTERPARTIES`): the address's and
     those of the counterparties the graph would expand. Poll `GET /jobs/{job_id}`; when it has
@@ -122,6 +123,14 @@ def update_graph(
         organization_id=principal.organization_id,
         dedupe_key=f"graph:{principal.organization_id}:{fingerprint}",
     )
+    audit.add(
+        session,
+        "graph.update",
+        target_type="job",
+        target_id=job.id,
+        details={"chain": chain.slug, "address": address, "already_requested": not created},
+    )
+    session.commit()
     return {
         "success": True,
         "job_id": job.id,

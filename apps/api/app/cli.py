@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import TypeVar
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.access.audit import Actor, record
+from app.access.permissions import Role
 from app.chains.adapter import AccountAdapter
 from app.chains.bitcoin.adapter import BitcoinAdapter
 from app.chains.registry import get_chain
@@ -29,7 +32,7 @@ from app.database.connection import (
     create_session_factory,
     create_sessions,
 )
-from app.database.models import Organization
+from app.database.models import AuditLog, Organization, User
 from app.database.repositories import jobs as queue
 from app.database.repositories import risk as risk_store
 from app.database.repositories.acquisition import save_raw
@@ -73,6 +76,7 @@ from app.risk.service import (
     screen_transaction_hash,
     screening_id,
 )
+from app.services import users as accounts
 from app.services.users import UserError, create_user
 
 T = TypeVar("T")
@@ -93,6 +97,22 @@ def _cmd_migrate(_args: argparse.Namespace) -> int:
     return 0
 
 
+CLI = Actor("system", None, "cli")
+
+
+def _audit_cli(session: Session, action: str, user: User, details: dict | None = None) -> None:
+    """The command line belongs to the operator; what it does to a person is audited too."""
+    record(
+        session,
+        actor=CLI,
+        action=action,
+        target_type="user",
+        target_id=user.id,
+        details={"email": user.email, **(details or {})},
+        organization_id=user.organization_id,
+    )
+
+
 def _cmd_create_user(args: argparse.Namespace) -> int:
     password = _read_password(args)
     engine = create_db_engine(get_settings().resolved_database_url)
@@ -104,12 +124,102 @@ def _cmd_create_user(args: argparse.Namespace) -> int:
                 password=password,
                 organization_name=args.org_name,
                 organization_slug=args.org_slug,
+                role=args.role,
             )
+            _audit_cli(session, "user.create", user, {"role": user.role})
+            session.commit()
             print(
-                f"Created user {user.email} (id {user.id}) in organization {user.organization_id}."
+                f"Created {user.role} {user.email} (id {user.id}) "
+                f"in organization {user.organization_id}."
             )
     finally:
         engine.dispose()
+    return 0
+
+
+def _with_user(args: argparse.Namespace, work: Callable[[Session, User], None]) -> int:
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_session_factory(engine, write=True)() as session:
+            user = session.scalar(select(User).where(User.email == args.email.strip().lower()))
+            if user is None:
+                raise UserError(f"there is no user {args.email!r}")
+            work(session, user)
+            session.commit()
+    finally:
+        engine.dispose()
+    return 0
+
+
+def _cmd_user_list(args: argparse.Namespace) -> int:
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_session_factory(engine)() as session:
+            query = select(User, Organization.slug).join(
+                Organization, Organization.id == User.organization_id
+            )
+            if args.org:
+                query = query.where(Organization.slug == args.org)
+            rows = session.execute(query.order_by(Organization.slug, User.email)).all()
+    finally:
+        engine.dispose()
+    print(f"{'id':>4}  {'organization':<18} {'role':<8} {'active':<6} email")
+    for user, slug in rows:
+        active = "yes" if user.is_active else "NO"
+        print(f"{user.id:>4}  {slug:<18} {user.role:<8} {active:<6} {user.email}")
+    return 0
+
+
+def _cmd_user_set_role(args: argparse.Namespace) -> int:
+    def work(session: Session, user: User) -> None:
+        before = user.role
+        accounts.set_role(session, user, args.role)
+        changes = {"changes": {"role": {"from": before, "to": user.role}}}
+        _audit_cli(session, "user.update", user, changes)
+        print(f"{user.email} is now {user.role} (was {before}).")
+
+    return _with_user(args, work)
+
+
+def _set_active(args: argparse.Namespace, active: bool) -> int:
+    def work(session: Session, user: User) -> None:
+        accounts.set_active(session, user, active)
+        _audit_cli(session, "user.update", user, {"changes": {"is_active": {"to": active}}})
+        print(f"{user.email} is now {'active' if active else 'switched off'}.")
+
+    return _with_user(args, work)
+
+
+def _cmd_user_set_password(args: argparse.Namespace) -> int:
+    password = _read_password(args)
+
+    def work(session: Session, user: User) -> None:
+        accounts.set_password(user, password)
+        _audit_cli(session, "user.password_reset", user)
+        print(f"Password changed for {user.email}.")
+
+    return _with_user(args, work)
+
+
+def _cmd_audit_list(args: argparse.Namespace) -> int:
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_session_factory(engine)() as session:
+            query = select(AuditLog).order_by(AuditLog.id.desc()).limit(args.limit)
+            if args.org:
+                found = session.scalar(select(Organization.id).where(Organization.slug == args.org))
+                if found is None:
+                    raise UserError(f"there is no organization {args.org!r}")
+                query = query.where(AuditLog.organization_id == found)
+            rows = session.scalars(query).all()
+    finally:
+        engine.dispose()
+    for row in rows:
+        who = row.actor_label or row.actor_type
+        target = f" {row.target_type}:{row.target_id}" if row.target_type else ""
+        print(
+            f"{row.created_at:%Y-%m-%d %H:%M:%S}  {row.outcome:<7} {row.action:<22} {who}{target}"
+        )
     return 0
 
 
@@ -861,7 +971,42 @@ def main(argv: list[str] | None = None) -> int:
     create.add_argument(
         "--password", help="avoid on shared machines (shell history); prompts when omitted"
     )
+    create.add_argument(
+        "--role",
+        choices=[role.value for role in Role],
+        default=Role.ADMIN.value,
+        help="what the user may do (default: admin, the person who sets the platform up)",
+    )
     create.set_defaults(run=_cmd_create_user)
+
+    people = commands.add_parser("user", help="manage users").add_subparsers(
+        dest="user_command", required=True
+    )
+    people_list = people.add_parser("list", help="the users, their roles, and whether active")
+    people_list.add_argument("--org", help="only this organization (its slug)")
+    people_list.set_defaults(run=_cmd_user_list)
+    set_role = people.add_parser("set-role", help="change a user's role")
+    set_role.add_argument("email")
+    set_role.add_argument("role", choices=[role.value for role in Role])
+    set_role.set_defaults(run=_cmd_user_set_role)
+    for name, active in (("deactivate", False), ("activate", True)):
+        switch = people.add_parser(
+            name, help=f"{name} a user (an organization keeps an active admin)"
+        )
+        switch.add_argument("email")
+        switch.set_defaults(run=lambda args, on=active: _set_active(args, on))
+    set_password = people.add_parser("set-password", help="set a new password for a user")
+    set_password.add_argument("email")
+    set_password.add_argument("--password", help="avoid on shared machines; prompts when omitted")
+    set_password.set_defaults(run=_cmd_user_set_password)
+
+    trail = commands.add_parser("audit", help="the audit log").add_subparsers(
+        dest="audit_command", required=True
+    )
+    trail_list = trail.add_parser("list", help="the latest entries, newest first")
+    trail_list.add_argument("--org", help="only this organization (its slug)")
+    trail_list.add_argument("--limit", type=int, default=30)
+    trail_list.set_defaults(run=_cmd_audit_list)
 
     args = parser.parse_args(argv)
     for stream in (

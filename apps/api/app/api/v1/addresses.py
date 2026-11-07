@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import Principal, get_principal, get_session
+from app.api.deps import Principal, authenticated, get_session
 from app.api.errors import APIError
 from app.chains.base import ERROR_MESSAGES, AddressCheck, AddressError
 from app.chains.registry import CHAINS, ChainSpec, detect_chains, get_chain
@@ -61,7 +61,7 @@ def _from_check(check: AddressCheck, chain: ChainSpec | None = None) -> Validate
 @router.post("/validate", response_model=ValidateResponse)
 def validate_address(
     body: ValidateRequest,
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(authenticated),
     session: Session = Depends(get_session),
 ) -> ValidateResponse:
     """Check an address, on one chain when `chain` is given, otherwise on every enabled chain."""

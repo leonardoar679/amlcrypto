@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     secret_key: SecretStr | None = None
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     access_token_ttl_minutes: int = Field(default=60, ge=1, le=24 * 60)
+    # An account is refused for a while once it has failed to sign in this many times within this
+    # many seconds (app/access/lockout.py).
+    login_max_failures: int = Field(default=10, ge=1, le=1000)
+    login_failure_window_seconds: int = Field(default=900, ge=1, le=86_400)
+    # How many reverse proxies stand in front of the API and each add to X-Forwarded-For. With 0
+    # (the default) the address of the connection is taken as the client's; raise it only when the
+    # proxies really are there, because the header is otherwise whatever the client says.
+    trusted_proxy_hops: int = Field(default=0, ge=0, le=5)
 
     log_level: str = "INFO"
 
@@ -101,6 +109,27 @@ class Settings(BaseSettings):
     # nothing is reported as crossing one.
     bridge_registry_file: str | None = None
 
+    # Monitored addresses: the worker checks each one on its interval and raises an alert when a
+    # check finds something new (app/monitoring).
+    monitoring_min_interval_seconds: int = Field(default=900, ge=1, le=30 * 24 * 3600)
+    monitoring_default_interval_seconds: int = Field(default=21_600, ge=1, le=30 * 24 * 3600)
+    # How many addresses one organization may watch; each check spends provider requests.
+    monitoring_max_addresses: int = Field(default=100, ge=1, le=100_000)
+    # A score that rises by this much since the last check raises an alert even within one level.
+    monitoring_score_delta: int = Field(default=15, ge=1, le=100)
+    # A report is stored when something changed, and anyway this often, so that an address that
+    # never changes still has a recent one.
+    monitoring_heartbeat_days: int = Field(default=7, ge=1, le=365)
+    # The worker looks for addresses whose time has come this often, and queues at most `batch`.
+    monitoring_tick_seconds: float = Field(default=30.0, ge=1, le=3600)
+    monitoring_batch: int = Field(default=200, ge=1, le=10_000)
+    # An address whose checks fail this many times in a row raises an alert of its own.
+    monitoring_degraded_after: int = Field(default=3, ge=1, le=100)
+    # The signing key of an Alchemy Address Activity webhook (shown with the webhook in Alchemy's
+    # dashboard). Unset, POST /api/v1/webhooks/alchemy answers 404.
+    alchemy_webhook_signing_key: SecretStr | None = None
+    webhook_max_body_bytes: int = Field(default=1_000_000, ge=1_024, le=10_000_000)
+
     # The background worker (python -m app.worker).
     worker_concurrency: int = Field(default=4, ge=1, le=64)
     worker_poll_interval_seconds: float = Field(default=2.0, ge=0.05, le=60)
@@ -121,6 +150,7 @@ class Settings(BaseSettings):
         "esplora_base_url",
         "watchman_url",
         "bridge_registry_file",
+        "alchemy_webhook_signing_key",
         mode="before",
     )
     @classmethod
@@ -162,6 +192,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"DATABASE_TYPE={self.database_type} does not match the DATABASE_URL backend "
                 f"({backend})"
+            )
+        if self.monitoring_default_interval_seconds < self.monitoring_min_interval_seconds:
+            raise ValueError(
+                "MONITORING_DEFAULT_INTERVAL_SECONDS must not be below "
+                "MONITORING_MIN_INTERVAL_SECONDS"
             )
         if self.job_lock_timeout_seconds <= self.job_timeout_seconds:
             # Otherwise a slow-but-alive job would be handed to a second worker.

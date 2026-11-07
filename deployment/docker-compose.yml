@@ -11,6 +11,12 @@ x-aml-environment: &aml-environment
   ALCHEMY_API_KEY: ${ALCHEMY_API_KEY:-}
   TRONGRID_API_KEY: ${TRONGRID_API_KEY:-}
   HELIUS_API_KEY: ${HELIUS_API_KEY:-}
+  # Alchemy's Address Activity webhook may call POST /api/v1/webhooks/alchemy once this is set (blank:
+  # the endpoint answers 404). It only brings a monitored address's next check forward.
+  ALCHEMY_WEBHOOK_SIGNING_KEY: ${ALCHEMY_WEBHOOK_SIGNING_KEY:-}
+  # How many reverse proxies in front of the API add to X-Forwarded-For (for the audit log's client
+  # address and the sign-in lockout's bookkeeping). 0 trusts only the connection's own address.
+  TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-0}
   # A second opinion on sanctions. Watchman has no authentication, so it is reachable only from
   # inside this compose project (it publishes no port); an empty value turns the second opinion off.
   WATCHMAN_URL: ${WATCHMAN_URL-http://watchman:8084}

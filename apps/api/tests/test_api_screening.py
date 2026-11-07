@@ -681,3 +681,85 @@ def test_cells_that_start_with_a_tab_or_a_return_are_defused_too(client, auth, d
     text = client.get(f"/api/v1/screen/scr_{row.id}/export?format=csv", headers=auth).text
 
     assert "'\tcmd" in text and "'\rcmd" in text
+
+
+# --- the audit log ------------------------------------------------------------------------------
+
+
+def _audit(db_session, action):
+    from app.database.models import AuditLog
+
+    db_session.rollback()  # see what the API committed
+    return db_session.scalars(
+        select(AuditLog).where(AuditLog.action == action).order_by(AuditLog.id)
+    ).all()
+
+
+def test_asking_for_a_screening_is_audited_and_so_is_asking_again(client, auth, db_session):
+    first = screen(client, auth).json()["screening_id"]
+    screen(client, auth)  # the same request while it waits
+    client.post(
+        "/api/v1/screen/transaction",
+        json={"chain": "ethereum", "hash": "0x" + "AB" * 32},
+        headers=auth,
+    )
+
+    rows = _audit(db_session, "screening.request")
+
+    assert [r.target_id for r in rows[:2]] == [first, first]
+    assert rows[0].details == {
+        "kind": "address",
+        "chain": "ethereum",
+        "subject": ME,
+        "already_requested": False,
+    }
+    assert rows[1].details["already_requested"] is True
+    assert rows[2].details == {
+        "kind": "transaction",
+        "chain": "ethereum",
+        "subject": "0x" + "ab" * 32,
+        "already_requested": False,
+    }
+    assert {r.actor_label for r in rows} == {"analyst@example.com"}
+    assert all(r.target_type == "screening" and r.outcome == "success" for r in rows)
+
+
+def test_a_request_that_is_refused_is_not_audited_as_a_screening(client, auth, db_session):
+    assert screen(client, auth, address="not an address").status_code == 422
+    assert client.post("/api/v1/screen/address", json={}, headers=auth).status_code == 422
+    assert _audit(db_session, "screening.request") == []
+
+
+def test_a_download_is_audited_with_its_format_and_a_refused_one_is_not(client, auth, db_session):
+    org = _org(db_session, "analyst@example.com")
+    done = _finished(db_session, org, addr(1), _reports()["CRITICAL"])
+    waiting = screen(client, auth).json()["screening_id"]
+
+    client.get(f"/api/v1/screen/scr_{done.id}/export", headers=auth)
+    client.get(f"/api/v1/screen/scr_{done.id}/export?format=csv", headers=auth)
+    assert client.get(f"/api/v1/screen/{waiting}/export", headers=auth).status_code == 409
+
+    rows = _audit(db_session, "screening.export")
+    assert [(r.target_id, r.details) for r in rows] == [
+        (f"scr_{done.id}", {"format": "json"}),
+        (f"scr_{done.id}", {"format": "csv"}),
+    ]
+
+
+def test_queueing_the_reading_of_histories_is_audited(client, auth, db_session):
+    body = {"chain": "ethereum", "address": ME}
+    first = client.post("/api/v1/graph/update", json=body, headers=auth).json()
+    client.post("/api/v1/graph/update", json=body, headers=auth)
+
+    rows = _audit(db_session, "graph.update")
+    assert [r.details["already_requested"] for r in rows] == [False, True]
+    assert rows[0].target_type == "job" and rows[0].target_id == str(first["job_id"])
+    assert rows[0].details["chain"] == "ethereum" and rows[0].details["address"] == ME
+
+
+def test_spending_a_provider_request_on_a_probe_is_audited(client, auth, db_session):
+    assert client.post("/api/v1/providers/nope/probe", headers=auth).status_code == 404
+    assert client.post("/api/v1/providers/etherscan/probe", headers=auth).status_code == 200
+
+    rows = _audit(db_session, "provider.probe")
+    assert [(r.target_type, r.target_id) for r in rows] == [("provider", "etherscan")]

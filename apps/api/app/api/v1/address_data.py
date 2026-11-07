@@ -13,7 +13,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, Request
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import Principal, get_principal
+from app.api.deps import Principal, address_read
 from app.api.errors import APIError
 from app.chains.registry import get_chain
 from app.database.connection import Sessions
@@ -58,7 +58,7 @@ async def address_overview(
     chain: str,
     address: str,
     request: Request,
-    principal: Principal = Depends(get_principal),
+    principal: Principal = Depends(address_read),
 ) -> dict[str, Any]:
     """The address as the platform holds it: who the sources say it is, how much of its history is
     stored and what that shows, and the organization's latest finished screening of it."""
@@ -113,7 +113,7 @@ async def address_transactions(
     days: Annotated[int | None, Query(ge=1, le=36_500, description="How far back.")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(address_read),
 ) -> dict[str, Any]:
     """The address's stored movements of value, newest first: each with its counterparty (and what
     the sources say about it), asset and amount. Zero-value events, movements to itself and the like
@@ -170,7 +170,7 @@ async def address_labels(
     chain: str,
     address: str,
     request: Request,
-    _principal: Principal = Depends(get_principal),
+    _principal: Principal = Depends(address_read),
 ) -> dict[str, Any]:
     """Every claim about the address, with its source, confidence and age, and the state of every
     source: what `POST /intel/lookup` answers, as a GET. "Nothing found" comes with the sources that
