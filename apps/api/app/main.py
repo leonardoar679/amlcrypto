@@ -13,7 +13,7 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.api.errors import register_exception_handlers
-from app.api.middleware import RequestIdMiddleware
+from app.api.middleware import BodyLimitMiddleware, RequestIdMiddleware, SecurityHeadersMiddleware
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
@@ -32,7 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "SECRET_KEY is not set: using an ephemeral key, so tokens stop working on restart"
         )
 
-    engine = create_db_engine(settings.resolved_database_url)
+    engine = create_db_engine(settings.resolved_database_url, **settings.pool_options)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -64,6 +64,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings, usage=DbUsageSink(lambda: app.state.write_session_factory)
     )
 
+    # The last one added is the outermost: a request gets an id first, and every answer, a refusal
+    # for size included, goes out with the security headers and the id.
+    app.add_middleware(
+        BodyLimitMiddleware,
+        limit=settings.max_request_body_bytes,
+        larger={"/api/v1/webhooks/alchemy": settings.webhook_max_body_bytes},
+    )
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestIdMiddleware)
     register_exception_handlers(app)
     app.include_router(api_router)

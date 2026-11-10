@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import Principal, audit_read, get_session
+from app.api.limits import MAX_ID
 from app.database.models import AuditLog
 
 router = APIRouter(prefix="/audit", tags=["audit"])
@@ -37,7 +38,7 @@ def list_audit(
     ] = None,
     outcome: Annotated[str | None, Query(pattern="^(success|denied|failure)$")] = None,
     actor_type: Annotated[str | None, Query(pattern="^(user|api_key|system|anonymous)$")] = None,
-    actor_id: Annotated[int | None, Query(ge=1)] = None,
+    actor_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     target_type: Annotated[str | None, Query(max_length=40)] = None,
     target_id: Annotated[str | None, Query(max_length=100)] = None,
     since: datetime | None = None,

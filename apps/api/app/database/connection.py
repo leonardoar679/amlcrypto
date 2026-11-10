@@ -35,13 +35,35 @@ logger = logging.getLogger(__name__)
 SQLITE_MODE_OPTION = "sqlite_mode"  # execution option: "write" for writers, anything else reads
 
 
-def create_db_engine(url: str, *, echo: bool = False) -> Engine:
+def create_db_engine(
+    url: str,
+    *,
+    echo: bool = False,
+    pool_size: int | None = None,
+    max_overflow: int | None = None,
+    pool_timeout: float | None = None,
+) -> Engine:
+    """An engine for the URL. The pool options (Settings.pool_options) size the pool of a database
+    that has one: a SQLite file or MySQL, not an in-memory SQLite."""
     parsed = make_url(url)
     backend = parsed.get_backend_name()
+    pool: dict[str, float | int] = {}
+    if pool_size is not None:
+        pool["pool_size"] = pool_size
+    if max_overflow is not None:
+        pool["max_overflow"] = max_overflow
+    if pool_timeout is not None:
+        pool["pool_timeout"] = pool_timeout
 
     if backend == "sqlite":
         _ensure_sqlite_directory(parsed.database)
-        engine = create_engine(url, echo=echo, connect_args={"check_same_thread": False})
+        in_memory = not parsed.database or parsed.database == ":memory:"
+        engine = create_engine(
+            url,
+            echo=echo,
+            connect_args={"check_same_thread": False},
+            **({} if in_memory else pool),
+        )
         event.listen(engine, "connect", _configure_sqlite_connection)
         event.listen(engine, "begin", _begin_sqlite_transaction)
         return engine
@@ -53,6 +75,7 @@ def create_db_engine(url: str, *, echo: bool = False) -> Engine:
             pool_pre_ping=True,
             pool_recycle=1800,
             connect_args={"charset": "utf8mb4"},
+            **pool,
         )
 
     raise ValueError(f"unsupported database backend {backend!r}")

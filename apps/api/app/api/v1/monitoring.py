@@ -26,6 +26,7 @@ from app.api.deps import (
     monitoring_write,
 )
 from app.api.errors import APIError
+from app.api.limits import MAX_HOPS, IdPath
 from app.chains.registry import get_chain
 from app.core.config import Settings
 from app.database.models import MonitoredAddress
@@ -45,8 +46,12 @@ class RegisterAddress(BaseModel):
     chain: str = Field(max_length=100, description="Chain slug or CAIP-2 id.")
     address: str = Field(max_length=512)
     name: str | None = Field(None, max_length=1000, description="What the team calls it.")
-    check_interval_seconds: int | None = Field(None, ge=1, description="Seconds between checks.")
-    depth: int | None = Field(None, ge=1, description="Hops each check follows (default 1).")
+    check_interval_seconds: int | None = Field(
+        None, ge=1, le=service.MAX_INTERVAL_SECONDS, description="Seconds between checks."
+    )
+    depth: int | None = Field(
+        None, ge=1, le=MAX_HOPS, description="Hops each check follows (default 1)."
+    )
     min_severity: Severity | None = Field(
         None, description="Raise an alert from this severity up (default MEDIUM)."
     )
@@ -59,8 +64,8 @@ class UpdateMonitor(BaseModel):
 
     name: str | None = Field(None, max_length=1000)
     status: Literal["active", "paused"] | None = None
-    check_interval_seconds: int | None = Field(None, ge=1)
-    depth: int | None = Field(None, ge=1)
+    check_interval_seconds: int | None = Field(None, ge=1, le=service.MAX_INTERVAL_SECONDS)
+    depth: int | None = Field(None, ge=1, le=MAX_HOPS)
     min_severity: Severity | None = None
 
 
@@ -193,7 +198,7 @@ def list_addresses(
 
 @router.get("/addresses/{monitor_id}")
 def get_address(
-    monitor_id: int,
+    monitor_id: IdPath,
     principal: Principal = Depends(monitoring_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -204,7 +209,7 @@ def get_address(
 
 @router.patch("/addresses/{monitor_id}")
 def update_address(
-    monitor_id: int,
+    monitor_id: IdPath,
     body: UpdateMonitor,
     principal: Principal = Depends(monitoring_write),
     session: Session = Depends(get_write_session),
@@ -246,7 +251,7 @@ def update_address(
 
 @router.delete("/addresses/{monitor_id}", status_code=204)
 def remove_address(
-    monitor_id: int,
+    monitor_id: IdPath,
     principal: Principal = Depends(monitoring_write),
     session: Session = Depends(get_write_session),
     audit: Audit = Depends(get_audit),
@@ -267,7 +272,7 @@ def remove_address(
 
 @router.post("/addresses/{monitor_id}/check", status_code=202)
 def check_now(
-    monitor_id: int,
+    monitor_id: IdPath,
     principal: Principal = Depends(monitoring_write),
     session: Session = Depends(get_write_session),
     audit: Audit = Depends(get_audit),

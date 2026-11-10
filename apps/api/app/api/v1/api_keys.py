@@ -24,6 +24,7 @@ from app.api.deps import (
     get_write_session,
 )
 from app.api.errors import APIError
+from app.api.limits import IdPath
 from app.database.models import ApiKey, User
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
@@ -111,7 +112,7 @@ def create_key(
 
 @router.delete("/{key_id}")
 def revoke_key(
-    key_id: int,
+    key_id: IdPath,
     principal: Principal = Depends(api_keys_manage),
     session: Session = Depends(get_write_session),
     audit: Audit = Depends(get_audit),

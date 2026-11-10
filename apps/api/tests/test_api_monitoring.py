@@ -120,7 +120,15 @@ def test_a_registration_is_recorded_in_the_audit_log(client, db_session, analyst
             422,
             "invalid_monitor",
         ),
-        ({"chain": "ethereum", "address": ADDRESS, "depth": 9}, 422, "invalid_monitor"),
+        # more than the configured limit (3) is the service's to refuse; more than any graph
+        # reaches (6) is refused before it gets there
+        ({"chain": "ethereum", "address": ADDRESS, "depth": 4}, 422, "invalid_monitor"),
+        ({"chain": "ethereum", "address": ADDRESS, "depth": 9}, 422, "validation_error"),
+        (
+            {"chain": "ethereum", "address": ADDRESS, "check_interval_seconds": 10**12},
+            422,
+            "validation_error",
+        ),
         ({"chain": "ethereum", "address": ADDRESS, "name": "x" * 121}, 422, "invalid_monitor"),
         ({"chain": "ethereum", "address": ADDRESS, "min_severity": "SEVERE"}, 422, None),
         ({"chain": "ethereum", "address": ADDRESS, "depth": 0}, 422, None),

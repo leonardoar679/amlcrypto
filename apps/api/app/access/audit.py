@@ -66,9 +66,14 @@ def client_ip(peer: str | None, forwarded_for: str | None, trusted_hops: int) ->
         if len(parts) >= trusted_hops:
             candidate = parts[-trusted_hops]
     try:
-        return str(ipaddress.ip_address(candidate)) if candidate else None
+        parsed = ipaddress.ip_address(candidate) if candidate else None
     except ValueError:
         return None
+    if isinstance(parsed, ipaddress.IPv6Address) and parsed.ipv4_mapped is not None:
+        # A server that listens on both families sees an IPv4 client as ::ffff:a.b.c.d. It is the
+        # same client as the one a proxy reports as a.b.c.d, and is searched for that way.
+        parsed = parsed.ipv4_mapped
+    return None if parsed is None else str(parsed)
 
 
 def origin_of(

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.access.permissions import Role
 from app.api.deps import Audit, Principal, get_audit, get_session, get_write_session, users_manage
 from app.api.errors import APIError
+from app.api.limits import IdPath
 from app.database.models import User
 from app.services import users as accounts
 
@@ -110,7 +111,7 @@ def create_user(
 
 @router.patch("/{user_id}")
 def update_user(
-    user_id: int,
+    user_id: IdPath,
     body: UpdateUser,
     principal: Principal = Depends(users_manage),
     session: Session = Depends(get_write_session),
@@ -146,7 +147,7 @@ def update_user(
 
 @router.post("/{user_id}/password", status_code=204)
 def reset_password(
-    user_id: int,
+    user_id: IdPath,
     body: ResetPassword,
     principal: Principal = Depends(users_manage),
     session: Session = Depends(get_write_session),

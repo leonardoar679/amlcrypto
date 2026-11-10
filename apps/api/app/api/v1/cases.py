@@ -27,6 +27,7 @@ from app.api.deps import (
     get_write_session,
 )
 from app.api.errors import APIError
+from app.api.limits import MAX_ID, IdPath
 from app.cases import service
 from app.chains.registry import get_chain
 from app.database.models import Alert, Case, CaseEvent, CaseLink, User
@@ -52,8 +53,10 @@ class OpenCase(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=1000)]
     description: str | None = Field(None, max_length=service.MAX_DESCRIPTION_LENGTH + 1000)
     priority: Priority | None = None
-    assignee_id: int | None = Field(None, ge=1)
-    alert_id: int | None = Field(None, ge=1, description="Open the case from this alert.")
+    assignee_id: int | None = Field(None, ge=1, le=MAX_ID)
+    alert_id: int | None = Field(
+        None, ge=1, le=MAX_ID, description="Open the case from this alert."
+    )
     chain: str | None = Field(None, max_length=100)
     address: str | None = Field(None, max_length=512)
 
@@ -69,7 +72,7 @@ class UpdateCase(BaseModel):
     priority: Priority | None = None
     status: Literal["open", "in_progress", "closed"] | None = None
     outcome: Literal["confirmed", "dismissed", "escalated"] | None = None
-    assignee_id: int | None = Field(None, ge=1)
+    assignee_id: int | None = Field(None, ge=1, le=MAX_ID)
 
 
 class NewNote(BaseModel):
@@ -283,7 +286,7 @@ def list_cases(
         Query(description="'unresolved' is open and in progress."),
     ] = None,
     priority: Annotated[Priority | None, Query()] = None,
-    assignee_id: Annotated[int | None, Query(ge=1)] = None,
+    assignee_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     mine: Annotated[bool, Query(description="Only the cases assigned to the caller.")] = False,
     chain: Annotated[str | None, Query(max_length=100)] = None,
     address: Annotated[str | None, Query(max_length=512)] = None,
@@ -344,7 +347,7 @@ def case_summary(
 
 @router.get("/{case_id}")
 def get_case(
-    case_id: int,
+    case_id: IdPath,
     principal: Principal = Depends(cases_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -353,7 +356,7 @@ def get_case(
 
 @router.patch("/{case_id}")
 def update_case(
-    case_id: int,
+    case_id: IdPath,
     body: UpdateCase,
     principal: Principal = Depends(cases_write),
     session: Session = Depends(get_write_session),
@@ -396,7 +399,7 @@ def update_case(
 
 @router.post("/{case_id}/notes", status_code=201)
 def add_note(
-    case_id: int,
+    case_id: IdPath,
     body: NewNote,
     principal: Principal = Depends(cases_write),
     session: Session = Depends(get_write_session),
@@ -424,7 +427,7 @@ def add_note(
 
 @router.post("/{case_id}/links", status_code=201)
 def add_link(
-    case_id: int,
+    case_id: IdPath,
     body: NewLink,
     principal: Principal = Depends(cases_write),
     session: Session = Depends(get_write_session),
@@ -460,8 +463,8 @@ def add_link(
 
 @router.delete("/{case_id}/links/{link_id}", status_code=204)
 def remove_link(
-    case_id: int,
-    link_id: int,
+    case_id: IdPath,
+    link_id: IdPath,
     principal: Principal = Depends(cases_write),
     session: Session = Depends(get_write_session),
     audit: Audit = Depends(get_audit),
@@ -506,7 +509,7 @@ def _alert_record(alert: Alert) -> dict[str, Any]:
 
 @router.get("/{case_id}/export")
 def export_case(
-    case_id: int,
+    case_id: IdPath,
     principal: Principal = Depends(cases_read),
     session: Session = Depends(get_session),
     audit: Audit = Depends(get_audit),
@@ -556,14 +559,17 @@ def export_case(
             "nothing is not a clearance of the address: it states what was and was not examined."
         ),
     }
+    number = case.id
+    content = json.dumps(payload, indent=2, default=str)
+    session.rollback()  # all that is needed is in hand; the entry below takes a connection itself
     audit.now(
         "case.export",
         target_type="case",
-        target_id=case.id,
+        target_id=number,
         details={"links": len(links), "reports": len(reports)},
     )
     return Response(
-        content=json.dumps(payload, indent=2, default=str),
+        content=content,
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="case-{case.id}.json"'},
+        headers={"Content-Disposition": f'attachment; filename="case-{number}.json"'},
     )

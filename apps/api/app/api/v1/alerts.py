@@ -26,6 +26,7 @@ from app.api.deps import (
     get_write_session,
 )
 from app.api.errors import APIError
+from app.api.limits import MAX_ID, IdPath
 from app.chains.registry import get_chain
 from app.database.models import Alert, AuditLog, User
 from app.database.repositories import cases as case_store
@@ -46,7 +47,7 @@ class UpdateAlert(BaseModel):
 
     status: Literal["open", "acknowledged", "closed"] | None = None
     resolution: Literal["true_positive", "false_positive", "accepted_risk"] | None = None
-    assignee_id: int | None = Field(None, ge=1)
+    assignee_id: int | None = Field(None, ge=1, le=MAX_ID)
     note: str | None = Field(None, max_length=MAX_DETAIL_TEXT)
 
 
@@ -151,8 +152,8 @@ def list_alerts(
     ] = None,
     severity: Annotated[Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] | None, Query()] = None,
     kind: Annotated[str | None, Query(max_length=24)] = None,
-    monitor_id: Annotated[int | None, Query(ge=1)] = None,
-    assignee_id: Annotated[int | None, Query(ge=1)] = None,
+    monitor_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
+    assignee_id: Annotated[int | None, Query(ge=1, le=MAX_ID)] = None,
     mine: Annotated[bool, Query(description="Only the alerts assigned to the caller.")] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
@@ -201,7 +202,7 @@ def alert_summary(
 
 @router.get("/{alert_id}")
 def get_alert(
-    alert_id: int,
+    alert_id: IdPath,
     principal: Principal = Depends(alerts_read),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
@@ -212,7 +213,7 @@ def get_alert(
 
 @router.patch("/{alert_id}")
 def update_alert(
-    alert_id: int,
+    alert_id: IdPath,
     body: UpdateAlert,
     principal: Principal = Depends(alerts_manage),
     session: Session = Depends(get_write_session),

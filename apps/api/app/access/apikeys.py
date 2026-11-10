@@ -7,7 +7,9 @@ cannot be guessed; it is compared in constant time.
 
 A key is valid until it expires or is revoked, and only while the person who made it is still an
 active member of an active organization: switching an account off switches its keys off. A key can
-never have a role above its creator's, and never manages people or keys (app.access.permissions).
+never have a role above its creator's, when it is made and for as long as it lives (a creator who is
+demoted takes their keys down with them: app.api.deps reads their role on every request), and never
+manages people or keys (app.access.permissions).
 """
 
 from __future__ import annotations

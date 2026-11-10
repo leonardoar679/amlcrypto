@@ -33,7 +33,14 @@ from app.access.audit import (
     origin_of,
     record,
 )
-from app.access.permissions import Permission, Role, UnknownRole, parse_role, permissions_for
+from app.access.permissions import (
+    Permission,
+    Role,
+    UnknownRole,
+    can_grant,
+    parse_role,
+    permissions_for,
+)
 from app.api.errors import APIError
 from app.core.config import Settings
 from app.core.security import decode_access_token
@@ -110,42 +117,34 @@ def _touch_key(request: Request, key_id: int) -> None:
         pass
 
 
-def _principal_of_key(request: Request, session: Session, text: str) -> Principal:
+def _principal_of_key(session: Session, text: str) -> tuple[Principal, int | None]:
+    """(who the key is, and the key's id if its last use is old enough to be noted)."""
     found = apikeys.authenticate(session, text)
     if found is None:
         raise _unauthorized("invalid_api_key", "Invalid API key.")
     key = found.key
     try:
         role = parse_role(key.role)
+        creator_role = parse_role(found.creator.role)
     except UnknownRole:
         raise _unauthorized("invalid_api_key", "Invalid API key.") from None
-    if found.stale:
-        _touch_key(request, key.id)
-    return Principal(
+    # A key is never more than the person who made it, now as when it was made: demoting them
+    # takes the same from their keys (their role is read again here, on every request).
+    principal = Principal(
         organization_id=key.organization_id,
-        role=role,
-        permissions=permissions_for(role, api_key=True),
+        role=role if can_grant(creator_role, role) else creator_role,
+        permissions=permissions_for(role, api_key=True) & permissions_for(creator_role),
         api_key_id=key.id,
         api_key_name=key.name,
         creator_id=key.created_by,
     )
+    return principal, key.id if found.stale else None
 
 
-def get_principal(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    api_key: str | None = Depends(_api_key),
-    settings: Settings = Depends(get_settings_dep),
-    session: Session = Depends(get_session),
-) -> Principal:
-    if api_key:
-        return _principal_of_key(request, session, api_key)
-    if credentials is None:
-        raise _unauthorized("not_authenticated", "Authentication required.")
-
+def _principal_of_token(session: Session, settings: Settings, token: str) -> Principal:
     invalid = _unauthorized("invalid_token", "Invalid or expired token.")
     try:
-        claims = decode_access_token(settings, credentials.credentials)
+        claims = decode_access_token(settings, token)
         user_id = int(claims["sub"])
     except (jwt.InvalidTokenError, ValueError):
         raise invalid from None
@@ -169,6 +168,31 @@ def get_principal(
         user_id=user.id,
         email=user.email,
     )
+
+
+def get_principal(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    api_key: str | None = Depends(_api_key),
+    settings: Settings = Depends(get_settings_dep),
+    session: Session = Depends(get_session),
+) -> Principal:
+    touch: int | None = None
+    try:
+        if api_key:
+            principal, touch = _principal_of_key(session, api_key)
+        elif credentials is None:
+            raise _unauthorized("not_authenticated", "Authentication required.")
+        else:
+            principal = _principal_of_token(session, settings, credentials.credentials)
+    finally:
+        # Who is calling is known: give the connection back. The route takes one again if it reads,
+        # and a route that writes then holds one connection, not two. (A pool that every request
+        # holds one of and waits for a second from would wait on itself.)
+        session.rollback()
+    if touch is not None:
+        _touch_key(request, touch)
+    return principal
 
 
 # --- the audit log, for routes ------------------------------------------------------------------

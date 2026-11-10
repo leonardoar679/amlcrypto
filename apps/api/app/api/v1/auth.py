@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -58,6 +59,18 @@ def _actor(user: User) -> Actor:
     return Actor(ACTOR_USER, user.id, user.email, user.organization_id)
 
 
+@dataclass(frozen=True, slots=True)
+class _Account:
+    """What a sign-in needs of the person, read once so that no connection is held while the
+    password (a deliberately slow check) is verified."""
+
+    id: int
+    organization_id: int
+    password_hash: str
+    active: bool
+    actor: Actor
+
+
 @router.post("/login", response_model=TokenResponse)
 def login(
     body: LoginRequest,
@@ -69,19 +82,34 @@ def login(
     email = body.email.strip().lower()
     subject = subject_key(email)
 
-    def refuse(reason: str, user: User | None) -> APIError:
+    def refuse(reason: str, account: _Account | None) -> APIError:
         audit.add(
             write_session,
             LOGIN_ACTION,
             outcome=FAILURE,
             subject=subject,
-            actor=None if user is None else _actor(user),
+            actor=None if account is None else account.actor,
             details={"reason": reason},
         )
         write_session.commit()
         return _invalid_credentials()
 
+    # Everything that is read is read first, and the read session's connection given back, so that
+    # a request never holds two connections (a burst of sign-ins would otherwise wait on itself).
     wait = seconds_locked(session, settings, subject)
+    user = None if wait is not None else session.scalar(select(User).where(User.email == email))
+    account = None
+    if user is not None:
+        organization = session.get(Organization, user.organization_id)
+        account = _Account(
+            id=user.id,
+            organization_id=user.organization_id,
+            password_hash=user.password_hash,
+            active=user.is_active and organization is not None and organization.is_active,
+            actor=_actor(user),
+        )
+    session.rollback()
+
     if wait is not None:
         # Not counted as a failure, so trying again cannot extend the lock.
         audit.add(
@@ -94,27 +122,23 @@ def login(
         write_session.commit()
         raise _locked(wait)
 
-    user = session.scalar(select(User).where(User.email == email))
-    if user is None:
+    if account is None:
         burn_password_check(body.password)
         raise refuse("unknown_account", None)
-    if not verify_password(body.password, user.password_hash):
-        raise refuse("wrong_password", user)
+    if not verify_password(body.password, account.password_hash):
+        raise refuse("wrong_password", account)
+    if not account.active:
+        raise refuse("inactive_account", account)
 
-    organization = session.get(Organization, user.organization_id)
-    if not user.is_active or organization is None or not organization.is_active:
-        raise refuse("inactive_account", user)
-
-    # Authenticating (including the slow password hash) used the read session; the write lock is
-    # held only for this single statement and the audit line that goes with it.
+    # The write lock is held only for this single statement and the audit line that goes with it.
     write_session.execute(
-        update(User).where(User.id == user.id).values(last_login_at=datetime.now(UTC))
+        update(User).where(User.id == account.id).values(last_login_at=datetime.now(UTC))
     )
-    audit.add(write_session, LOGIN_ACTION, subject=subject, actor=_actor(user))
+    audit.add(write_session, LOGIN_ACTION, subject=subject, actor=account.actor)
     write_session.commit()
 
     token, expires_in = create_access_token(
-        settings, user_id=user.id, organization_id=user.organization_id
+        settings, user_id=account.id, organization_id=account.organization_id
     )
     return TokenResponse(access_token=token, expires_in=expires_in)
 

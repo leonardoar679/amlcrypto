@@ -129,6 +129,15 @@ class Settings(BaseSettings):
     # dashboard). Unset, POST /api/v1/webhooks/alchemy answers 404.
     alchemy_webhook_signing_key: SecretStr | None = None
     webhook_max_body_bytes: int = Field(default=1_000_000, ge=1_024, le=10_000_000)
+    # No request to the API may carry a body larger than this (413). A webhook has its own limit.
+    max_request_body_bytes: int = Field(default=1_048_576, ge=1_024, le=104_857_600)
+
+    # Connections each process (the API, the worker) may hold open at once, and how long a request
+    # waits for one before it is refused with a 503. A request never holds two at the same time, so
+    # a busy server queues instead of stalling.
+    db_pool_size: int = Field(default=10, ge=1, le=100)
+    db_max_overflow: int = Field(default=10, ge=0, le=100)
+    db_pool_timeout_seconds: float = Field(default=10.0, ge=0.1, le=120)
 
     # The background worker (python -m app.worker).
     worker_concurrency: int = Field(default=4, ge=1, le=64)
@@ -230,6 +239,15 @@ class Settings(BaseSettings):
                 path = (API_ROOT / path).resolve()
             url = url.set(database=path.as_posix())
         return url.render_as_string(hide_password=False)
+
+    @property
+    def pool_options(self) -> dict[str, float | int]:
+        """What create_db_engine takes to size the connection pool."""
+        return {
+            "pool_size": self.db_pool_size,
+            "max_overflow": self.db_max_overflow,
+            "pool_timeout": self.db_pool_timeout_seconds,
+        }
 
     @property
     def resolved_data_dir(self) -> Path:

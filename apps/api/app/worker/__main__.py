@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         settings = settings.model_copy(update={"worker_concurrency": args.concurrency})
     configure_logging(settings.log_level)
 
-    engine = create_db_engine(settings.resolved_database_url)
+    engine = create_db_engine(settings.resolved_database_url, **settings.pool_options)
     try:
         if migrations.current_revision(engine) != migrations.head_revision():
             print(

@@ -121,7 +121,12 @@ def test_only_a_real_address_is_kept_and_it_is_normalised():
     assert audit.client_ip(None, None, 0) is None
     assert audit.client_ip("10.0.0.2", "javascript:alert(1)", 1) is None
     assert audit.client_ip("2001:DB8:0:0:0:0:0:1", None, 0) == "2001:db8::1"
-    assert audit.client_ip("::ffff:1.2.3.4", None, 0) == "::ffff:1.2.3.4"
+    # an IPv4 client of a server that listens on both families is the same client either way
+    assert audit.client_ip("::ffff:1.2.3.4", None, 0) == "1.2.3.4"
+    assert audit.client_ip("10.0.0.2", "::ffff:203.0.113.9", 1) == "203.0.113.9"
+    assert audit.client_ip("::ffff:10.0.0.2", "203.0.113.9", 0) == "10.0.0.2"
+    assert audit.client_ip("::ffff:0:0", None, 0) == "0.0.0.0"
+    assert audit.client_ip("::1", None, 0) == "::1"
 
 
 def test_the_user_agent_is_cleaned_and_cut():

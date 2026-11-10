@@ -27,6 +27,7 @@ from app.api.deps import (
     screening_run,
 )
 from app.api.errors import APIError
+from app.api.limits import MAX_COUNT, MAX_DAYS
 from app.chains.registry import get_chain
 from app.chains.support import find_chain
 from app.database.models import RiskAssessment
@@ -51,11 +52,17 @@ class AddressOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_hops: int | None = Field(None, ge=1, le=6, description="How far from the address to look.")
-    max_transactions: int | None = Field(None, ge=1, description="Transfers read per address.")
-    historical_days: int | None = Field(None, ge=1, description="How far back to look.")
-    max_nodes: int | None = Field(None, ge=1)
-    max_edges: int | None = Field(None, ge=1)
-    counterparties: int | None = Field(None, ge=1, description="Followed per address.")
+    max_transactions: int | None = Field(
+        None, ge=1, le=MAX_COUNT, description="Transfers read per address."
+    )
+    historical_days: int | None = Field(
+        None, ge=1, le=MAX_DAYS, description="How far back to look."
+    )
+    max_nodes: int | None = Field(None, ge=1, le=MAX_COUNT)
+    max_edges: int | None = Field(None, ge=1, le=MAX_COUNT)
+    counterparties: int | None = Field(
+        None, ge=1, le=MAX_COUNT, description="Followed per address."
+    )
     direction: Direction = Direction.BOTH
     update: bool = Field(True, description="Read the providers first; false uses stored data only.")
     refresh: bool = Field(False, description="With update: read every history again now.")
@@ -433,17 +440,16 @@ def export_screening(
         raise APIError(404, "screening_not_found", "No such screening.")
     if row.report is None:
         raise APIError(409, "not_completed", "This screening has no report (yet).")
-    audit.now(
-        "screening.export",
-        target_type="screening",
-        target_id=screening_id(row.id),
-        details={"format": format},
-    )
-    name = re.sub(r"[^A-Za-z0-9_.-]", "_", screening_id(row.id))
+    reference = screening_id(row.id)
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", reference)
     if format == "csv":
         body, media = findings_csv(row.report), "text/csv; charset=utf-8"
     else:
         body, media = json.dumps(row.report, indent=2), "application/json"
+    session.rollback()  # all that is needed is in hand; the entry below takes a connection itself
+    audit.now(
+        "screening.export", target_type="screening", target_id=reference, details={"format": format}
+    )
     return Response(
         content=body,
         media_type=media,

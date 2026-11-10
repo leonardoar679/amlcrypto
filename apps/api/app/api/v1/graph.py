@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import Audit, Principal, address_read, get_audit, get_write_session, graph_update
 from app.api.errors import APIError
+from app.api.limits import MAX_COUNT, MAX_DAYS
 from app.database.connection import Sessions
 from app.database.repositories import jobs as queue
 from app.graph.jobs import FETCH_COUNTERPARTIES
@@ -30,10 +31,14 @@ async def transaction_graph(
     direction: Annotated[Direction, Query(description="Follow money in, out, or both.")] = (
         Direction.BOTH
     ),
-    max_nodes: Annotated[int | None, Query(ge=1)] = None,
-    max_edges: Annotated[int | None, Query(ge=1)] = None,
-    counterparties: Annotated[int | None, Query(ge=1, description="Followed per address.")] = None,
-    days: Annotated[int | None, Query(ge=1, description="How far back the movements go.")] = None,
+    max_nodes: Annotated[int | None, Query(ge=1, le=MAX_COUNT)] = None,
+    max_edges: Annotated[int | None, Query(ge=1, le=MAX_COUNT)] = None,
+    counterparties: Annotated[
+        int | None, Query(ge=1, le=MAX_COUNT, description="Followed per address.")
+    ] = None,
+    days: Annotated[
+        int | None, Query(ge=1, le=MAX_DAYS, description="How far back the movements go.")
+    ] = None,
     _principal: Principal = Depends(address_read),
 ) -> dict[str, Any]:
     """The bounded transaction graph around an address, shaped for Cytoscape, from the histories
@@ -74,11 +79,15 @@ class GraphUpdateRequest(BaseModel):
     address: str = Field(max_length=512)
     depth: int | None = Field(None, ge=1, le=6)
     direction: Direction = Direction.BOTH
-    max_nodes: int | None = Field(None, ge=1)
-    max_edges: int | None = Field(None, ge=1)
-    counterparties: int | None = Field(None, ge=1, description="Followed per address.")
-    days: int | None = Field(None, ge=1)
-    history_items: int | None = Field(None, ge=1, description="Transfers read per address.")
+    max_nodes: int | None = Field(None, ge=1, le=MAX_COUNT)
+    max_edges: int | None = Field(None, ge=1, le=MAX_COUNT)
+    counterparties: int | None = Field(
+        None, ge=1, le=MAX_COUNT, description="Followed per address."
+    )
+    days: int | None = Field(None, ge=1, le=MAX_DAYS)
+    history_items: int | None = Field(
+        None, ge=1, le=MAX_COUNT, description="Transfers read per address."
+    )
     refresh: bool = Field(False, description="Read every history again now.")
 
 
