@@ -1,0 +1,9 @@
+# Keep the build context small and free of local state.
+node_modules
+.next
+.env
+.env.*
+!.env.example
+tests
+AGENTS.md
+README.md

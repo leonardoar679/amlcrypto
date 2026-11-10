@@ -1,5 +1,7 @@
 import './globals.css';
 import { Inter, Unbounded } from 'next/font/google';
+import { headers } from 'next/headers';
+import GraphStyle from '../src/components/layout/GraphStyle';
 import ThemeScript from '../src/components/layout/ThemeScript';
 import { brand } from '../src/config/brand';
 
@@ -26,12 +28,16 @@ export const metadata = {
   twitter: { card: 'summary', title, description: brand.description }
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  // The nonce proxy.js made for this request: the one inline script below may run because it has it.
+  // (Reading the request makes every page render for its request, which a nonce needs anyway.)
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
     // The theme script sets data-theme before hydration, so React must keep what is in the DOM.
     <html lang="en" suppressHydrationWarning>
       <head>
-        <ThemeScript />
+        <ThemeScript nonce={nonce} />
+        <GraphStyle nonce={nonce} />
       </head>
       <body className={`${inter.variable} ${unbounded.variable}`}>{children}</body>
     </html>

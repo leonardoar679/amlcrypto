@@ -125,5 +125,29 @@ jobs:
           logs="$(docker logs aml-api 2>&1 | tail -40)"
           logs="${logs//'%'/'%25'}"; logs="${logs//$'\n'/'%0A'}"
           echo "::error title=aml-api container logs::${logs}"
+      - name: Build the web image
+        run: docker build -t aml-web:ci apps/web
+      - name: Run it and call the pages
+        # The API is not there (BACKEND_URL points nowhere): the public pages, the policy on them, the
+        # redirect of a protected page and a broken link are all answered by the web server alone.
+        run: |
+          docker run -d --name aml-web -p 3000:3000 -e BACKEND_URL=http://127.0.0.1:1 aml-web:ci
+          for attempt in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:3000/; then break; fi
+            sleep 2
+          done
+          curl -fsS -D headers.txt -o /dev/null http://127.0.0.1:3000/
+          cat headers.txt
+          grep -iE "^content-security-policy: .*script-src 'self' 'nonce-" headers.txt
+          grep -iE "^x-frame-options: DENY" headers.txt
+          test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/check%25')" = "404"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/alerts)" = "307"
+          test "$(docker exec aml-web id -u)" != "0"
+      - name: Web container logs on failure
+        if: failure()
+        run: |
+          logs="$(docker logs aml-web 2>&1 | tail -40)"
+          logs="${logs//'%'/'%25'}"; logs="${logs//$'\n'/'%0A'}"
+          echo "::error title=aml-web container logs::${logs}"
       - name: Validate the compose file
         run: SECRET_KEY=ci-check docker compose -f deployment/docker-compose.yml config -q

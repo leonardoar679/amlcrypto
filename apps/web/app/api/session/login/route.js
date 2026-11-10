@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { backendFetch } from '@/server/backend';
-import { sameOrigin } from '@/lib/proxyRules';
+import { clientHeaders, sameOrigin } from '@/lib/proxyRules';
 import { SESSION_COOKIE, isSecureRequest, sessionCookieOptions } from '@/lib/session-cookie';
 
 function failure(status, code, message) {
@@ -30,7 +30,8 @@ export async function POST(request) {
   try {
     upstream = await backendFetch('/api/v1/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The sign-in is audited with where it came from, so the platform is told who is asking.
+      headers: { ...Object.fromEntries(clientHeaders(request.headers)), 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
       timeoutMs: 15_000
     });

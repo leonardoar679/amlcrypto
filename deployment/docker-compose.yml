@@ -1,7 +1,9 @@
 # CI builds the image and checks that this file parses (job docker-build); it has not been started
 # on the development machine, which has no Docker.
 # Usage:  docker compose -f deployment/docker-compose.yml --env-file deployment/.env up --build
-# The web service is added when the frontend gets its Dockerfile (milestone M12/M13).
+# The web app and the API each publish a port on the loopback address only; deployment/nginx has the
+# reverse proxy that is meant to be the way anyone reaches them (TLS, rate limits, body limits).
+# With it in front, set TRUSTED_PROXY_HOPS=1 so that the audit log records the person's address.
 x-aml-environment: &aml-environment
   ENVIRONMENT: prod
   SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in deployment/.env (32+ random characters)}
@@ -37,6 +39,32 @@ services:
         - python
         - -c
         - "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  # The web app: the pages, and the proxy that carries the signed-in person's requests to the API (a
+  # browser never reaches the API, and never holds its token). It reads BACKEND_URL when it starts, and
+  # it has no secret of its own: not the API's SECRET_KEY, not a provider key.
+  web:
+    build:
+      context: ../apps/web
+    image: aml-web
+    environment:
+      BACKEND_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 6

@@ -1,0 +1,150 @@
+# A reverse proxy for the platform: TLS, rate limits, body limits and headers in front of the web app
+# and the API. An EXAMPLE to adapt, not to run as it is: change the host names, the certificate
+# paths and the upstream addresses, then `nginx -t`. It has not been run on the development machine
+# (no nginx, no Docker): the first `nginx -t` is the first test it gets.
+#
+# Two host names, because the web app has its own /api/v1/ (it forwards the signed-in person's calls
+# to the API, with the session cookie turned into a token) and the API's own /api/v1/ is for
+# programs that hold an API key:
+#
+#   app.example.com   the web app: people sign in here
+#   api.example.com   the API, for programs, and the provider's webhook
+#
+# Run only the first if no program will call the API, and expose the webhook alone on the second.
+#
+# The API must be told how many proxies are in front of it so that it can find the client's address
+# (the audit log records it): TRUSTED_PROXY_HOPS=1 for this file, which overwrites X-Forwarded-For
+# with the address nginx saw (see proxy-headers.conf).
+
+# --- rate limits ---------------------------------------------------------------------------------
+# One zone per kind of request, keyed by the client's address. The rates are starting points: raise
+# them when a real use needs it, and look at what 429 (limit_req_status) says in the log first.
+limit_req_zone $binary_remote_addr zone=aml_login:10m rate=5r/m;   # guessing a password
+limit_req_zone $binary_remote_addr zone=aml_web:10m rate=20r/s;    # pages and the web app's calls
+limit_req_zone $binary_remote_addr zone=aml_api:10m rate=10r/s;    # programs with an API key
+limit_req_zone $binary_remote_addr zone=aml_hook:10m rate=5r/s;    # the provider's webhook
+limit_conn_zone $binary_remote_addr zone=aml_conn:10m;
+limit_req_status 429;
+limit_conn_status 429;
+
+upstream aml_web {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
+upstream aml_api {
+    server 127.0.0.1:8000;
+    keepalive 16;
+}
+
+# --- plain HTTP: certificates and a redirect -----------------------------------------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name app.example.com api.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# --- the web app ---------------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;                      # nginx 1.25.1 or later; before that, add http2 to the listen lines
+    server_name app.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/app.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:aml_tls:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
+    # The web app caps what it forwards at 64 KB; nothing it serves takes more than a form.
+    client_max_body_size 128k;
+    client_header_timeout 15s;
+    client_body_timeout 15s;
+    send_timeout 30s;
+    keepalive_timeout 30s;
+    limit_conn aml_conn 40;
+
+    # The sign-in form. The API also locks an account after repeated failures; this is the second
+    # line, and it is per address, so one address cannot try many accounts quickly.
+    location = /api/session/login {
+        limit_req zone=aml_login burst=5 nodelay;
+        proxy_pass http://aml_web;
+        include /etc/nginx/aml/proxy-headers.conf;
+    }
+
+    location / {
+        limit_req zone=aml_web burst=60 nodelay;
+        proxy_pass http://aml_web;
+        include /etc/nginx/aml/proxy-headers.conf;
+    }
+}
+
+# --- the API, for programs and for the provider's webhook ------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name api.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/api.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:aml_tls:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+
+    # The API refuses a larger body itself (MAX_REQUEST_BODY_BYTES, 1 MiB); this refuses it before
+    # it gets that far. Keep it at least as large as WEBHOOK_MAX_BODY_BYTES (1,000,000 by default).
+    client_max_body_size 1m;
+    client_header_timeout 15s;
+    client_body_timeout 15s;
+    send_timeout 30s;
+    keepalive_timeout 30s;
+    limit_conn aml_conn 40;
+
+    # Alchemy's Address Activity webhook: it proves itself with a signature, so it needs no more
+    # than a limit and the right method.
+    location = /api/v1/webhooks/alchemy {
+        limit_req zone=aml_hook burst=20 nodelay;
+        limit_except POST {
+            deny all;
+        }
+        proxy_pass http://aml_api;
+        include /etc/nginx/aml/proxy-headers.conf;
+    }
+
+    # People sign in through the web app, not here: a key is how a program proves who it is, and
+    # leaving the sign-in off this host leaves nothing here to guess a password at. Remove this
+    # block if a script has to sign in as a person.
+    location = /api/v1/auth/login {
+        return 404;
+    }
+
+    location /api/v1/ {
+        limit_req zone=aml_api burst=30 nodelay;
+        proxy_pass http://aml_api;
+        include /etc/nginx/aml/proxy-headers.conf;
+    }
+
+    location / {
+        return 404;
+    }
+}

@@ -188,12 +188,13 @@ test('every page group of the signed-in app is covered by proxy.js, for sign-in 
     .map((entry) => entry.name);
   const source = readFileSync(new URL('../proxy.js', import.meta.url), 'utf8');
   assert.ok(groups.length >= 8, `only ${groups.length} page groups found`);
+  // proxy.js cannot be imported here (it needs Next), and its matcher must be a literal for Next to
+  // read it, so the text is what can be checked. The matcher takes every path but the framework's
+  // own files (which is what gives every page a policy, and a link with a broken % a 404 and not a
+  // server error), so what is left to check is that each group needs a session.
+  assert.ok(source.includes("source: '/((?!_next/static|_next/image|favicon.svg|favicon.ico).*)'"), 'the matcher takes the pages');
   for (const group of groups) {
-    // proxy.js cannot be imported here (it needs Next), and its matcher must be a literal for Next
-    // to read it, so the text is what can be checked: the group is a prefix that needs a session,
-    // and it is in the matcher (without which a link with a broken % is a server error, not a 404).
     assert.ok(source.includes(`'/${group}'`), `/${group} is not in APP_PREFIXES`);
-    assert.ok(source.includes(`'/${group}/:path*'`), `/${group} is not in the matcher`);
   }
 });
 

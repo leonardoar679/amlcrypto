@@ -104,10 +104,39 @@ export function sameOrigin(headers, url) {
 
 const FORWARDED_REQUEST_HEADERS = ['accept', 'accept-language', 'content-type', 'x-request-id'];
 
-// The request headers worth passing on. Everything else (cookies, the browser's own Authorization,
-// forwarding headers) stays here.
-export function forwardedRequestHeaders(headers) {
+// What an address looks like once it has been through the proxy in front of this site.
+const CLIENT_ADDRESS = /^[0-9a-fA-F:.]{2,45}$/;
+const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/g;
+const MAX_AGENT_LENGTH = 255;
+
+// Who is asking, for the platform's audit log. This site is a proxy: unless it says so, the platform
+// sees this site's own address and Node's user agent for everything a person does. The address is the
+// LAST one in X-Forwarded-For, which is the one the proxy in front of this site wrote (the example
+// nginx configuration overwrites the header with the address it saw, so there is only that one); what
+// a client put before it is a claim and is not passed on. With no proxy in front there is no
+// address to pass, and none is made up. The platform still decides whether to believe the header
+// (TRUSTED_PROXY_HOPS).
+export function clientHeaders(headers) {
   const kept = new Headers();
+  const chain = (headers.get('x-forwarded-for') || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const address = chain[chain.length - 1];
+  if (address && CLIENT_ADDRESS.test(address)) {
+    kept.set('x-forwarded-for', address);
+  }
+  const agent = (headers.get('user-agent') || '').replace(CONTROL_CHARACTERS, ' ').trim().slice(0, MAX_AGENT_LENGTH);
+  if (agent) {
+    kept.set('user-agent', agent);
+  }
+  return kept;
+}
+
+// The request headers worth passing on, and who is asking (see clientHeaders). Everything else
+// (cookies, the browser's own Authorization) stays here.
+export function forwardedRequestHeaders(headers) {
+  const kept = clientHeaders(headers);
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = headers.get(name);
     if (value) {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   cleanPath,
+  clientHeaders,
   forwardedRequestHeaders,
   isAllowed,
   returnedHeaders,
@@ -232,7 +233,7 @@ test('an unusable url is not the same origin', () => {
   assert.equal(sameOrigin(headers({ origin: 'http://a.test' }), 'not a url'), false);
 });
 
-test('only a few request headers are passed on to the backend', () => {
+test('only a few request headers are passed on to the backend, and who is asking', () => {
   const kept = forwardedRequestHeaders(
     headers({
       accept: 'application/json',
@@ -240,12 +241,44 @@ test('only a few request headers are passed on to the backend', () => {
       cookie: 'aml_session=secret',
       authorization: 'Bearer from-the-browser',
       'x-forwarded-for': '1.2.3.4',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0)',
       host: 'localhost',
       'x-request-id': 'abc',
       'accept-language': 'en'
     })
   );
-  assert.deepEqual([...kept.keys()].sort(), ['accept', 'accept-language', 'content-type', 'x-request-id']);
+  assert.deepEqual(
+    [...kept.keys()].sort(),
+    ['accept', 'accept-language', 'content-type', 'user-agent', 'x-forwarded-for', 'x-request-id']
+  );
+  assert.equal(kept.get('x-forwarded-for'), '1.2.3.4');
+  assert.equal(kept.get('user-agent'), 'Mozilla/5.0 (Windows NT 10.0)');
+});
+
+test('the address passed on is the one the proxy in front wrote, never one the client claimed', () => {
+  const chain = (value) => clientHeaders(headers({ 'x-forwarded-for': value })).get('x-forwarded-for');
+  assert.equal(chain('203.0.113.9'), '203.0.113.9');
+  // the client wrote 6.6.6.6 and 10.0.0.1; the proxy appended the address it really saw
+  assert.equal(chain('6.6.6.6, 10.0.0.1, 203.0.113.9'), '203.0.113.9');
+  assert.equal(chain('  203.0.113.9  '), '203.0.113.9');
+  assert.equal(chain('2001:db8::1'), '2001:db8::1');
+  assert.equal(chain('::ffff:192.0.2.1'), '::ffff:192.0.2.1');
+});
+
+test('a forwarded address that is not one is not passed on', () => {
+  for (const bad of ['', ' , ', 'unknown', '<script>', '1.2.3.4; drop', 'a'.repeat(60), '1.2.3.4, evil.example.com', 'é']) {
+    assert.equal(clientHeaders(headers({ 'x-forwarded-for': bad })).has('x-forwarded-for'), false, bad);
+  }
+  assert.equal(clientHeaders(headers({})).has('x-forwarded-for'), false, 'no proxy, nothing to pass');
+});
+
+test('the browser is passed on cleaned and cut', () => {
+  const agent = (value) => clientHeaders(headers({ 'user-agent': value })).get('user-agent');
+  assert.equal(agent('  Firefox/130.0  '), 'Firefox/130.0');
+  assert.equal(agent('Evil\tAgent'), 'Evil Agent');
+  assert.equal(agent('x'.repeat(500)).length, 255);
+  assert.equal(clientHeaders(headers({})).has('user-agent'), false);
+  assert.equal(clientHeaders(headers({ 'user-agent': '   ' })).has('user-agent'), false);
 });
 
 test('only a few response headers come back, and nothing is cached', () => {
@@ -264,4 +297,48 @@ test('only a few response headers come back, and nothing is cached', () => {
   assert.equal(kept.get('content-disposition'), 'attachment; filename="x.csv"');
   assert.equal(kept.has('set-cookie'), false);
   assert.equal(kept.has('server'), false);
+});
+
+test('an id in a path is one to eighteen digits, whichever endpoint it is for', () => {
+  const withId = [
+    ['GET', 'alerts/{id}'],
+    ['PATCH', 'alerts/{id}'],
+    ['GET', 'cases/{id}'],
+    ['PATCH', 'cases/{id}'],
+    ['GET', 'cases/{id}/export'],
+    ['POST', 'cases/{id}/notes'],
+    ['POST', 'cases/{id}/links'],
+    ['DELETE', 'cases/{id}/links/{id}'],
+    ['GET', 'monitoring/addresses/{id}'],
+    ['PATCH', 'monitoring/addresses/{id}'],
+    ['DELETE', 'monitoring/addresses/{id}'],
+    ['POST', 'monitoring/addresses/{id}/check'],
+    ['DELETE', 'api-keys/{id}'],
+    ['PATCH', 'users/{id}'],
+    ['POST', 'users/{id}/password'],
+    ['GET', 'jobs/{id}']
+  ];
+  const fill = (template, id) => template.replaceAll('{id}', id);
+  for (const [method, template] of withId) {
+    assert.equal(isAllowed(method, fill(template, '1')), true, `${method} ${fill(template, '1')}`);
+    assert.equal(isAllowed(method, fill(template, '1'.repeat(18))), true, `${method} 18 digits`);
+    assert.equal(isAllowed(method, fill(template, '1'.repeat(19))), false, `${method} 19 digits`);
+    assert.equal(isAllowed(method, fill(template, '')), false, `${method} no id`);
+    assert.equal(isAllowed(method, fill(template, 'x1')), false, `${method} not a number`);
+  }
+});
+
+test('each of the two ids of a link is checked on its own', () => {
+  const long = '1'.repeat(19);
+  assert.equal(isAllowed('DELETE', `cases/${long}/links/1`), false);
+  assert.equal(isAllowed('DELETE', `cases/1/links/${long}`), false);
+  assert.equal(isAllowed('DELETE', 'cases/1/links/1'), true);
+});
+
+test('an address passed on is two to forty-five characters of the kind an address is written in', () => {
+  const passed = (value) => clientHeaders(headers({ 'x-forwarded-for': value })).get('x-forwarded-for');
+  assert.equal(passed('::'), '::');
+  assert.equal(passed('1'), null);
+  assert.equal(passed('a'.repeat(45)), 'a'.repeat(45));
+  assert.equal(passed('a'.repeat(46)), null);
 });
