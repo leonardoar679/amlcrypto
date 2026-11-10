@@ -85,10 +85,13 @@ MAKES_OWN = {
 # What every organization is given alike: the public routes, the caller's own account, the chains,
 # what is known about an address and the platform's own configuration.
 SHARED = {
+    ("DELETE", "/editor/incidents/{incident_id}"),
     ("GET", "/address/{chain}/{address}/labels"),
     ("GET", "/address/{chain}/{address}/transactions"),
     ("GET", "/auth/me"),
     ("GET", "/chains"),
+    ("GET", "/editor/incidents"),
+    ("GET", "/editor/incidents/{incident_id}"),
     ("GET", "/graph"),
     ("GET", "/health"),
     ("GET", "/intel/sources"),
@@ -98,9 +101,13 @@ SHARED = {
     ("POST", "/address/validate"),
     ("POST", "/auth/login"),
     ("POST", "/auth/password"),
+    ("POST", "/editor/incidents"),
+    ("POST", "/editor/incidents/{incident_id}/transition"),
+    ("POST", "/editor/incidents/{incident_id}/updates"),
     ("POST", "/intel/lookup"),
     ("POST", "/providers/{name}/probe"),
     ("POST", "/webhooks/alchemy"),
+    ("PUT", "/editor/incidents/{incident_id}/content"),
 }
 # What names the owner's records in the owner's own answer (the others say too little to tell).
 SHOWS_ITS_OWNER = {

@@ -12,10 +12,10 @@ import itertools
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.access.permissions import Role
-from app.database.models import Base, MonitoredAddress
+from app.database.models import Base, MonitoredAddress, User
 from app.database.repositories import risk as risk_store
 from tests.access_helpers import PASSWORD, person
 from tests.graph_helpers import addr
@@ -23,6 +23,7 @@ from tests.monitoring_helpers import alert_for
 from tests.risk_helpers import screen
 
 CANARY = "zq7canary"
+CANARY_FREE = "Example"  # words for global records: they name no team, so no leak search finds them
 GHOST = 987_654_321  # the id of nothing
 
 
@@ -60,8 +61,16 @@ class World:
         # what identifies each team's records (addresses, screening ids), to look for in what
         # another team is sent
         self.marks: dict[str, list[str]] = {}
+        self.slugs: dict[int, str] = {}  # the address of each incident's page, by its id
         self.acme = self._team("Acme")
         self.rival = self._team("Rival")
+        # The platform editor is Acme's administrator (the catalog's working requests are sent as
+        # that person, so the editor routes work for them); the rival's people are not editors.
+        self.db.execute(
+            update(User).where(User.id == self.acme.admin_id).values(is_platform_editor=True)
+        )
+        self.db.commit()
+        self.db.rollback()
 
     # --- people --------------------------------------------------------------------------------
 
@@ -184,6 +193,49 @@ class World:
         made = self._made_by(team.admin, "POST", "/api/v1/api-keys", body, 201)
         return made["key"]["id"], made["secret"]
 
+    def incident(self, *, publish: bool = False) -> int:
+        """A draft incident (or a published one) written by the platform editor. It is global, so
+        its words name nobody's organization: a search for a team's marks must not find them."""
+        number = next(self._made)
+        body = {
+            "slug": f"example-incident-{number}",
+            "title": f"{CANARY_FREE} incident {number}",
+            "summary": "Funds were reported taken from a wallet.",
+            "kind": "theft",
+            "occurred_on": "2026-01-15",
+            "evidence": [
+                {
+                    "ref": "e1",
+                    "publisher": "An analytics firm",
+                    "title": "A report",
+                    "url": "https://example.org/report",
+                    "kind": "analytics",
+                    "retrieved_on": "2026-01-16",
+                }
+            ],
+            "amounts": [{"evidence_ref": "e1", "amount_usd_low": 1000, "amount_usd_high": 2000}],
+            "addresses": [
+                {
+                    "chain": "ethereum",
+                    "address": self.address(),
+                    "role": "ATTACKER_FUNDS_RECEIVER",
+                    "attribution_status": "REPORTED_BY_ANALYST",
+                    "evidence_ref": "e1",
+                }
+            ],
+            "updates": [
+                {"occurred_at": "2026-01-15T10:00:00Z", "kind": "event", "body": "It was noticed."}
+            ],
+        }
+        editor = self.acme.admin
+        made = self._made_by(editor, "POST", "/api/v1/editor/incidents", body, 201)["incident"]
+        self.slugs[made["id"]] = made["slug"]
+        if publish:
+            for state in ("in_review", "published"):
+                path = f"/api/v1/editor/incidents/{made['id']}/transition"
+                self._made_by(editor, "POST", path, {"to": state}, 200)
+        return made["id"]
+
     def user(self, team: Team) -> int:
         body = {
             "email": f"{CANARY}{next(self._made)}@{team.name.lower()}.example.com",
@@ -250,6 +302,12 @@ class Fresh:
     def user(self) -> int:
         return self.world.user(self.team)
 
+    def incident(self) -> int:
+        return self.world.incident()
+
+    def published_incident(self) -> int:
+        return self.world.incident(publish=True)
+
     def credentials(self) -> dict[str, str]:
         return {"email": self.team.admin_email, "password": PASSWORD}
 
@@ -285,6 +343,12 @@ class Ghost:
         return GHOST
 
     def user(self) -> int:
+        return GHOST
+
+    def incident(self) -> int:
+        return GHOST
+
+    def published_incident(self) -> int:
         return GHOST
 
     def credentials(self) -> dict[str, str]:

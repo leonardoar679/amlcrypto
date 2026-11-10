@@ -38,6 +38,7 @@ class Permission(StrEnum):
     USERS_MANAGE = "users:manage"
     API_KEYS_MANAGE = "apikeys:manage"
     AUDIT_READ = "audit:read"
+    INCIDENTS_CURATE = "incidents:curate"  # write the incidents everybody can read (editors only)
 
 
 _VIEWER = frozenset(
@@ -73,6 +74,12 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Permission]] = {
 # An API key is a credential for a program. Whatever its role, it can never manage people or keys:
 # a leaked key must not be able to mint more keys or promote an account.
 KEY_NEVER: frozenset[Permission] = frozenset({Permission.USERS_MANAGE, Permission.API_KEYS_MANAGE})
+
+
+# What no role holds: a person is given it (users.is_platform_editor, set from the command line),
+# because any administrator can make a person of any role and so could make an editor. It is added
+# to a signed-in person in app.api.deps and never to an API key.
+EDITOR_ONLY: frozenset[Permission] = frozenset({Permission.INCIDENTS_CURATE})
 
 
 class UnknownRole(ValueError):

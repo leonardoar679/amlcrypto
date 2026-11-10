@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.access.permissions import (
+    EDITOR_ONLY,
     KEY_NEVER,
     ROLE_PERMISSIONS,
     Permission,
@@ -19,7 +20,15 @@ from app.access.permissions import (
 def test_every_role_has_an_entry_and_every_permission_is_held_by_someone():
     assert set(ROLE_PERMISSIONS) == set(Role)
     held = set().union(*ROLE_PERMISSIONS.values())
-    assert held == set(Permission)
+    assert held | EDITOR_ONLY == set(Permission)
+    assert not held & EDITOR_ONLY
+
+
+def test_only_a_platform_editor_may_write_incidents_and_no_role_can_make_one():
+    assert {Permission.INCIDENTS_CURATE} == EDITOR_ONLY
+    for role in Role:
+        assert Permission.INCIDENTS_CURATE not in permissions_for(role)
+        assert Permission.INCIDENTS_CURATE not in permissions_for(role, api_key=True)
 
 
 def test_each_role_holds_everything_the_one_below_it_does_and_more():

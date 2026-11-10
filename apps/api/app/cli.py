@@ -171,10 +171,11 @@ def _cmd_user_list(args: argparse.Namespace) -> int:
             rows = session.execute(query.order_by(Organization.slug, User.email)).all()
     finally:
         engine.dispose()
-    print(f"{'id':>4}  {'organization':<18} {'role':<8} {'active':<6} email")
+    print(f"{'id':>4}  {'organization':<18} {'role':<8} {'active':<6} {'editor':<6} email")
     for user, slug in rows:
         active = "yes" if user.is_active else "NO"
-        print(f"{user.id:>4}  {slug:<18} {user.role:<8} {active:<6} {user.email}")
+        editor = "yes" if user.is_platform_editor else ""
+        print(f"{user.id:>4}  {slug:<18} {user.role:<8} {active:<6} {editor:<6} {user.email}")
     return 0
 
 
@@ -185,6 +186,19 @@ def _cmd_user_set_role(args: argparse.Namespace) -> int:
         changes = {"changes": {"role": {"from": before, "to": user.role}}}
         _audit_cli(session, "user.update", user, changes)
         print(f"{user.email} is now {user.role} (was {before}).")
+
+    return _with_user(args, work)
+
+
+def _cmd_user_set_editor(args: argparse.Namespace) -> int:
+    enabled = not args.off
+
+    def work(session: Session, user: User) -> None:
+        accounts.set_editor(user, enabled)
+        changes = {"changes": {"is_platform_editor": {"to": enabled}}}
+        _audit_cli(session, "user.update", user, changes)
+        verb = "is now" if enabled else "is no longer"
+        print(f"{user.email} {verb} a platform editor (may write the public incidents).")
 
     return _with_user(args, work)
 
@@ -1154,6 +1168,13 @@ def main(argv: list[str] | None = None) -> int:
     set_role.add_argument("email")
     set_role.add_argument("role", choices=[role.value for role in Role])
     set_role.set_defaults(run=_cmd_user_set_role)
+    set_editor = people.add_parser(
+        "set-editor",
+        help="let a person write the incidents everybody can read (or, with --off, stop them)",
+    )
+    set_editor.add_argument("email")
+    set_editor.add_argument("--off", action="store_true", help="take the permission away")
+    set_editor.set_defaults(run=_cmd_user_set_editor)
     for name, active in (("deactivate", False), ("activate", True)):
         switch = people.add_parser(
             name, help=f"{name} a user (an organization keeps an active admin)"

@@ -14,7 +14,7 @@ import pytest
 from fastapi.routing import APIRoute
 from sqlalchemy import select
 
-from app.access.permissions import ROLE_PERMISSIONS, Role
+from app.access.permissions import EDITOR_ONLY, ROLE_PERMISSIONS, Role
 from app.database.models import AuditLog
 from tests.access_helpers import person
 
@@ -46,6 +46,7 @@ PATH_VALUES = {
     "alert_id": "1",
     "case_id": "1",
     "link_id": "1",
+    "incident_id": "1",
 }
 
 
@@ -114,7 +115,9 @@ def test_every_permission_is_required_by_some_route(app):
     for _, _, route in api_routes(app):
         required |= set(declared(route) or ())
     held = set().union(*ROLE_PERMISSIONS.values())
-    assert required == held, f"never required by a route: {sorted(held - required)}"
+    # what no role holds (a platform editor is given it) is still required by the editor routes
+    wanted = held | EDITOR_ONLY
+    assert required == wanted, f"never required by a route: {sorted(wanted - required)}"
 
 
 # --- behaviour ----------------------------------------------------------------------------------

@@ -34,6 +34,7 @@ from app.access.audit import (
     record,
 )
 from app.access.permissions import (
+    EDITOR_ONLY,
     Permission,
     Role,
     UnknownRole,
@@ -161,10 +162,13 @@ def _principal_of_token(session: Session, settings: Settings, token: str) -> Pri
         role = parse_role(user.role)
     except UnknownRole:
         raise invalid from None
+    permissions = permissions_for(role)
+    if user.is_platform_editor:
+        permissions = permissions | EDITOR_ONLY
     return Principal(
         organization_id=user.organization_id,
         role=role,
-        permissions=permissions_for(role),
+        permissions=permissions,
         user_id=user.id,
         email=user.email,
     )
@@ -329,3 +333,4 @@ cases_write = require(Permission.CASES_WRITE)
 users_manage = require(Permission.USERS_MANAGE)
 api_keys_manage = require(Permission.API_KEYS_MANAGE)
 audit_read = require(Permission.AUDIT_READ)
+incidents_curate = require(Permission.INCIDENTS_CURATE)

@@ -148,6 +148,12 @@ def set_active(session: Session, user: User, active: bool) -> None:
     user.is_active = active
 
 
+def set_editor(user: User, enabled: bool) -> None:
+    """Make a person a platform editor (or stop them being one). The permission belongs to the
+    person, not to a role."""
+    user.is_platform_editor = enabled
+
+
 def set_password(user: User, password: str) -> None:
     check_password(password)
     user.password_hash = hash_password(password)

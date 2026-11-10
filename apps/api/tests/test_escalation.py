@@ -111,6 +111,14 @@ def test_a_key_of_any_role_is_refused_what_only_people_may_do(world):
         ("GET", "/api-keys"),
         ("POST", "/api-keys"),
         ("DELETE", "/api-keys/1"),
+        # an editor is a person: a key made by one, of any role, never writes incidents
+        ("GET", "/editor/incidents"),
+        ("POST", "/editor/incidents"),
+        ("GET", "/editor/incidents/1"),
+        ("PUT", "/editor/incidents/1/content"),
+        ("POST", "/editor/incidents/1/transition"),
+        ("POST", "/editor/incidents/1/updates"),
+        ("DELETE", "/editor/incidents/1"),
     ):
         status = world.client.request(method, V1 + path, json={}, headers=key).status_code
         if status != 403:

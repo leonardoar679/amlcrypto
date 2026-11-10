@@ -156,3 +156,26 @@ def test_users_and_the_audit_log_can_be_listed(cli_env, capsys):
     assert trail.count("user.create") == 2 and "cli" in trail and "user:" in trail
     assert cli.main(["audit", "list", "--org", "acme"]) == 0
     assert cli.main(["audit", "list", "--org", "nobody"]) == 1
+
+
+def test_a_person_is_made_a_platform_editor_and_stopped_from_the_command_line(cli_env, capsys):
+    create()
+    capsys.readouterr()
+
+    assert cli.main(["user", "set-editor", "boss@example.com"]) == 0
+    assert "is now a platform editor" in capsys.readouterr().out
+    users, rows = users_and_audit(cli_env)
+    assert users["boss@example.com"] == ("admin", True)
+    assert rows[-1].action == "user.update"
+    assert rows[-1].details == {
+        "email": "boss@example.com",
+        "changes": {"is_platform_editor": {"to": True}},
+    }
+
+    assert cli.main(["user", "list"]) == 0
+    assert "yes" in capsys.readouterr().out.splitlines()[1].split("boss@example.com")[0]
+
+    assert cli.main(["user", "set-editor", "boss@example.com", "--off"]) == 0
+    assert "is no longer a platform editor" in capsys.readouterr().out
+    assert cli.main(["user", "set-editor", "ghost@example.com"]) == 1
+    assert "there is no user" in capsys.readouterr().err

@@ -41,6 +41,39 @@ def add(
     CATALOG[(method, V1 + template)] = build
 
 
+def incident_document(source: Any) -> dict[str, Any]:
+    """The content of an incident, as the editor sends it."""
+    return {
+        "title": "An example incident",
+        "summary": "Funds were reported taken from a wallet.",
+        "kind": "theft",
+        "occurred_on": "2026-01-15",
+        "evidence": [
+            {
+                "ref": "e1",
+                "publisher": "An analytics firm",
+                "title": "A report",
+                "url": "https://example.org/report",
+                "kind": "analytics",
+                "retrieved_on": "2026-01-16",
+            }
+        ],
+        "amounts": [{"evidence_ref": "e1", "amount_usd_low": 1000}],
+        "addresses": [
+            {
+                "chain": "ethereum",
+                "address": source.address(),
+                "role": "ATTACKER_FUNDS_RECEIVER",
+                "attribution_status": "REPORTED_BY_ANALYST",
+                "evidence_ref": "e1",
+            }
+        ],
+        "updates": [
+            {"occurred_at": "2026-01-15T10:00:00Z", "kind": "event", "body": "It was noticed."}
+        ],
+    }
+
+
 def link_path(source: Any) -> str:
     case = source.case()
     return f"/cases/{case}/links/{source.link(case)}"
@@ -207,6 +240,38 @@ add("GET", "/api-keys")
 add("POST", "/api-keys", json=lambda s: {"name": "ci", "role": "viewer", "expires_in_days": 30})
 add("DELETE", "/api-keys/{key_id}", path=lambda s: f"/api-keys/{s.key()}")
 add("GET", "/audit")
+
+# --- the platform editor's incidents (global; Acme's administrator is the editor) ----------------
+add("GET", "/editor/incidents")
+add(
+    "POST",
+    "/editor/incidents",
+    json=lambda s: {"slug": f"example-{s.address()[-8:]}", **incident_document(s)},
+)
+add(
+    "GET",
+    "/editor/incidents/{incident_id}",
+    path=lambda s: f"/editor/incidents/{s.incident()}",
+)
+add(
+    "PUT",
+    "/editor/incidents/{incident_id}/content",
+    path=lambda s: f"/editor/incidents/{s.incident()}/content",
+    json=incident_document,
+)
+add(
+    "POST",
+    "/editor/incidents/{incident_id}/transition",
+    path=lambda s: f"/editor/incidents/{s.incident()}/transition",
+    json=lambda s: {"to": "in_review"},
+)
+add(
+    "POST",
+    "/editor/incidents/{incident_id}/updates",
+    path=lambda s: f"/editor/incidents/{s.incident()}/updates",
+    json=lambda s: {"occurred_at": "2026-01-16T10:00:00Z", "kind": "statement", "body": "Said."},
+)
+add("DELETE", "/editor/incidents/{incident_id}", path=lambda s: f"/editor/incidents/{s.incident()}")
 
 # --- from the provider, not from a person -------------------------------------------------------
 add(

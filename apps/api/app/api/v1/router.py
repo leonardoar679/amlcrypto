@@ -11,6 +11,7 @@ from app.api.v1 import (
     auth,
     cases,
     chains,
+    editor_incidents,
     graph,
     health,
     intel,
@@ -42,3 +43,4 @@ api_router.include_router(webhooks.router)
 api_router.include_router(users.router)
 api_router.include_router(api_keys.router)
 api_router.include_router(audit.router)
+api_router.include_router(editor_incidents.router)
