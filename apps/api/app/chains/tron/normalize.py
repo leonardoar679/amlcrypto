@@ -41,6 +41,7 @@ from app.chains.values import (
     clean_text,
     optional_int,
     raw_amount,
+    refusing_malformed,
     to_int,
 )
 
@@ -62,6 +63,7 @@ def hex_to_base58(text: str) -> str:
     return b58check_encode(bytes.fromhex(text))
 
 
+@refusing_malformed
 def tron_address(value: Any) -> str:
     """A Base58 TRON address from either the hex or the Base58 form, checked."""
     text = str(value or "").strip()
@@ -75,6 +77,7 @@ def tron_address(value: Any) -> str:
     return check.normalized
 
 
+@refusing_malformed
 def txid_of(value: Any) -> str:
     text = str(value or "").strip().lower().removeprefix("0x")
     if not _TXID.match(text):
@@ -208,6 +211,7 @@ def _contract_movements(
 # --- the address feeds -------------------------------------------------------------------------
 
 
+@refusing_malformed
 def tron_transaction(
     row: dict[str, Any], chain: TronChain, provider: str = "trongrid"
 ) -> Transaction:
@@ -246,6 +250,7 @@ def tron_transaction(
     )
 
 
+@refusing_malformed
 def tron_native_transfers(
     row: dict[str, Any], chain: TronChain, provider: str = "trongrid"
 ) -> list[Transfer]:
@@ -265,6 +270,7 @@ def tron_native_transfers(
     return _contract_movements(kind, value, common, chain)
 
 
+@refusing_malformed
 def tron_internal_transfer(
     row: dict[str, Any], chain: TronChain, provider: str = "trongrid"
 ) -> Transfer | None:
@@ -294,6 +300,7 @@ def tron_internal_transfer(
     )
 
 
+@refusing_malformed
 def tron_trc20_transfer(
     row: dict[str, Any], chain: TronChain, provider: str = "trongrid"
 ) -> Transfer | None:
@@ -329,6 +336,7 @@ def tron_trc20_transfer(
 # --- one transaction's details -----------------------------------------------------------------
 
 
+@refusing_malformed
 def tron_transaction_from_details(
     tx: dict[str, Any],
     info: dict[str, Any],
@@ -372,6 +380,7 @@ def tron_transaction_from_details(
     )
 
 
+@refusing_malformed
 def tron_transfers_from_details(
     tx: dict[str, Any],
     info: dict[str, Any],

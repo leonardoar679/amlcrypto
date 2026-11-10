@@ -45,7 +45,7 @@ RULES: tuple[Rule, ...] = (
         "Indirect sanctions exposure",
         "Value could have travelled between the address and a sanctioned one through other "
         "addresses, in the order of time.",
-        "1.0.0",
+        "1.0.1",
         Severity.HIGH,
         "indirect_sanctions",
         20,
@@ -58,7 +58,7 @@ RULES: tuple[Rule, ...] = (
         "Mixer interaction",
         "Value moved between the address and a known mixing service, directly or through "
         "a few others.",
-        "1.0.0",
+        "1.0.1",
         Severity.HIGH,
         "mixer",
         30,
@@ -116,7 +116,7 @@ RULES: tuple[Rule, ...] = (
         "High-risk incoming funds",
         "Value could have reached the address from one a source flags as risky (a mixer, a "
         "scam, ransomware, stolen funds, a darknet market or phishing, or sanctions).",
-        "1.0.0",
+        "1.0.1",
         Severity.HIGH,
         "scam_ransomware",
         70,
@@ -128,7 +128,7 @@ RULES: tuple[Rule, ...] = (
         "AML-008",
         "High-risk outgoing funds",
         "Value from the address could have reached one a source flags as risky.",
-        "1.0.0",
+        "1.0.1",
         Severity.HIGH,
         "scam_ransomware",
         80,
@@ -200,8 +200,9 @@ RULES: tuple[Rule, ...] = (
     Rule(
         "AML-014",
         "Suspicious concentration",
-        "Nearly all of the value in or out of an asset goes through a single counterparty.",
-        "1.0.0",
+        "Nearly all of the value in or out of an asset goes through a single counterparty, other "
+        "than one a source labels as an exchange, a DeFi protocol, a bridge or a gambling service.",
+        "1.0.1",
         Severity.LOW,
         "unusual",
         140,

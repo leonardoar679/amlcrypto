@@ -127,8 +127,27 @@ def test_a_keyless_provider_needs_no_key_and_sends_none():
 
 
 def test_a_body_that_is_not_json_comes_back_as_text():
-    rig = make(Reply(text="<html>maintenance</html>"))
-    assert run(get(rig)).data == "<html>maintenance</html>"
+    rig = make(Reply(text="pong"))
+    assert run(get(rig)).data == "pong"
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        Reply(text="<html>maintenance</html>"),
+        Reply(text="Please wait...", headers={"Content-Type": "text/html; charset=utf-8"}),
+        Reply(text="   <!DOCTYPE html><title>Just a moment...</title>"),
+    ],
+)
+def test_a_web_page_in_place_of_data_is_the_provider_being_away_and_is_retried(reply):
+    """Something in front of the API answered with a page (maintenance, a challenge): taking it for
+    a malformed answer would fail the request for good; it is an outage, so it is tried again."""
+    rig = make(reply, max_retries=2)
+
+    with pytest.raises(ProviderUnavailable, match="web page"):
+        run(get(rig))
+
+    assert len(rig.server.requests) == 3  # the first try and two more
 
 
 def test_json_bodies_are_posted_and_every_request_identifies_the_platform():

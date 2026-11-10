@@ -17,16 +17,21 @@ from typing import Any
 
 from app.graph.model import Flow, GraphEdge
 from app.graph.patterns import detect_fans
+from app.intel.model import Category
 from app.risk.model import RuleOutcome
 from app.risk.rules.base import (
     Rule,
     RuleContext,
     flow_summary,
+    has_category,
     newest,
     transactions_of,
 )
 
 DAY = 86_400
+# What a source says an address is, when that is a service people use as it is meant to be used:
+# nearly everything an exchange's customer sends or receives goes through the one exchange.
+SERVICES = (Category.EXCHANGE, Category.DEFI, Category.BRIDGE, Category.GAMBLING)
 
 
 def _no_history(ctx: RuleContext) -> RuleOutcome | None:
@@ -448,7 +453,9 @@ def dormant_activation(rule: Rule, ctx: RuleContext, cfg: Mapping[str, Any]) -> 
 
 
 def concentration(rule: Rule, ctx: RuleContext, cfg: Mapping[str, Any]) -> RuleOutcome:
-    """Almost all of the value in (or out) of one asset goes through one counterparty."""
+    """Almost all of the value in (or out) of one asset goes through one counterparty, unless a
+    source says that counterparty is an exchange, a DeFi protocol, a bridge or a gambling service:
+    that is what ordinary use of one looks like."""
     if (early := _no_history(ctx)) is not None:
         return early
     address = ctx.root.address
@@ -468,8 +475,10 @@ def concentration(rule: Rule, ctx: RuleContext, cfg: Mapping[str, Any]) -> RuleO
                 totals[flow.source if direction == "incoming" else flow.target] += flow.amount
             who, top = max(totals.items(), key=lambda item: (item[1], item[0]))
             whole = sum(totals.values())
-            if top * 100 < whole * percent:
-                continue
+            if whole == 0 or top * 100 < whole * percent:
+                continue  # nothing of value moved (address poisoning sends zero), or no one party
+            if has_category(ctx.node(f"{ctx.chain}:{who}"), *SERVICES):
+                continue  # ordinary use of a service, not a pass-through
             ones = [f for f in flows if (f.source if direction == "incoming" else f.target) == who]
             txs, total = transactions_of(ones)
             symbol = flows[0].asset.symbol or key

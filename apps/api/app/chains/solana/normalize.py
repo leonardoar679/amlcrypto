@@ -31,7 +31,7 @@ from app.chains.models import Asset, Confirmation, DataQuality, Transfer, Transf
 from app.chains.solana.address import SolanaAddressValidator
 from app.chains.solana.chains import SolanaChain
 from app.chains.solana.models import SolanaTransaction, SolChange, TokenChange, Unattributed
-from app.chains.values import MalformedRow, raw_amount, to_int
+from app.chains.values import MalformedRow, raw_amount, refusing_malformed, to_int
 
 SYSTEM_PROGRAM = "11111111111111111111111111111111"
 TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
@@ -59,6 +59,7 @@ _VALIDATOR = SolanaAddressValidator()
 # --- scalars -----------------------------------------------------------------------------------
 
 
+@refusing_malformed  # outside the cache, which cannot hash a list
 @lru_cache(maxsize=8192)
 def solana_address(value: Any) -> str:
     check = _VALIDATOR.check(str(value or ""))
@@ -67,6 +68,7 @@ def solana_address(value: Any) -> str:
     return check.normalized
 
 
+@refusing_malformed
 def signature_of(value: Any) -> str:
     """A transaction signature: 64 bytes in Base58."""
     text = str(value or "").strip()
@@ -418,6 +420,7 @@ def _instruction(walk: _Walk, ix: Any, position: str, nested: bool) -> None:
 # --- the transaction ---------------------------------------------------------------------------
 
 
+@refusing_malformed
 def solana_transaction(
     item: Any, chain: SolanaChain, provider: str = "helius"
 ) -> SolanaTransaction:

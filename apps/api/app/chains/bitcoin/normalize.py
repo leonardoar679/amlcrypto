@@ -18,7 +18,7 @@ from app.chains.bitcoin.address import BitcoinAddressValidator
 from app.chains.bitcoin.chains import BitcoinChain
 from app.chains.bitcoin.models import BitcoinTransaction, SpendState, TxInput, TxOutput
 from app.chains.models import Confirmation, DataQuality
-from app.chains.values import MalformedRow, clean_text, raw_amount, to_int
+from app.chains.values import MalformedRow, clean_text, raw_amount, refusing_malformed, to_int
 
 OP_RETURN = "op_return"
 _TXID = re.compile(r"^[0-9a-fA-F]{64}$")
@@ -26,6 +26,7 @@ _VALIDATOR = BitcoinAddressValidator()
 MAX_IO = 100_000  # far above any valid transaction; bounds the work done on hostile input
 
 
+@refusing_malformed
 def txid_of(value: Any) -> str:
     text = str(value or "").strip().lower()
     if not _TXID.match(text):
@@ -94,6 +95,7 @@ def _moment(value: Any) -> datetime:
         raise MalformedRow("timestamp out of range") from error
 
 
+@refusing_malformed
 def esplora_transaction(
     tx: Any, chain: BitcoinChain, provider: str = "esplora"
 ) -> BitcoinTransaction:
@@ -164,6 +166,7 @@ def unresolved_inputs(tx: BitcoinTransaction) -> int:
     return sum(1 for item in tx.inputs if not item.is_coinbase and item.value_raw is None)
 
 
+@refusing_malformed
 def apply_outspends(tx: BitcoinTransaction, outspends: Any) -> BitcoinTransaction:
     """Say, for each output, whether it has been spent and by what (Esplora's /tx/:txid/outspends).
 

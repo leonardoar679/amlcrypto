@@ -247,7 +247,9 @@ class ProviderClient:
                 status = response.status_code
                 if 200 <= status < 300:
                     data = _parse_body(response)
-                    problem = self._check_body(provider, body_check, data)
+                    problem = _web_page(provider, response, data) or self._check_body(
+                        provider, body_check, data
+                    )
                 elif status in accept:
                     data = _parse_body(response)
                     problem = None
@@ -432,6 +434,17 @@ def _problem_for_status(provider: str, response: httpx2.Response) -> ProviderErr
     if status >= 500 or status == 408:
         return ProviderUnavailable(provider, f"HTTP {status}")
     return ProviderBadResponse(provider, f"HTTP {status}")
+
+
+def _web_page(provider: str, response: httpx2.Response, data: Any) -> ProviderError | None:
+    """A success whose body is a web page is not an answer: it is a maintenance or challenge page
+    from something in front of the API, which means the provider is away for now. (Taken for a
+    malformed answer it would fail the request for good instead of retrying it.)"""
+    if not isinstance(data, str):
+        return None
+    if "html" in response.headers.get("content-type", "").lower() or data.lstrip().startswith("<"):
+        return ProviderUnavailable(provider, "the answer was a web page, not data")
+    return None
 
 
 def _parse_body(response: httpx2.Response) -> Any:

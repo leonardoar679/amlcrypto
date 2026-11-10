@@ -37,6 +37,10 @@ T = TypeVar("T")
 
 STALE_AFTER = timedelta(days=1)  # older than this, the node says how old its history is
 _CUT = {StreamStatus.PARTIAL, StreamStatus.TRUNCATED}
+# The notes a read leaves about itself that say movements of value are missing from it: rows the
+# provider sent that could not be read, events in a shape nobody decodes, amounts that may be short.
+# The others are context (a height that could not be had, a token symbol a receipt does not carry).
+_LOSS = ("were skipped", "were not read", "shape this reader does not know", "may be short")
 
 
 @dataclass(slots=True)
@@ -100,6 +104,11 @@ def judge(coverage: dict[str, Coverage], node: str) -> tuple[NodeCoverage, list[
     notes: list[str] = []
     for row in coverage.values():
         notes += [note for note in row.notes if note not in notes]
+    lost = [note for note in notes if any(phrase in note for phrase in _LOSS)]
+    if lost:
+        # Movements that were sent and could not be read are not in the graph: it says so, and so
+        # the report built on it is not called complete.
+        gaps.append(Gap("rows_not_read", f"{node}: {'; '.join(lost)}", node))
     state = "partial" if cut else "complete"
     return (
         NodeCoverage(

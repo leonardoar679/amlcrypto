@@ -41,6 +41,7 @@ from app.chains.values import (
     assign_occurrences,
     clean_text,
     raw_amount,
+    refusing_malformed,
     to_int,
 )
 from app.chains.values import optional_int as _optional_int
@@ -58,6 +59,7 @@ _TRACE_ID = re.compile(r":internal:(\d+)$")
 # --- scalars -----------------------------------------------------------------------------------
 
 
+@refusing_malformed
 def address_of(value: Any, *, optional: bool = False) -> str | None:
     """A lowercase 0x address. Empty values are None when `optional`, otherwise an error."""
     if value is None or value == "":
@@ -70,6 +72,7 @@ def address_of(value: Any, *, optional: bool = False) -> str | None:
     return text.lower()
 
 
+@refusing_malformed
 def hash_of(value: Any) -> str:
     text = str(value or "").strip()
     if not _HASH.match(text):
@@ -112,6 +115,7 @@ def _etherscan_failed(row: dict[str, Any]) -> bool:
     return row.get("isError") == "1" or row.get("txreceipt_status") == "0"
 
 
+@refusing_malformed
 def etherscan_transaction(
     row: dict[str, Any], chain: EvmChain, provider: str = "etherscan"
 ) -> Transaction:
@@ -141,6 +145,7 @@ def etherscan_transaction(
     )
 
 
+@refusing_malformed
 def etherscan_native_transfer(
     row: dict[str, Any], chain: EvmChain, provider: str = "etherscan"
 ) -> Transfer | None:
@@ -170,6 +175,7 @@ def etherscan_native_transfer(
     )
 
 
+@refusing_malformed
 def etherscan_internal_transfer(
     row: dict[str, Any], chain: EvmChain, provider: str = "etherscan"
 ) -> Transfer | None:
@@ -200,6 +206,7 @@ def etherscan_internal_transfer(
     )
 
 
+@refusing_malformed
 def etherscan_token_transfer(
     row: dict[str, Any], chain: EvmChain, provider: str = "etherscan"
 ) -> Transfer:
@@ -236,6 +243,7 @@ def etherscan_token_transfer(
 # --- Alchemy -----------------------------------------------------------------------------------
 
 
+@refusing_malformed
 def alchemy_transfer(
     row: dict[str, Any],
     chain: EvmChain,
@@ -302,6 +310,7 @@ def alchemy_transfer(
 # --- a node's own transaction and receipt ------------------------------------------------------
 
 
+@refusing_malformed
 def transaction_from_rpc(
     tx: dict[str, Any],
     receipt: dict[str, Any],
@@ -336,6 +345,7 @@ def transaction_from_rpc(
     )
 
 
+@refusing_malformed
 def transfers_from_receipt(
     tx: dict[str, Any],
     receipt: dict[str, Any],

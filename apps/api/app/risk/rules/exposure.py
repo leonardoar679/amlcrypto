@@ -33,6 +33,31 @@ def _labels_in(path: ExposurePath, ctx: RuleContext, *categories: Category) -> l
     return [label for label in risk_labels(ctx.node(path.target)) if label.category in categories]
 
 
+def _via(path: ExposurePath, ctx: RuleContext) -> list[dict[str, Any]]:
+    """The addresses a route passes through that a source says something about, with what it says.
+    An exchange in the middle of a route is the context an analyst needs to judge it: value that an
+    exchange received may have left it for anyone."""
+    found = []
+    for node_id in path.intermediaries:
+        node = ctx.node(node_id)
+        if node is not None and node.intel is not None and node.intel.labels:
+            found.append(
+                {
+                    "address": node_id.split(":", 1)[-1],
+                    "labels": [label_dict(label) for label in node.intel.labels],
+                }
+            )
+    return found
+
+
+def _named(via: list[dict[str, Any]]) -> str:
+    names = []
+    for item in via:
+        first = item["labels"][0]
+        names.append(first["entity"] or first["category"].lower())
+    return ", ".join(dict.fromkeys(names))
+
+
 def _path_finding(
     rule: Rule,
     ctx: RuleContext,
@@ -53,10 +78,12 @@ def _path_finding(
     who = strongest.entity_name or path.target.split(":", 1)[-1]
     kinds = "/".join(sorted({label.category.value for label in labels}))
     hop_word = "hop" if path.length == 1 else "hops"
+    via = _via(path, ctx)
     return rule.finding(
         description=(
             f"{'Received' if path.direction == 'incoming' else 'Sent'} value {toward} {who} "
             f"({kinds}, {strongest.source.slug}), {path.length} {hop_word} away"
+            + (f", via {_named(via)}" if via else "")
         ),
         key=("exposure", path.target, path.direction),
         confidence=strongest.confidence / 100 * quality,
@@ -79,6 +106,7 @@ def _path_finding(
                 "contains_bridge": path.contains_bridge,
                 "upper_bound_raw": path.upper_bound_raw,
                 "labels": [label_dict(label) for label in labels],
+                **({"via": via} if via else {}),
             },
         ),
         sources=tuple(sorted({label.source.slug for label in labels})),
