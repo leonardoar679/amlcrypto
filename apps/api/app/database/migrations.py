@@ -37,6 +37,13 @@ def head_revision() -> str | None:
     return ScriptDirectory.from_config(alembic_config()).get_current_head()
 
 
+def known_revisions() -> set[str]:
+    """Every revision this version of the code has a migration for."""
+    return {
+        script.revision for script in ScriptDirectory.from_config(alembic_config()).walk_revisions()
+    }
+
+
 def current_revision(engine: Engine) -> str | None:
     with engine.connect() as connection:
         return MigrationContext.configure(connection).get_current_revision()

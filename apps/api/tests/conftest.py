@@ -124,6 +124,29 @@ def migrated_template(tmp_path_factory: pytest.TempPathFactory) -> Path | None:
     return path
 
 
+@pytest.fixture(scope="session")
+def sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """A migrated SQLite database to copy, whichever database the rest of the tests use (for the
+    tests of backups and of copying one database into another)."""
+    path = tmp_path_factory.mktemp("sqlite-template") / "template.db"
+    url = f"sqlite:///{path.as_posix()}"
+    migrations.upgrade(url)
+    engine = create_db_engine(url)
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+    engine.dispose()
+    return path
+
+
+@pytest.fixture
+def sqlite_url(sqlite_template: Path, tmp_path: Path) -> str:
+    """The URL of a fresh copy of that database, for one test to use up."""
+    target = tmp_path / "sqlite-copy" / "aml.db"
+    target.parent.mkdir()
+    shutil.copyfile(sqlite_template, target)
+    return f"sqlite:///{target.as_posix()}"
+
+
 @pytest.fixture
 def database_url(migrated_template: Path | None, tmp_path: Path) -> str:
     if MYSQL_URL:

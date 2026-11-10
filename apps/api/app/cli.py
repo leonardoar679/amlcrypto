@@ -6,12 +6,16 @@ import argparse
 import asyncio
 import getpass
 import json
+import os
 import sys
 from collections.abc import Awaitable, Callable
+from dataclasses import asdict
 from pathlib import Path
 from typing import TypeVar
 
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.access.audit import Actor, record
@@ -59,6 +63,10 @@ from app.ingestion.sync import SyncPolicy, sync_history
 from app.intel.importer import OFAC_SLUG, ImportFailed, refresh_source
 from app.intel.lookup import UnknownAddress, lookup, source_statuses
 from app.intel.service import watchman_client, with_second_opinion
+from app.operations import backup as backups
+from app.operations import copy as copying
+from app.operations import doctor
+from app.operations.backup import OperationError
 from app.providers.base import ProviderError
 from app.providers.budget import RequestBudget
 from app.providers.rawsink import RawSink
@@ -220,6 +228,117 @@ def _cmd_audit_list(args: argparse.Namespace) -> int:
         print(
             f"{row.created_at:%Y-%m-%d %H:%M:%S}  {row.outcome:<7} {row.action:<22} {who}{target}"
         )
+    return 0
+
+
+def _megabytes(size: int) -> str:
+    return f"{size / 1_048_576:.1f} MB"
+
+
+def _cmd_backup(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    directory = Path(args.to) if args.to else settings.resolved_data_dir / "backups"
+    made = backups.backup(settings.resolved_database_url, directory)
+    manifest = made.manifest
+    print(f"Backed up to {made.path}")
+    print(
+        f"  {_megabytes(manifest.size_bytes)}, {manifest.rows} rows in {len(manifest.tables)} "
+        f"tables, schema revision {manifest.schema_revision}"
+    )
+    print(f"  sha256 {manifest.sha256}")
+    if args.keep is not None:
+        for old in backups.prune(directory, args.keep):
+            print(f"Removed the older backup {old.name}")
+    return 0
+
+
+def _cmd_backup_verify(args: argparse.Namespace) -> int:
+    checked = backups.verify(Path(args.file))
+    if not checked.ok:
+        print(f"{args.file} is NOT a good backup:", file=sys.stderr)
+        for problem in checked.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    assert checked.manifest is not None
+    manifest = checked.manifest
+    print(f"{args.file} is a good backup.")
+    print(
+        f"  made {manifest.created_at} by version {manifest.app_version}; "
+        f"{manifest.rows} rows in {len(manifest.tables)} tables; "
+        f"revision {manifest.schema_revision}"
+    )
+    return 0
+
+
+def _cmd_restore(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    restored = backups.restore(
+        Path(args.file), settings.resolved_database_url, replace=args.replace
+    )
+    print(f"Restored {args.file} as {restored.target}")
+    if restored.kept_previous is not None:
+        print(f"The database that was there is kept as {restored.kept_previous}")
+    revision = restored.manifest.schema_revision
+    if revision != migrations.head_revision():
+        print(
+            f"The backup is at revision {revision}, older than this version's "
+            f"{migrations.head_revision()}: run `migrate` before starting the API."
+        )
+    return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    engine = create_db_engine(settings.resolved_database_url, **settings.pool_options)
+    try:
+        found = doctor.examine(settings, engine)
+    finally:
+        engine.dispose()
+    failed = [item for item in found if item.status == doctor.FAIL]
+    if args.json:
+        print(json.dumps([asdict(item) for item in found], indent=2))
+    else:
+        for item in found:
+            print(f"{item.status:<5} {item.name}: {item.detail}")
+        warned = sum(1 for item in found if item.status == doctor.WARN)
+        print(f"{len(found)} checks: {len(failed)} FAIL, {warned} WARN")
+    return 1 if failed else 0
+
+
+def _shown(url: str) -> str:
+    return make_url(url).render_as_string(hide_password=True)
+
+
+def _cmd_copy_database(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    source_url = args.source or settings.resolved_database_url
+    if args.to_env:
+        target_url = os.environ.get(args.to_env, "")
+        if not target_url:
+            raise OperationError(f"The environment variable {args.to_env} is not set.")
+    else:
+        target_url = args.to
+    if make_url(source_url) == make_url(target_url):
+        raise OperationError("The source and the target are the same database.")
+    print(f"Copying {_shown(source_url)} into {_shown(target_url)}")
+    migrations.upgrade(target_url)  # the schema, on a new target; a no-op on one that has it
+    source = create_db_engine(source_url)
+    target = create_db_engine(target_url, **settings.pool_options)
+    try:
+
+        def progress(table: str, done: int, total: int) -> None:
+            if done == total:
+                print(f"  {table}: {total} rows")
+
+        report = copying.copy_database(source, target, batch=args.batch, progress=progress)
+    finally:
+        source.dispose()
+        target.dispose()
+    print(
+        f"Copied {report.rows} rows in {len(report.tables)} tables (schema revision "
+        f"{report.revision}). Every table was read back from the target and matched the source."
+    )
+    print("Point DATABASE_URL at the target and restart the API and the worker.")
     return 0
 
 
@@ -782,6 +901,52 @@ def main(argv: list[str] | None = None) -> int:
         "providers", help="show which data providers are configured (no network)"
     ).set_defaults(run=_cmd_providers)
 
+    check = commands.add_parser(
+        "doctor",
+        help="check that this installation is set up to be relied on (changes nothing)",
+    )
+    check.add_argument("--json", action="store_true", help="the findings as JSON")
+    check.set_defaults(run=_cmd_doctor)
+
+    backup = commands.add_parser(
+        "backup", help="make a verified backup of the SQLite database (safe while it is in use)"
+    )
+    backup.add_argument("--to", help="the directory for backups (default: DATA_DIR/backups)")
+    backup.add_argument("--keep", type=int, help="afterwards keep only this many of the newest")
+    backup.set_defaults(run=_cmd_backup)
+
+    backup_verify = commands.add_parser(
+        "backup-verify", help="check a backup file against its manifest and its own integrity"
+    )
+    backup_verify.add_argument("file")
+    backup_verify.set_defaults(run=_cmd_backup_verify)
+
+    restore = commands.add_parser(
+        "restore", help="put a backup in place as the database (stop the API and the worker first)"
+    )
+    restore.add_argument("file")
+    restore.add_argument(
+        "--replace",
+        action="store_true",
+        help="replace the database that is there (it is kept beside the restored one)",
+    )
+    restore.set_defaults(run=_cmd_restore)
+
+    copy_database = commands.add_parser(
+        "copy-database",
+        help="copy the whole database into another (SQLite into MySQL), verified, all or nothing",
+    )
+    copy_database.add_argument("--from", dest="source", help="default: the configured DATABASE_URL")
+    target = copy_database.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "--to", help="the target's URL (it shows in the process list: prefer --to-env)"
+    )
+    target.add_argument(
+        "--to-env", help="the name of an environment variable holding the target's URL"
+    )
+    copy_database.add_argument("--batch", type=int, default=copying.DEFAULT_BATCH)
+    copy_database.set_defaults(run=_cmd_copy_database)
+
     probe = commands.add_parser("probe", help="check one provider is reachable and its key works")
     probe.add_argument("provider")
     probe.set_defaults(run=_cmd_probe)
@@ -1017,8 +1182,12 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     try:
         return args.run(args)
-    except (UserError, ProviderError) as exc:  # provider errors are written to be shown
+    except (UserError, ProviderError, OperationError) as exc:  # written to be shown
         print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except OperationalError as exc:  # the database is away, locked or refuses us
+        reason = str(getattr(exc, "orig", exc)).splitlines()[0][:300]
+        print(f"error: the database could not be used: {reason}", file=sys.stderr)
         return 1
 
 
