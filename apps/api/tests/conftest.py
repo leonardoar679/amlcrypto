@@ -168,6 +168,20 @@ def settings(database_url: str, tmp_path: Path) -> Settings:
     )
 
 
+class _ReadSession(Session):
+    """A read session as the MySQL harness below makes it.
+
+    In production a read session has a connection of its own, and rolling it back ends its read and
+    nothing else. The API does that on purpose, as soon as it knows what it needs, so that a request
+    holds one connection at a time. In the harness every session shares the test's one connection,
+    and a read session joined to the test's outer transaction would roll that back: the rows the
+    test created and has not committed would be gone. Closing a read session leaves the outer
+    transaction alone, so that is what ending a read means here."""
+
+    def rollback(self) -> None:
+        self.close()
+
+
 @pytest.fixture
 def app(settings: Settings) -> Iterator[FastAPI]:
     application = create_app(settings)
@@ -178,10 +192,14 @@ def app(settings: Settings) -> Iterator[FastAPI]:
         # Every session shares this one connection, unlike production, where reads and writes
         # use separate ones. A read session that opened a savepoint would undo, when it closes,
         # whatever a write session did on the connection after that savepoint. So reads join the
-        # outer transaction without a savepoint of their own (close() then leaves it alone), and
-        # writes get savepoints, which commit() releases.
+        # outer transaction without a savepoint of their own (close() then leaves it alone, and
+        # so does the rollback() that _ReadSession turns into a close()), and writes get
+        # savepoints, which commit() releases.
         application.state.session_factory = sessionmaker(
-            bind=connection, join_transaction_mode="rollback_only", expire_on_commit=False
+            bind=connection,
+            class_=_ReadSession,
+            join_transaction_mode="rollback_only",
+            expire_on_commit=False,
         )
         application.state.write_session_factory = sessionmaker(
             bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False
