@@ -1,8 +1,15 @@
+import Link from 'next/link';
+import { validSlug } from '../../lib/incidents';
 import { safeHref } from '../../lib/links';
 import { ago, formatWhen, humanize, percent } from '../../lib/risk';
 
+// The label source that is written by this platform's editors, whose claims each name the incident
+// they come from (the page of an incident is /incidents/<its name>).
+const INCIDENT_SOURCE = 'incident_tracker';
+
 function Claim({ label }) {
   const href = safeHref(label.source_url);
+  const incident = label.source?.slug === INCIDENT_SOURCE && validSlug(label.source_ref) ? label.source_ref : null;
   return (
     <li className="claim">
       <div className="claim-head">
@@ -46,6 +53,14 @@ function Claim({ label }) {
           <div>
             <dt>Withdrawn</dt>
             <dd>{formatWhen(label.removed_at)}</dd>
+          </div>
+        ) : null}
+        {incident ? (
+          <div>
+            <dt>Incident</dt>
+            <dd>
+              <Link href={`/incidents/${incident}`}>Read what was reported</Link>
+            </dd>
           </div>
         ) : null}
         {href ? (

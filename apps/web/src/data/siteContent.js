@@ -3,6 +3,7 @@ import { supportMailto } from '../config/brand';
 export const navItems = [
   { label: 'Products', href: '/#products' },
   { label: 'Screening', href: '/products/screening' },
+  { label: 'Incidents', href: '/incidents' },
   { label: 'FAQ', href: '/faq' },
   { label: 'Contact', href: supportMailto }
 ];
@@ -75,6 +76,7 @@ export const footerLinks = {
     { label: 'Investigations', href: '/products/investigations' }
   ],
   resources: [
+    { label: 'Incidents', href: '/incidents' },
     { label: 'FAQ', href: '/faq' },
     { label: 'Try a screening', href: '/check' },
     { label: 'Sign in', href: '/auth' }

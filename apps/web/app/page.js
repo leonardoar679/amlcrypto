@@ -139,6 +139,23 @@ export default function HomePage() {
           </div>
         </section>
 
+        <section className="section">
+          <div className="container">
+            <div className="section-heading center">
+              <h2>
+                Read how <strong>incidents</strong> are reported
+              </h2>
+              <p>
+                Hacks, thefts and exploits, each with the sources behind it, the amounts as each source states them and the
+                addresses named, with how firmly. Open to everyone; no account needed.
+              </p>
+              <Link className="btn btn-dark" href="/incidents">
+                Read the incidents
+              </Link>
+            </div>
+          </div>
+        </section>
+
         <section className="home-screening-strip">
           <div className="container home-screening-strip-grid">
             <div>

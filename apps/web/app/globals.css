@@ -2998,3 +2998,246 @@ img {
 .link-list li {
   margin-bottom: 0.4rem;
 }
+
+/* ---------- Incidents: the pages anybody may read ---------- */
+
+.incident-page {
+  min-height: calc(100vh - 4.5rem);
+  padding: 2.5rem 0 4rem;
+  background: var(--bg-alt);
+}
+
+.incident-page .container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  max-width: 920px;
+}
+
+.incident-head h1 {
+  font-size: 1.9rem;
+  margin: 0 0 0.6rem;
+}
+
+.incident-head .lead {
+  margin: 0;
+}
+
+.incident-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.incident-items,
+.incident-addresses,
+.incident-sources,
+.incident-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.incident-item {
+  padding: 1.3rem 1.5rem;
+}
+
+.incident-item h2 {
+  font-size: 1.2rem;
+  margin: 0.5rem 0;
+}
+
+.incident-item h2 a:hover {
+  text-decoration: underline;
+}
+
+.incident-item p:last-child {
+  margin-bottom: 0;
+}
+
+.incident-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.incident-filters nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.filter-label {
+  min-width: 3.4rem;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.filter-link {
+  padding: 0.25rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 0.86rem;
+}
+
+.filter-link:hover {
+  border-color: var(--text-soft);
+}
+
+.filter-link.is-active {
+  border-color: transparent;
+  background: var(--info-bg);
+  color: var(--info-text);
+  font-weight: 600;
+}
+
+.incident-pages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.incident-lookup {
+  padding: 1.3rem 1.5rem;
+}
+
+.incident-lookup h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.8rem;
+}
+
+.incident-hit-role {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.field-grow {
+  flex: 1 1 18rem;
+}
+
+.incident-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.incident-detail .card {
+  padding: 1.4rem 1.6rem;
+}
+
+.incident-detail h2 {
+  font-size: 1.2rem;
+  margin: 0 0 0.8rem;
+}
+
+.incident-detail h3 {
+  font-size: 1rem;
+  margin: 1.1rem 0 0.5rem;
+}
+
+.incident-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.incident-address-head,
+.incident-timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.incident-address {
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.incident-addresses > li {
+  padding: 1.1rem 1.3rem;
+}
+
+.incident-addresses p {
+  margin: 0 0 0.4rem;
+}
+
+.incident-timeline {
+  margin-bottom: 0;
+}
+
+.incident-quote {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.9rem;
+  border-left: 3px solid var(--border);
+  color: var(--text-soft);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Incidents: the editor ---------- */
+
+.editor-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin: 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-alt);
+}
+
+.editor-row legend {
+  padding: 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.editor-row > .btn {
+  align-self: flex-start;
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.editor-problems {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.editor-warning {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.88rem;
+}
+
+.editor-save {
+  position: sticky;
+  bottom: 0.8rem;
+  z-index: 2;
+}

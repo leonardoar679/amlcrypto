@@ -31,7 +31,9 @@ const ALLOWED = {
     /^cases\/\d{1,18}\/export$/,
     /^users$/,
     /^api-keys$/,
-    /^audit$/
+    /^audit$/,
+    /^editor\/incidents$/,
+    /^editor\/incidents\/\d{1,18}$/
   ],
   POST: [
     /^address\/validate$/,
@@ -45,15 +47,23 @@ const ALLOWED = {
     /^auth\/password$/,
     /^users$/,
     /^users\/\d{1,18}\/password$/,
-    /^api-keys$/
+    /^api-keys$/,
+    /^editor\/incidents$/,
+    /^editor\/incidents\/\d{1,18}\/(transition|updates)$/
   ],
+  PUT: [/^editor\/incidents\/\d{1,18}\/content$/],
   PATCH: [
     /^users\/\d{1,18}$/,
     /^monitoring\/addresses\/\d{1,18}$/,
     /^alerts\/\d{1,18}$/,
     /^cases\/\d{1,18}$/
   ],
-  DELETE: [/^api-keys\/\d{1,18}$/, /^monitoring\/addresses\/\d{1,18}$/, /^cases\/\d{1,18}\/links\/\d{1,18}$/]
+  DELETE: [
+    /^api-keys\/\d{1,18}$/,
+    /^monitoring\/addresses\/\d{1,18}$/,
+    /^cases\/\d{1,18}\/links\/\d{1,18}$/,
+    /^editor\/incidents\/\d{1,18}$/
+  ]
 };
 
 export function isAllowed(method, path) {

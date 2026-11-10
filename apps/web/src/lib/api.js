@@ -72,6 +72,7 @@ export async function apiFetch(path, { method = 'GET', body, signal } = {}) {
 export const api = {
   get: (path, options) => apiFetch(path, { ...options, method: 'GET' }),
   post: (path, body, options) => apiFetch(path, { ...options, method: 'POST', body: body === undefined ? {} : body }),
+  put: (path, body, options) => apiFetch(path, { ...options, method: 'PUT', body: body === undefined ? {} : body }),
   patch: (path, body, options) => apiFetch(path, { ...options, method: 'PATCH', body: body === undefined ? {} : body }),
   del: (path, options) => apiFetch(path, { ...options, method: 'DELETE' })
 };

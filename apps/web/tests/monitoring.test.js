@@ -258,6 +258,20 @@ test('the menu shows a person only the pages they can use', () => {
   assert.equal(visibleNav(Object.values(PERMISSIONS)).length, appNavItems.length);
 });
 
+test('the incident editor is in the menu of a platform editor and of nobody else', () => {
+  const keys = (permissions) => visibleNav(permissions).map((item) => item.key);
+  const everythingARoleHas = Object.values(PERMISSIONS).filter((name) => name !== PERMISSIONS.incidentsCurate);
+
+  // no role holds the permission, so an administrator does not see the editor ...
+  assert.equal(keys(everythingARoleHas).includes('editor'), false);
+  // ... and a person who has it sees it, whatever else they can do
+  assert.deepEqual(keys([PERMISSIONS.incidentsCurate]), ['editor', 'settings']);
+  assert.equal(keys(Object.values(PERMISSIONS)).includes('editor'), true);
+  const entry = appNavItems.find((item) => item.key === 'editor');
+  assert.equal(entry.href, '/editor/incidents');
+  assert.equal(entry.needs, PERMISSIONS.incidentsCurate);
+});
+
 test('only the alerts entry carries the count, and every entry has what the sidebar needs', () => {
   assert.deepEqual(
     appNavItems.filter((item) => item.badge).map((item) => item.key),

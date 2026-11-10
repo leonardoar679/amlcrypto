@@ -58,7 +58,15 @@ test('only the endpoints the interface needs can be reached, by the method it ne
     ['GET', 'cases/5/export'],
     ['POST', 'cases/5/notes'],
     ['POST', 'cases/5/links'],
-    ['DELETE', 'cases/5/links/9']
+    ['DELETE', 'cases/5/links/9'],
+    // the editor of the public incidents (it is the platform that decides who may write them)
+    ['GET', 'editor/incidents'],
+    ['POST', 'editor/incidents'],
+    ['GET', 'editor/incidents/7'],
+    ['PUT', 'editor/incidents/7/content'],
+    ['POST', 'editor/incidents/7/transition'],
+    ['POST', 'editor/incidents/7/updates'],
+    ['DELETE', 'editor/incidents/7']
   ];
   for (const [method, path] of reachable) {
     assert.equal(isAllowed(method, path), true, `${method} ${path}`);
@@ -144,7 +152,29 @@ test('what the interface does not need is refused, and so is the wrong method', 
     ['DELETE', 'cases/5/links'],
     ['DELETE', 'cases/5/links/abc'],
     ['PATCH', 'cases/5/links/9'],
-    ['POST', 'cases/abc/notes']
+    ['POST', 'cases/abc/notes'],
+    // the editor: the wrong method, the wrong shape, and what the browser never asks for
+    ['PATCH', 'editor/incidents/7'],
+    ['PUT', 'editor/incidents/7'],
+    ['PUT', 'editor/incidents'],
+    ['POST', 'editor/incidents/7'],
+    ['DELETE', 'editor/incidents'],
+    ['DELETE', 'editor/incidents/abc'],
+    ['GET', 'editor/incidents/abc'],
+    ['PATCH', 'editor/incidents/7/content'],
+    ['POST', 'editor/incidents/7/content'],
+    ['GET', 'editor/incidents/7/content'],
+    ['PUT', 'editor/incidents/abc/content'],
+    ['PUT', 'editor/incidents/7/transition'],
+    ['GET', 'editor/incidents/7/transition'],
+    ['POST', 'editor/incidents/abc/updates'],
+    ['DELETE', 'editor/incidents/7/updates'],
+    ['GET', 'editor'],
+    ['GET', 'editor/incidents/7/evidence'],
+    // the incidents anybody may read are read by this site's server, never by the browser through here
+    ['GET', 'public/incidents'],
+    ['GET', 'public/incidents/a-theft'],
+    ['GET', 'public/addresses/ethereum/0xabc/incidents']
   ];
   for (const [method, path] of refused) {
     assert.equal(isAllowed(method, path), false, `${method} ${path}`);
@@ -316,7 +346,12 @@ test('an id in a path is one to eighteen digits, whichever endpoint it is for', 
     ['DELETE', 'api-keys/{id}'],
     ['PATCH', 'users/{id}'],
     ['POST', 'users/{id}/password'],
-    ['GET', 'jobs/{id}']
+    ['GET', 'jobs/{id}'],
+    ['GET', 'editor/incidents/{id}'],
+    ['PUT', 'editor/incidents/{id}/content'],
+    ['POST', 'editor/incidents/{id}/transition'],
+    ['POST', 'editor/incidents/{id}/updates'],
+    ['DELETE', 'editor/incidents/{id}']
   ];
   const fill = (template, id) => template.replaceAll('{id}', id);
   for (const [method, template] of withId) {

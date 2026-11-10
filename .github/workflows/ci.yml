@@ -142,6 +142,11 @@ jobs:
           grep -iE "^x-frame-options: DENY" headers.txt
           test "$(curl -s -o /dev/null -w '%{http_code}' 'http://127.0.0.1:3000/check%25')" = "404"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/alerts)" = "307"
+          # The incidents anybody may read need the API: with it away they say so, as a page and not
+          # as an error, and an address that cannot be an incident's is a 404.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/incidents)" = "200"
+          curl -fsS http://127.0.0.1:3000/incidents | grep -q "The list is not available right now"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/incidents/Not_A_Slug)" = "404"
           test "$(docker exec aml-web id -u)" != "0"
       - name: Web container logs on failure
         if: failure()

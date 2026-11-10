@@ -31,6 +31,7 @@ test('every permission the interface asks for is spelled the way the platform sp
     'cases:read',
     'cases:write',
     'graph:update',
+    'incidents:curate',
     'monitoring:read',
     'monitoring:write',
     'providers:probe',

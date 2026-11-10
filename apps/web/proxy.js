@@ -5,7 +5,7 @@ import { SESSION_COOKIE } from './src/lib/session-cookie';
 
 // The pages that need someone to be signed in. (The pages themselves ask the backend who it is; this
 // only saves an anonymous visitor a trip through a page that would send them away.)
-const APP_PREFIXES = ['/check', '/history', '/addresses', '/graph', '/monitoring', '/alerts', '/cases', '/settings'];
+const APP_PREFIXES = ['/check', '/history', '/addresses', '/graph', '/monitoring', '/alerts', '/cases', '/editor', '/settings'];
 
 const needsSession = (pathname) => APP_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 

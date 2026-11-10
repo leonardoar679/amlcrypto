@@ -82,6 +82,10 @@ export async function POST(request, context) {
   return forward(request, context);
 }
 
+export async function PUT(request, context) {
+  return forward(request, context);
+}
+
 export async function PATCH(request, context) {
   return forward(request, context);
 }

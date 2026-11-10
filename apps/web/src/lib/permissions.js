@@ -17,7 +17,9 @@ export const PERMISSIONS = {
   casesWrite: 'cases:write',
   usersManage: 'users:manage',
   apiKeysManage: 'apikeys:manage',
-  auditRead: 'audit:read'
+  auditRead: 'audit:read',
+  // Held by no role: a platform editor has it, set from the command line (user set-editor).
+  incidentsCurate: 'incidents:curate'
 };
 
 export const ROLES = ['admin', 'analyst', 'viewer'];

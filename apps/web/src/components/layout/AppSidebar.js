@@ -11,6 +11,7 @@ import { useSession } from './SessionContext';
 import {
   AddressBookIcon,
   BellIcon,
+  DocumentIcon,
   EyeIcon,
   FolderIcon,
   GraphNodesIcon,
@@ -27,6 +28,7 @@ const iconMap = {
   eye: EyeIcon,
   bell: BellIcon,
   folder: FolderIcon,
+  document: DocumentIcon,
   settings: SettingsIcon
 };
 
