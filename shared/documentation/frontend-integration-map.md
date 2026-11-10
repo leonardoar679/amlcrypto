@@ -27,7 +27,9 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   adds `Authorization: Bearer <token>` from the cookie, and returns the answer with `Cache-Control:
   no-store`. A backend endpoint added later is **not** reachable from the browser until it is listed
   there. It refuses `/auth/login` (sign-in has its own route), checks `Origin` / `Sec-Fetch-Site` on
-  everything that is not a GET, caps a request body at 64 KB, forwards only a few headers each way, and
+  everything that is not a GET, caps a request body at 64 KB (512 KB for the one request that saves the whole
+  content of an incident, `PUT /editor/incidents/{id}/content`: an incident can name up to 200 addresses with notes,
+  about 90 KB; the example nginx file has a location of its own for it), forwards only a few headers each way, and
   clears the cookie when the API answers 401. Since M14 the headers it forwards include **who is asking**: the
   client's address (the last `X-Forwarded-For` entry, which the proxy in front of this site wrote) and user
   agent, so that the API's audit log records the person and not this server; the sign-in route does the same.

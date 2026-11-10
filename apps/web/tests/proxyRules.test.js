@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  MAX_BODY_BYTES,
+  MAX_CONTENT_BYTES,
+  bodyLimit,
   cleanPath,
   clientHeaders,
   forwardedRequestHeaders,
@@ -361,6 +364,37 @@ test('an id in a path is one to eighteen digits, whichever endpoint it is for', 
     assert.equal(isAllowed(method, fill(template, '')), false, `${method} no id`);
     assert.equal(isAllowed(method, fill(template, 'x1')), false, `${method} not a number`);
   }
+});
+
+test('the whole content of an incident may be larger than a form, and nothing else may', () => {
+  assert.equal(MAX_BODY_BYTES, 64 * 1024);
+  assert.equal(MAX_CONTENT_BYTES, 512 * 1024);
+  assert.ok(MAX_CONTENT_BYTES > MAX_BODY_BYTES && MAX_CONTENT_BYTES < 1024 * 1024); // below what the platform takes
+  assert.equal(bodyLimit('PUT', 'editor/incidents/7/content'), MAX_CONTENT_BYTES);
+  assert.equal(bodyLimit('PUT', `editor/incidents/${'1'.repeat(18)}/content`), MAX_CONTENT_BYTES);
+  for (const [method, path] of [
+    ['POST', 'editor/incidents'],
+    ['POST', 'editor/incidents/7/content'],
+    ['PATCH', 'editor/incidents/7/content'],
+    ['GET', 'editor/incidents/7/content'],
+    ['DELETE', 'editor/incidents/7/content'],
+    ['PUT', 'editor/incidents/7/transition'],
+    ['PUT', 'editor/incidents/7'],
+    ['PUT', 'editor/incidents/abc/content'],
+    ['PUT', `editor/incidents/${'1'.repeat(19)}/content`],
+    ['PUT', 'editor/incidents/7/content/extra'],
+    ['PUT', 'editor/incidents//content'],
+    ['PUT', 'xeditor/incidents/7/content'],
+    ['PUT', 'cases/7/content'],
+    ['PUT', 'users/7'],
+    ['POST', 'cases/5/notes'],
+    ['PATCH', 'cases/5'],
+    ['POST', 'screen/address']
+  ]) {
+    assert.equal(bodyLimit(method, path), MAX_BODY_BYTES, `${method} ${path}`);
+  }
+  // and the one route that may be larger is a route the proxy forwards at all
+  assert.equal(isAllowed('PUT', 'editor/incidents/7/content'), true);
 });
 
 test('each of the two ids of a link is checked on its own', () => {

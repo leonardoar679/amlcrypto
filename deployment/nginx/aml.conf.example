@@ -72,7 +72,8 @@ server {
     server_tokens off;
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
-    # The web app caps what it forwards at 64 KB; nothing it serves takes more than a form.
+    # The web app caps what it forwards at 64 KB; nothing it serves takes more than a form, except the
+    # one request below.
     client_max_body_size 128k;
     client_header_timeout 15s;
     client_body_timeout 15s;
@@ -84,6 +85,16 @@ server {
     # line, and it is per address, so one address cannot try many accounts quickly.
     location = /api/session/login {
         limit_req zone=aml_login burst=5 nodelay;
+        proxy_pass http://aml_web;
+        include /etc/nginx/aml/proxy-headers.conf;
+    }
+
+    # The one request larger than a form: an editor saving the whole content of an incident (up to 200
+    # addresses with notes, the documents and the timeline). The web app takes up to 512 KB of this one
+    # and 64 KB of everything else, so the limit here is a little above the first; the API's is 1 MiB.
+    location ~ ^/api/v1/editor/incidents/[0-9]+/content$ {
+        client_max_body_size 640k;
+        limit_req zone=aml_web burst=60 nodelay;
         proxy_pass http://aml_web;
         include /etc/nginx/aml/proxy-headers.conf;
     }

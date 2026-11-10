@@ -273,8 +273,11 @@ The pages are `noindex` and have no sitemap until a brand and a domain exist.
   minute (longer if a proxy caches them; do not cache `/incidents` for long). A correction is a timeline entry.
   The routine for a complaint is in the editorial policy.
 * **Limits at the proxy.** The example nginx file gives the API host a zone for `/api/v1/public/` (10 requests a
-  second per address, GET only) and the web host its general zone (20 a second) for the pages. Neither has been
-  through `nginx -t` (see O10 in the limitations register).
+  second per address, GET only) and the web host its general zone (20 a second) for the pages. The web host takes
+  bodies of 128 KB, except one location of its own (640 KB) for an editor saving the whole content of an incident:
+  the web app forwards 64 KB of anything and 512 KB of that one request, which an incident that names a couple of
+  hundred addresses needs (about 90 KB). Keep the two in step if you change either. None of it has been through
+  `nginx -t` (see O10 in the limitations register).
 * **If the pages are not meant to be open yet**, do not put the web host on the internet, or add authentication
   in front of `/incidents` at the proxy; the application has no switch that turns the public pages off.
 

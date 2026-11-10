@@ -86,6 +86,14 @@ test('the editor never puts what it shows into the page as markup, and opens lin
   assert.ok(/rel="noopener noreferrer"/.test(editor));
 });
 
+test('the proxy takes the size limit of a request from its route and not one number for all of them', () => {
+  const route = read('app/api/v1/[...path]/route.js');
+  assert.ok(route.includes('bodyLimit(method, relative)'), 'the limit is not asked of the route');
+  assert.ok(!route.includes('MAX_BODY_BYTES'), 'one limit for every route is used again');
+  // both checks use it: the one declared by the browser and the one of what was read
+  assert.equal(route.split('> limit').length - 1, 2);
+});
+
 test('the editor reaches the platform only by the routes the proxy lists for it', () => {
   const paths = new Set();
   for (const file of EDITOR_FILES) {

@@ -100,6 +100,20 @@ def test_the_example_proxy_does_what_the_api_and_the_web_app_count_on():
     )
     # a body larger than the API accepts never reaches it, and nothing waits forever for one
     assert "client_max_body_size 1m;" in code and "client_body_timeout" in code
+    # the web host takes a form at most, except the one request that saves a whole incident: a
+    # location of its own, with a limit a little above what the web app allows it, and nowhere else
+    assert "client_max_body_size 128k;" in code
+    assert re.search(
+        r"location ~ \^/api/v1/editor/incidents/\[0-9\]\+/content\$ \{\s*client_max_body_size 640k;"
+        r"\s*limit_req zone=aml_web",
+        code,
+    )
+    assert code.count("client_max_body_size 640k;") == 1
+    rules = (WEB / "src" / "lib" / "proxyRules.js").read_text(encoding="utf-8")
+    app_cap = re.search(r"MAX_CONTENT_BYTES = (\d+) \* 1024;", rules)
+    assert app_cap and int(app_cap.group(1)) < 640, (
+        "the proxy must take at least what the app allows"
+    )
     assert "server_tokens off;" in code and "Strict-Transport-Security" in code
     assert "ssl_protocols TLSv1.2 TLSv1.3;" in code
     assert re.search(r"listen 80;.*return 301 https://\$host\$request_uri;", code, re.S)

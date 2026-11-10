@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { backendFetch } from '@/server/backend';
 import {
-  MAX_BODY_BYTES,
+  bodyLimit,
   cleanPath,
   forwardedRequestHeaders,
   isAllowed,
@@ -40,12 +40,13 @@ async function forward(request, { params }) {
 
   let body;
   if (method !== 'GET') {
+    const limit = bodyLimit(method, relative);
     const declared = Number(request.headers.get('content-length') || 0);
-    if (declared > MAX_BODY_BYTES) {
+    if (declared > limit) {
       return failure(413, 'too_large', 'The request is too large.');
     }
     body = await request.text();
-    if (body.length > MAX_BODY_BYTES) {
+    if (body.length > limit) {
       return failure(413, 'too_large', 'The request is too large.');
     }
   }

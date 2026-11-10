@@ -171,3 +171,14 @@ export function returnedHeaders(headers) {
 }
 
 export const MAX_BODY_BYTES = 64 * 1024;
+
+// The one request that may be larger than a form: an editor saving the whole content of an incident, which
+// can name up to 200 addresses with notes, ten or more documents and a timeline (about 64 KB at 150
+// addresses). The platform takes up to 1 MiB of anything; this site's own cap is lower for everything else.
+export const MAX_CONTENT_BYTES = 512 * 1024;
+const CONTENT_ROUTE = /^editor\/incidents\/\d{1,18}\/content$/;
+
+// How large a body this site forwards for a request: the cap of the route, never more.
+export function bodyLimit(method, path) {
+  return method === 'PUT' && CONTENT_ROUTE.test(path) ? MAX_CONTENT_BYTES : MAX_BODY_BYTES;
+}
