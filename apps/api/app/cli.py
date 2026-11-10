@@ -60,7 +60,7 @@ from app.ingestion.read import (
     render_any_transaction,
 )
 from app.ingestion.sync import SyncPolicy, sync_history
-from app.intel.importer import OFAC_SLUG, ImportFailed, refresh_source
+from app.intel.importer import OFAC_SLUG, READERS, ImportFailed, refresh_source
 from app.intel.lookup import UnknownAddress, lookup, source_statuses
 from app.intel.service import watchman_client, with_second_opinion
 from app.operations import backup as backups
@@ -553,7 +553,8 @@ def _cmd_enqueue(args: argparse.Namespace) -> int:
 
 
 def _cmd_labels_refresh(args: argparse.Namespace) -> int:
-    """Download a label source (OFAC's sanctions list) and bring the stored claims up to date."""
+    """Download a label source (OFAC's sanctions list unless another is named) and bring the stored
+    claims up to date. A source that has never been imported is made by its first import."""
     settings = get_settings()
     configure_logging(settings.log_level)
     engine = create_db_engine(settings.resolved_database_url)
@@ -582,7 +583,8 @@ def _cmd_labels_refresh(args: argparse.Namespace) -> int:
 
 
 def _cmd_labels_sources(args: argparse.Namespace) -> int:
-    """The label sources and how current each is. Makes no network request."""
+    """The label sources and how current each is. Makes no network request. A source with a reader
+    that has not been imported yet has no row, so it is listed after the others, in text only."""
     engine = create_db_engine(get_settings().resolved_database_url)
     try:
         with create_sessions(engine).read() as session:
@@ -593,7 +595,14 @@ def _cmd_labels_sources(args: argparse.Namespace) -> int:
         print(json.dumps([status.to_dict() for status in statuses]))
     else:
         for status in statuses:
-            print(f"{status.slug:<10} {status.kind.value:<9} {status.describe()}")
+            print(f"{status.slug:<18} {status.kind.value:<9} {status.describe()}")
+        held = {status.slug for status in statuses}
+        for slug, reader in READERS.items():
+            if slug not in held:
+                print(
+                    f"{slug:<18} {reader.spec.kind.value:<9} {reader.spec.name}: not imported "
+                    f"yet, so nothing is checked against it (labels refresh --source {slug})"
+                )
     return 0
 
 
@@ -1020,9 +1029,15 @@ def main(argv: list[str] | None = None) -> int:
         "labels", help="address intelligence: sanctions lists and other label sources"
     ).add_subparsers(dest="labels_command", required=True)
     refresh = labels.add_parser(
-        "refresh", help="download OFAC's sanctions list and update the stored claims"
+        "refresh",
+        help="download a label source (OFAC's sanctions list unless another is named) and "
+        "update the stored claims",
     )
-    refresh.add_argument("--source", default=OFAC_SLUG, help="the label source (default: OFAC)")
+    refresh.add_argument(
+        "--source",
+        default=OFAC_SLUG,
+        help=f"the label source: {', '.join(READERS)} (default: {OFAC_SLUG})",
+    )
     refresh.add_argument("--file", help="read this local copy of the list instead of downloading")
     refresh.add_argument("--url", help="download from here instead of the source's own address")
     refresh.add_argument("--force", action="store_true", help="import even an unchanged list")

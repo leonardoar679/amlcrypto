@@ -1,11 +1,16 @@
 """Bringing a label source up to date: download it, read it, and make the stored claims match.
 
-An import never deletes a claim. One that the new copy of the source no longer contains is marked
-withdrawn, with the time it disappeared: a delisting is evidence in its own right, and an address
-that was sanctioned last month is not the same as one that never was. A claim that comes back is
-reactivated. If the downloaded file is byte for byte the one already imported, nothing is rewritten
-and the source is simply marked as checked now, which is what keeps the freshness honest without a
-daily rewrite of a thousand rows.
+Each source has a reader (`READERS`) that knows its file and says what claims it holds; what follows
+is the same for all of them. An import never deletes a claim. One that the new copy of the source no
+longer contains is marked withdrawn, with the time it disappeared: a delisting is evidence in its
+own right, and an address that was sanctioned last month is not the same as one that never was. A
+claim that comes back is reactivated. If the downloaded file is byte for byte the one already
+imported, nothing is rewritten and the source is simply marked as checked now, which is what keeps
+the freshness honest without a daily rewrite of thousands of rows.
+
+A source's row is made by the first import that works. Until then it does not exist, and a failed
+first import leaves nothing behind: a source nobody has fetched would count against the confidence
+of every screening (see sources.py).
 """
 
 from __future__ import annotations
@@ -30,14 +35,24 @@ from app.chains.registry import detect_chains
 from app.database.connection import Sessions
 from app.database.models import AddressLabel, Entity, LabelImport, LabelSource
 from app.database.retry import commit_with_retry
-from app.intel.model import Category
-from app.intel.ofac import OfacFormatError, OfacSnapshot, parse_sdn
+from app.intel import elliptic
+from app.intel.model import Category, SourceKind
+from app.intel.ofac import OfacSnapshot, parse_sdn
+from app.intel.sources import (
+    Claim,
+    EntityRecord,
+    Parsed,
+    Reader,
+    SourceFormatError,
+    SourceSpec,
+    ensure_source,
+)
 
 logger = logging.getLogger(__name__)
 
 OFAC_SLUG = "ofac_sdn"
 OFAC_DETAIL_URL = "https://sanctionssearch.ofac.treas.gov/Details.aspx?id={uid}"
-USER_AGENT = "aml-platform/0.1 (+sanctions list refresh)"
+USER_AGENT = "aml-platform/0.1 (+label source refresh)"
 MAX_TEXT = 255
 
 
@@ -47,28 +62,6 @@ class ImportFailed(Exception):
     def __init__(self, message: str, *, retryable: bool) -> None:
         super().__init__(message)
         self.retryable = retryable
-
-
-@dataclass(frozen=True, slots=True)
-class EntityRecord:
-    source_ref: str
-    name: str
-    entity_type: str
-    programs: tuple[str, ...]
-    remarks: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class Claim:
-    chain_id: str
-    address: str  # in the chain's storage form
-    source_ref: str
-    listed_as: str
-    entity: EntityRecord
-
-    @property
-    def identity(self) -> tuple[str, str, str]:
-        return (self.source_ref, self.chain_id, self.address)
 
 
 @dataclass(slots=True)
@@ -83,22 +76,23 @@ class ImportReport:
     updated: int = 0
     unchanged: int = 0
     removed: int = 0
-    unsupported: dict[str, int] = field(default_factory=dict)  # addresses on chains not read here
+    unsupported: dict[str, int] = field(default_factory=dict)  # entries that are not read here
     error: str | None = None
 
     def describe(self) -> str:
         if self.outcome == "unchanged":
+            dated = f" (published {self.publish_date})" if self.publish_date else ""
             return (
-                f"{self.source}: the list (published {self.publish_date}) is the one already "
-                "imported; marked as checked now"
+                f"{self.source}: the list{dated} is the one already imported; marked as checked now"
             )
         skipped = sum(self.unsupported.values())
+        published = f"published {self.publish_date}" if self.publish_date else "no publication date"
         return (
-            f"{self.source}: published {self.publish_date}; {self.claims} claims from "
+            f"{self.source}: {published}; {self.claims} claims from "
             f"{self.entries} entries (an address valid on several chains counts once for "
             f"each): {self.added} new, {self.updated} changed, "
-            f"{self.unchanged} unchanged, {self.removed} withdrawn; {skipped} more are on chains "
-            "this platform does not read"
+            f"{self.unchanged} unchanged, {self.removed} withdrawn; {skipped} more are not "
+            "addresses on a chain this platform reads"
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -118,7 +112,7 @@ class ImportReport:
         }
 
 
-# --- from the file to claims ------------------------------------------------------------------
+# --- OFAC: from the file to claims ------------------------------------------------------------
 
 
 def build_claims(snapshot: OfacSnapshot) -> tuple[list[Claim], Counter[str]]:
@@ -133,6 +127,7 @@ def build_claims(snapshot: OfacSnapshot) -> tuple[list[Claim], Counter[str]]:
     unsupported: Counter[str] = Counter()
     for entry in snapshot.entries:
         record = EntityRecord(entry.uid, entry.name, entry.sdn_type, entry.programs, entry.remarks)
+        url = OFAC_DETAIL_URL.format(uid=entry.uid)
         for item in entry.addresses:
             candidates = detect_chains(item.address).candidates
             if not candidates:
@@ -145,12 +140,42 @@ def build_claims(snapshot: OfacSnapshot) -> tuple[list[Claim], Counter[str]]:
                     source_ref=entry.uid,
                     listed_as=item.currency,
                     entity=record,
+                    category=Category.SANCTIONS,
+                    source_url=url,
                 )
                 claims.setdefault(claim.identity, claim)
     return list(claims.values()), unsupported
 
 
-# --- storing them -----------------------------------------------------------------------------
+def _parse_ofac(path: Path) -> Parsed:
+    snapshot = parse_sdn(path)
+    return Parsed(
+        publish_date=snapshot.publish_date,
+        sha256=snapshot.sha256,
+        entries=len(snapshot.entries),
+        build=lambda: build_claims(snapshot),
+    )
+
+
+# What migration 0006 seeds, so that the row can be made again if it was ever removed.
+OFAC = Reader(
+    spec=SourceSpec(
+        slug=OFAC_SLUG,
+        name="OFAC Specially Designated Nationals (SDN) list",
+        kind=SourceKind.OFFICIAL,
+        url="https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML",
+        license_note="US government work; public domain",
+        base_confidence=100,
+        refresh_seconds=86_400,
+    ),
+    suffix=".xml",
+    parse=_parse_ofac,
+)
+
+READERS: dict[str, Reader] = {reader.spec.slug: reader for reader in (OFAC, elliptic.READER)}
+
+
+# --- storing the claims -----------------------------------------------------------------------
 
 
 def _source(session: Session, slug: str) -> LabelSource:
@@ -162,22 +187,22 @@ def _source(session: Session, slug: str) -> LabelSource:
 
 def apply_claims(
     session: Session,
-    slug: str,
+    spec: SourceSpec,
     claims: list[Claim],
     *,
-    snapshot: OfacSnapshot,
+    parsed: Parsed,
     unsupported: Counter[str],
     started: datetime,
     now: datetime,
 ) -> ImportReport:
     """Make the source's stored claims match `claims`. Use a write session; commits nothing."""
-    source = _source(session, slug)
+    source = ensure_source(session, spec)
     report = ImportReport(
-        source=slug,
+        source=spec.slug,
         outcome="changed",
-        publish_date=snapshot.publish_date,
-        sha256=snapshot.sha256,
-        entries=len(snapshot.entries),
+        publish_date=parsed.publish_date,
+        sha256=parsed.sha256,
+        entries=parsed.entries,
         claims=len(claims),
         unsupported=dict(unsupported),
     )
@@ -214,20 +239,21 @@ def apply_claims(
         key = claim.identity
         wanted.add(key)
         entity = entities[claim.entity.source_ref]
-        url = OFAC_DETAIL_URL.format(uid=claim.source_ref) if slug == OFAC_SLUG else None
+        category = claim.category.value
+        confidence = source.base_confidence if claim.confidence is None else claim.confidence
         row = labels.get(key)
         if row is None:
             session.add(
                 AddressLabel(
                     chain_id=claim.chain_id,
                     address=claim.address,
-                    category=Category.SANCTIONS.value,
+                    category=category,
                     entity_id=entity.id,
                     source_id=source.id,
                     source_ref=claim.source_ref,
-                    confidence=source.base_confidence,
+                    confidence=confidence,
                     listed_as=claim.listed_as,
-                    source_url=url,
+                    source_url=claim.source_url,
                     first_observed=now,
                     last_verified=now,
                     active=True,
@@ -241,9 +267,10 @@ def apply_claims(
             row.confidence,
             row.listed_as,
             row.source_url,
-        ) != (Category.SANCTIONS.value, entity.id, source.base_confidence, claim.listed_as, url)
-        row.category, row.entity_id = Category.SANCTIONS.value, entity.id
-        row.confidence, row.listed_as, row.source_url = source.base_confidence, claim.listed_as, url
+        ) != (category, entity.id, confidence, claim.listed_as, claim.source_url)
+        row.category, row.entity_id = category, entity.id
+        row.confidence, row.listed_as = confidence, claim.listed_as
+        row.source_url = claim.source_url
         row.active, row.removed_at, row.last_verified = True, None, now
         if changed:
             report.updated += 1
@@ -255,8 +282,8 @@ def apply_claims(
             row.active, row.removed_at = False, now
             report.removed += 1
 
-    source.publish_date = snapshot.publish_date
-    source.content_sha256 = snapshot.sha256
+    source.publish_date = parsed.publish_date
+    source.content_sha256 = parsed.sha256
     source.last_fetched_at = source.last_checked_at = now
     source.status, source.last_error = "ok", None
     source.record_count = len(claims)
@@ -281,8 +308,13 @@ def mark_unchanged(session: Session, slug: str, *, sha256: str, started: datetim
 
 def mark_failed(session: Session, slug: str, message: str, *, started: datetime, now: datetime):
     """Remember that bringing the source up to date failed. The copy already held is untouched, and
-    so is the time it was last confirmed current: the failure must not make it look fresh."""
-    source = _source(session, slug)
+    so is the time it was last confirmed current: the failure must not make it look fresh.
+
+    A source that has never been imported has no row to remember it in, and a failure must not make
+    one: the caller is told, and that is all."""
+    source = session.scalar(select(LabelSource).where(LabelSource.slug == slug))
+    if source is None:
+        return
     source.status, source.last_error = "failed", message[:2000]
     _log(session, source, started, now, ImportReport(slug, "failed", error=message[:2000]))
 
@@ -388,36 +420,42 @@ async def refresh_source(
 ) -> ImportReport:
     """Download (or read `file`), and bring the stored claims of the source up to date.
 
-    Raises ImportFailed, after recording the failure, when it could not. Only the OFAC SDN list can
-    be read so far.
+    Raises ImportFailed when it could not, after recording the failure in the source's row if it
+    has one. Raises ValueError for a source there is no reader for.
     """
-    if slug != OFAC_SLUG:
-        raise ValueError(f"no reader for the source {slug!r}")
+    reader = READERS.get(slug)
+    if reader is None:
+        raise ValueError(f"no reader for the source {slug!r} (there are: {', '.join(READERS)})")
     started = clock()
 
-    def source_row(session: Session) -> tuple[str | None, str | None]:
-        source = _source(session, slug)
-        return source.url, source.content_sha256
+    def stored(session: Session) -> tuple[str | None, str | None]:
+        row = session.scalar(select(LabelSource).where(LabelSource.slug == slug))
+        return (None, None) if row is None else (row.url, row.content_sha256)
 
-    stored_url, stored_sha = await asyncio.to_thread(_read, sessions, source_row)
+    stored_url, stored_sha = await asyncio.to_thread(_read, sessions, stored)
     temporary: Path | None = None
     try:
         if file is not None:
             path = file
         else:
+            target = url or stored_url or reader.spec.url
+            if not target:
+                raise ImportFailed("the source has no address to download from", retryable=False)
             data_dir.mkdir(parents=True, exist_ok=True)
-            handle, name = tempfile.mkstemp(prefix="ofac-", suffix=".xml", dir=data_dir)
+            handle, name = tempfile.mkstemp(prefix=f"{slug}-", suffix=reader.suffix, dir=data_dir)
             os.close(handle)
             temporary = path = Path(name)
             await download(
-                url or stored_url or "",
+                target,
                 path,
                 max_bytes=max_bytes,
                 timeout=timeout,
                 transport=transport,
             )
-        snapshot = await asyncio.to_thread(parse_sdn, path)
-    except (ImportFailed, OfacFormatError, OSError) as error:
+        parsed = await asyncio.to_thread(reader.parse, path)
+        current = parsed.sha256 == stored_sha and not force
+        built = None if current else await asyncio.to_thread(parsed.build)
+    except (ImportFailed, SourceFormatError, OSError) as error:
         retryable = error.retryable if isinstance(error, ImportFailed) else False
         message = str(error)
         await asyncio.to_thread(
@@ -428,22 +466,22 @@ async def refresh_source(
         if temporary is not None:
             temporary.unlink(missing_ok=True)
 
-    if snapshot.sha256 == stored_sha and not force:
+    if built is None:
         return await asyncio.to_thread(
             _write,
             sessions,
-            lambda s: mark_unchanged(s, slug, sha256=snapshot.sha256, started=started, now=clock()),
+            lambda s: mark_unchanged(s, slug, sha256=parsed.sha256, started=started, now=clock()),
         )
 
-    claims, unsupported = build_claims(snapshot)
+    claims, unsupported = built
     report = await asyncio.to_thread(
         _write,
         sessions,
         lambda s: apply_claims(
             s,
-            slug,
+            reader.spec,
             claims,
-            snapshot=snapshot,
+            parsed=parsed,
             unsupported=unsupported,
             started=started,
             now=clock(),

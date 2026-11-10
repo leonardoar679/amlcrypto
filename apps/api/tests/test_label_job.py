@@ -77,10 +77,26 @@ def test_a_list_that_cannot_be_read_is_not_tried_again(committing_db, monkeypatc
         run(refresh_label_source(context(committing_db)))
 
 
+def test_any_source_that_has_a_reader_can_be_named(committing_db, monkeypatch):
+    seen = []
+
+    async def fake(sessions, slug, **options):
+        seen.append(slug)
+        return ImportReport(slug, "unchanged")
+
+    monkeypatch.setattr(jobs, "refresh_source", fake)
+
+    result = run(refresh_label_source(context(committing_db, source="elliptic_binance")))
+
+    assert seen == ["elliptic_binance"] and result["source"] == "elliptic_binance"
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
         ({"source": "nope"}, "no reader for the label source"),
+        ({"source": ["ofac_sdn"]}, "no reader for the label source"),  # not even a name
+        ({"source": 7}, "no reader for the label source"),
         ({"force": "yes"}, "force must be true or false"),
     ],
 )

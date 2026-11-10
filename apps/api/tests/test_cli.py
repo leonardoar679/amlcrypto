@@ -672,6 +672,44 @@ def test_labels_sources_shows_how_current_each_is_without_any_request(
     assert "published 2026-11-05" in capsys.readouterr().out
 
 
+ELLIPTIC_SAMPLE = Path(__file__).parent / "fixtures" / "intel" / "elliptic_sample.csv"
+EIP55_EXAMPLE = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+
+
+def test_a_source_nobody_has_imported_is_listed_as_not_imported_and_then_as_any_other(
+    cli_env, capsys, committing_db
+):
+    assert cli.main(["labels", "sources"]) == 0
+    before = capsys.readouterr().out
+    assert "elliptic_binance" in before and "not imported yet" in before
+    assert cli.main(["labels", "sources", "--json"]) == 0
+    assert [s["slug"] for s in json.loads(capsys.readouterr().out)] == ["ofac_sdn"]
+
+    args = ["labels", "refresh", "--source", "elliptic_binance", "--file", str(ELLIPTIC_SAMPLE)]
+    assert cli.main(args) == 0
+    assert "no publication date" in capsys.readouterr().out
+
+    assert cli.main(["labels", "sources"]) == 0
+    after = capsys.readouterr().out
+    assert "not imported yet" not in after and "Elliptic: Binance hack blocklist" in after
+    assert cli.main(["labels", "lookup", "bsc", EIP55_EXAMPLE]) == 2  # a label in force
+    out = capsys.readouterr().out
+    assert "STOLEN_FUNDS (60% confidence)" in out and "'Binance hack' (incident)" in out
+
+
+def test_an_import_of_a_new_source_that_fails_says_so_and_leaves_no_source_behind(
+    cli_env, capsys, committing_db, tmp_path
+):
+    junk = tmp_path / "junk.csv"
+    junk.write_text("<html>maintenance</html>", encoding="utf-8")
+
+    assert cli.main(["labels", "refresh", "--source", "elliptic_binance", "--file", str(junk)]) == 1
+
+    assert "could not bring elliptic_binance up to date" in capsys.readouterr().err
+    assert cli.main(["labels", "sources", "--json"]) == 0
+    assert [s["slug"] for s in json.loads(capsys.readouterr().out)] == ["ofac_sdn"]
+
+
 def test_labels_commands_refuse_what_cannot_work(cli_env, capsys, committing_db, tmp_path):
     junk = tmp_path / "junk.xml"
     junk.write_text("<html/>", encoding="utf-8")

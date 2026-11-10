@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.graph.jobs import FETCH_COUNTERPARTIES, fetch_counterparties
 from app.ingestion.jobs import FETCH_ADDRESS_HISTORY, fetch_address_history
 from app.intel.jobs import REFRESH_LABEL_SOURCE, refresh_label_source
+from app.intel.schedule import label_refresh_scheduler
 from app.monitoring.jobs import CHECK_ADDRESS, check_monitored_address, scheduler
 from app.risk.jobs import (
     SCREEN_ADDRESS,
@@ -71,5 +72,10 @@ def build_default_handlers() -> HandlerRegistry:
 def build_default_periodic(
     settings: Settings, write_sessions: sessionmaker[Session]
 ) -> list[Periodic]:
-    """What a long-running worker does on a schedule besides running jobs."""
-    return [scheduler(settings, write_sessions)]
+    """What a long-running worker does on a schedule besides running jobs: queue the checks of
+    monitored addresses, and the refreshes of the label sources the operator named (if any)."""
+    periodic = [scheduler(settings, write_sessions)]
+    labels = label_refresh_scheduler(settings, write_sessions)
+    if labels is not None:
+        periodic.append(labels)
+    return periodic

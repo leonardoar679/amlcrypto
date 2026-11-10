@@ -13,7 +13,6 @@ by the downloader.
 
 from __future__ import annotations
 
-import hashlib
 import re
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
@@ -21,12 +20,14 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+from app.intel.sources import SourceFormatError, file_sha256
+
 CURRENCY_ID = "Digital Currency Address - "
 _DOCTYPE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.IGNORECASE)
 _HEAD = 4096
 
 
-class OfacFormatError(ValueError):
+class OfacFormatError(SourceFormatError):
     """The file is not an SDN list this reader understands."""
 
 
@@ -52,14 +53,6 @@ class OfacSnapshot:
     entries_in_file: int
     sha256: str
     entries: list[OfacEntry] = field(default_factory=list)  # only those that name an address
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def parse_sdn(path: Path) -> OfacSnapshot:

@@ -81,6 +81,16 @@ class Settings(BaseSettings):
     # `python -m app.cli labels refresh` or the REFRESH_LABEL_SOURCE job.
     intel_download_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
     intel_max_download_bytes: int = Field(default=200 * 1024 * 1024, ge=1_048_576)
+    # The label sources the worker brings up to date by itself, named in a comma separated list
+    # (`labels sources` shows them): LABEL_REFRESH_SOURCES=ofac_sdn,elliptic_binance. Empty, the
+    # default, means none: only `labels refresh` or a REFRESH_LABEL_SOURCE job does it. Name a
+    # source only if it is to be kept current, because a source that goes stale lowers the
+    # confidence of every screening.
+    label_refresh_sources: str = ""
+    # How often the worker looks for a named source that is due (once its last check is older than
+    # the source's own refresh interval, a day for both that exist), and so how often it tries
+    # again after a refresh that failed.
+    label_refresh_tick_seconds: float = Field(default=3600.0, ge=60, le=86_400)
     # Moov Watchman, a second opinion on sanctions. Its HTTP service is unauthenticated by design:
     # point this only at an instance reachable from the backend alone (the compose file's internal
     # network), never a published port. Unset means no second opinion.
@@ -218,6 +228,12 @@ class Settings(BaseSettings):
                     "outside the dev environment"
                 )
         return self
+
+    @property
+    def label_refresh_slugs(self) -> tuple[str, ...]:
+        """The sources named in LABEL_REFRESH_SOURCES, each once, in the order named."""
+        names = (part.strip() for part in self.label_refresh_sources.split(","))
+        return tuple(dict.fromkeys(name for name in names if name))
 
     @property
     def database_backend(self) -> str:
