@@ -18,6 +18,7 @@ copy .env.example .env      # then edit; SECRET_KEY is optional only while ENVIR
 .\.venv\Scripts\python.exe -m app.cli create-user --email you@example.com --org-name "Your Org"   # the first user is an admin
 .\.venv\Scripts\python.exe -m app.cli user list                       # people, roles, active or not (also: set-role, deactivate, activate, set-password)
 .\.venv\Scripts\python.exe -m app.cli audit list --limit 20           # the latest entries of the audit log
+.\.venv\Scripts\python.exe -m app.cli doctor                            # is this installation set up to be relied on? (also: backup, backup-verify, restore, copy-database; see M14)
 .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --reload   # http://127.0.0.1:8000/api/docs
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check . ; .\.venv\Scripts\python.exe -m ruff format --check .
@@ -1014,6 +1015,131 @@ passed on every rerun; it asserts a degree of concurrency that a slow machine ca
   list people.
 * Rate limiting is the reverse proxy's job (M14), and so is a nonce-based content security policy.
 
+## Security and production readiness (milestone M14)
+
+M14 attacks what the earlier milestones built, fixes what that finds, and adds what running it
+needs: backups, a way to move to MySQL, a preflight check, an edge configuration and the
+documents an operator reads. The operator's side is in
+[shared/documentation/operations.md](../../shared/documentation/operations.md); the licences and
+regulation in [data-licensing-and-regulatory-review.md](../../shared/documentation/data-licensing-and-regulatory-review.md);
+what is not done in [limitations.md](../../shared/documentation/limitations.md).
+
+### What was attacked, and how it is kept honest
+
+* **Tenant isolation** (`tests/test_tenant_isolation.py`). `tests/catalog.py` holds a working request for
+  every route (a test fails for a route that has none, so a new endpoint cannot escape), and
+  `tests/world.py` makes two organizations with people and a record of every kind. Every route that
+  takes an id is called from the other organization's administrator with the exact id of a record that is
+  not theirs: the answer must be a 404 in the same words as for an id that does not exist (so it tells
+  nothing about what exists elsewhere), nothing in the database may change (a snapshot of every table),
+  and the same request must work for the owner (so the 404 is the isolation, not a bad request). The
+  same for ids named inside a request (assign to, link, open from), for lists, summaries and the audit
+  log (searched for the other organization's addresses, ids and names), for requests made twice by two
+  organizations (they make two things), and for an API key of the other organization. A structural test
+  sorts every route into *by id*, *own data*, *makes its own* or *shared*, so a route cannot be added
+  without deciding which. Twenty-one mutations of the ownership checks and filters were all caught.
+* **Hostile input** (`tests/test_hostile_input.py`, `tests/hostile.py`). Every route is called as an
+  administrator with the working request changed in one place at a time: each path segment (huge
+  numbers, text no database holds, look-alike characters, broken percent-encoding), each query
+  parameter, every field the body model declares (about 55 hostile values each, and missing), whole bodies (cut
+  off, not JSON, 100,000 levels deep, 20,000 keys), content types, headers (`Authorization`, `X-API-Key`,
+  `X-Forwarded-For`, `User-Agent`, `Host`), methods that are not routes, and the signed webhook. The answer
+  must be below 500. A second test reads the API's OpenAPI schema and fails for **any integer, number, list
+  or text a request can carry that has no bound** (`app/api/limits.py`).
+* **Escalation** (`tests/test_escalation.py`): a key never has more than its maker's role now; every body
+  that changes something refuses fields it does not offer (`organization_id`, `role`...); nobody below an
+  administrator can raise themselves; a token cannot say what its holder may do or move to another
+  organization.
+* **Audit integrity** (`tests/test_audit_integrity.py`): no code updates or deletes an audit row (an AST scan
+  of `app/`), one function adds them, an organization with a history cannot be deleted, and every route
+  that changes something leaves an entry naming who did it.
+* **Concurrency** (`tests/test_concurrent_requests.py`, SQLite only): the same person, watch, case from
+  an alert, link, screening, graph update, alert change, key revocation and sign-ins made by eight threads
+  released together: one winner, 409 for the rest, never a 5xx.
+* **A pool of one connection** (`tests/test_connection_pool.py`): the whole API is run with a single database
+  connection. A request that held one while waiting for a second would wait on itself.
+
+### What it found, and what changed
+
+| Found | Now |
+|---|---|
+| Any id past 64 bits (path, query or body) was a **500** on SQLite | Every integer a request carries is bounded (`app/api/limits.py`: ids, counts, days, hops, intervals), refused with a 422; a test reads the OpenAPI schema for any that is not |
+| An **API key kept its role after its maker was demoted** | A key's permissions are those of its role *and* its maker's current role, read on every request |
+| A request held **two database connections** (authenticating, then the route's own), so a burst of 12+ sign-ins deadlocked the pool until its 30-second timeout and answered 500 | One connection at a time: authenticating, the sign-in and the downloads give theirs back first. A full pool, a locked or deadlocked database is a **503 with `Retry-After`**, and a value the database refuses (MySQL) a 422; `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS` |
+| No request-size cap; API answers carried no security headers | `MAX_REQUEST_BODY_BYTES` (413, also for a body sent in chunks, and replacing whatever the application would then say); `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` on every answer, errors included |
+| Parsers raised `AttributeError`, `TypeError`, `KeyError` on a wrong-shaped row (1,841 + 266 + 166 cases in a first fuzz of 16 entry points) | `@refusing_malformed` on every public parser: it returns what it parsed or raises `MalformedRow`, which the layers above count and skip |
+| Rule **AML-014** flagged every customer of an exchange (concentration), and divided by zero on zero-value transfers (address poisoning), failing the rule | Labelled exchanges, DeFi protocols, bridges and gambling services are not "suspicious concentration"; zero-value flows are skipped. The rule is at version 1.0.1 |
+| Exposure findings did not name an exchange in the middle of a route | They do: `via` in the evidence and in the description (AML-002, 003, 007, 008 at 1.0.1) |
+| A web page in place of data (a maintenance page answered 200) failed a screening **for good** | It is the provider being away: retried with backoff like any outage |
+| Rows a provider sent that could not be read **left no mark in the report** | Skipped rows make a `rows_not_read` data gap and PARTIAL coverage with a lower confidence |
+| Behind the web app, every audit entry recorded the **web server's address** and agent | The proxy passes the client's address (the last `X-Forwarded-For` entry) and agent on; the API records an IPv4 client of a dual-stack server as its IPv4 address |
+
+Provider outages are tested end to end (`tests/test_provider_outages.py`): a stream that cannot be read
+stops the screening and is picked up again, a provider down while another can serve costs nothing, every
+provider down is retried and failed with the reason at the last attempt, a rejected key is not retried and
+never appears in the reason, a long `Retry-After` is waited for. Benign patterns that the rules must not turn
+into accusations are a dataset (`tests/test_false_positives.py`), and every rule is run over degenerate data
+(`tests/test_risk_degenerate_data.py`).
+
+### Operations
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli doctor                         # OK / WARN / FAIL for this installation; exit 1 on a FAIL; --json
+.\.venv\Scripts\python.exe -m app.cli backup --to D:\backups --keep 14
+.\.venv\Scripts\python.exe -m app.cli backup-verify D:\backups\aml-20261109T020000Z.db
+.\.venv\Scripts\python.exe -m app.cli restore D:\backups\aml-20261109T020000Z.db [--replace]
+.\.venv\Scripts\python.exe -m app.cli copy-database --to-env AML_TARGET     # SQLite into MySQL (--from, --batch)
+```
+
+* **Backup** (`app/operations/backup.py`): SQLite's online backup API, so it is a consistent picture
+  of a database in use; one plain file (not marked WAL) and a manifest with its SHA-256, size, schema
+  revision and the row count of every table. It is checked as it is made (the copy's own integrity and
+  foreign-key checks) and again by `backup-verify`, which also refuses a revision this version does not know.
+  `restore` verifies first, never replaces a database unless asked, moves the old one aside with its `-wal`
+  and `-shm`, and says so when Windows will not let go of an open file. Tested with a writer thread
+  running during the backups (every backup has as many people as organizations and no orphan), writes still in
+  the WAL, damage in the file, a manifest made to match damaged content, and the application running on a restored file.
+* **Copy** (`app/operations/copy.py`): every table in dependency order, every id kept, in **one
+  transaction on the target**; each table is read back from the target inside it and compared with the
+  source (row count and a SHA-256 over every value in primary-key order, JSON compared by content, so
+  MySQL's own key order does not matter) and the transaction commits only if all match. A target that holds
+  anything but what the migrations seed is refused. A test fills **every table from the metadata**
+  (`tests/fill.py`, so a table or column type added later is covered) and copies it; the SQLite-to-MySQL-and-back
+  leg runs where `TEST_DATABASE_URL` is MySQL, which is the `api-mysql` CI jobs.
+* **Doctor** (`app/operations/doctor.py`): configuration, database and schema revision, SQLite's integrity,
+  an active administrator, a queue nobody works through, providers for every chain, fresh label sources, the
+  newest backup (verified), free disk. It changes nothing and calls no provider.
+
+### Edge
+
+* `deployment/nginx/aml.conf.example` and `proxy-headers.conf`: TLS, an HTTP redirect, rate limits (sign-in
+  5 a minute per address, the web app, programs with a key, the webhook), body limits that match the API's,
+  `X-Forwarded-For` **overwritten** with the address nginx saw (so `TRUSTED_PROXY_HOPS=1` is exact and a
+  client cannot choose its recorded address), a request id passed on, the API host without `/auth/login`,
+  the webhook by POST only. Tests check its structure; it has **never been through `nginx -t`**.
+* The web app: a nonce-based content security policy on every page (`apps/web/src/lib/csp.js`; see its
+  README), and a Dockerfile and a compose service (`deployment/docker-compose.yml`) whose port is on the
+  loopback address only and which holds no secret.
+
+### Checked against
+
+* 3,038 backend tests and 1 skipped (the MySQL-only leg of the copy test), ruff clean, `alembic check` clean (no
+  schema change in M14); 104 frontend unit tests.
+* About 250 mutations of the new code (middleware, authentication, error handlers, sign-in, bounds, the
+  ownership checks, backup, restore, copy, doctor, the parser guard, the rules, the reader's gap, the provider
+  client, the audit address; the proxy rules and the policy in the web app): every real gap was closed by a test.
+  The survivors are equivalent: a backup in several steps (SQLite restarts it if the source changes), a rollback
+  that closing the connection does anyway, a read after the cut that stays cut, and `btoa` against `Buffer`.
+* A headless-Edge run on a production build against a real API: the policy has a nonce of its own for every
+  request and no `unsafe-inline` or `unsafe-eval` for scripts; no violation or console error on 7 public and
+  11 signed-in pages (the graph included, once its style element is made with the nonce); an injected
+  inline handler, a `javascript:` link, a script in a frame and a `<style>` without the nonce are all
+  refused and reported; sign-in through the form works; and the audit log records the client's address
+  from `X-Forwarded-For`, the proxy's own entry when a client prepended others, and the connection's address
+  when there is no header.
+* Not run here: Docker (CI builds and calls both images), nginx, MySQL (CI runs the whole suite on 8.0 and 8.4),
+  a restore on another machine, the data providers' live terms (the review says what could not be read).
+
 ## Testing against MySQL
 
 Point `TEST_DATABASE_URL` at an **empty, throwaway** MySQL 8 database and run the suite as usual:
@@ -1063,6 +1189,14 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 Every error uses one envelope: `{"success": false, "error": {"code", "message", "request_id"}}`.
 Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 
+Every answer, errors included, carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and
+`Referrer-Policy: no-referrer` (a route may set one of them itself). Three answers are the platform's, whatever
+the route: **413** `payload_too_large` for a body over `MAX_REQUEST_BODY_BYTES` (the webhook has its own
+`WEBHOOK_MAX_BODY_BYTES`), **503** `service_unavailable` with `Retry-After` when the database is busy, locked or
+away or the connection pool is full, and **422** `unstorable_value` when the database refuses a value as too long
+or out of range (MySQL; SQLite accepts anything). Ids are positive numbers below 2^63, counts and days have
+upper bounds, and a path id past them is a 422, not a 404.
+
 ## Layout
 
 | Path | Purpose |
@@ -1083,6 +1217,8 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 | `app/access/` | roles and permissions (`permissions`), API keys (`apikeys`), the audit log (`audit`) and the sign-in lockout (`lockout`) |
 | `app/monitoring/` | monitored addresses: deciding what is new (`detect`), registering and queueing checks (`service`), the check job and the worker's tick (`jobs`), the alert workflow (`workflow`) and the provider doorbell (`webhooks`) |
 | `app/cases/` | cases: opening, changing, noting and linking them, and their timeline (`service`) |
+| `app/operations/` | backups and restores of the SQLite database (`backup`), copying one database into another (`copy`) and the preflight check (`doctor`) |
+| `app/api/limits.py`, `headers.py`, `middleware.py` | the bounds every number in a request has, the headers every answer carries, and the request-id, security-header and body-limit middleware |
 | `app/database/repositories/` | job queue and usage counters; the stored chain data (`transfers`, `bitcoin`, `solana`, `membership`, saved by identity through `rows`); coverage, the log of reads and the raw answers (`acquisition`). `app/database/upsert.py` and `retry.py` are the bulk upserts and the deadlock retry they share |
 | `migrations/` | Alembic environment and versions |
 | `tests/` | pytest suite |
@@ -1102,14 +1238,20 @@ Interactive docs are at `/api/docs` unless `ENVIRONMENT=prod`.
 * Never write an upsert as "UPDATE, then INSERT when nothing matched": under concurrency it deadlocks
   on MySQL. Use the dialect's atomic statement, as `record_usage` does, and repeat the unit of work
   when MySQL names you the deadlock victim (error 1213).
+* A request holds one database connection at a time: take what you need from the read session, call
+  `session.rollback()` to give it back, then use the write session (see `get_principal` and `login`). The
+  pool-of-one test fails for any route that does not.
+* Every integer a route accepts has both bounds (`app/api/limits.py`) and every text a length; a test reads
+  the OpenAPI schema and names the field that has none.
+* A parser's public entry point is wrapped in `@refusing_malformed`; do not catch `AttributeError` around one.
 * SQLite has two session modes. `create_session_factory(engine)` is read-only (writes fail at once);
   anything that writes uses `create_session_factory(engine, write=True)` and keeps its transaction
   short. Never hold a write transaction across network I/O. See `app/database/connection.py`.
 
 ## Known gaps (tracked in the project plan)
 
-* **No rate limiting in front of the API** (milestone M14, at the reverse proxy). What exists: a sign-in
-  lockout per account (see "Access control"), request-size caps on the webhook and on the web app's proxy.
+* **Rate limiting is the reverse proxy's job.** `deployment/nginx/aml.conf.example` has it (never run through
+  `nginx -t`); in the API there is the sign-in lockout per account, a request-size cap and bounded inputs.
 * **MySQL:** the whole suite passes on MySQL 8.0 and 8.4 in CI (verified for commit `fda1108`, 2,173 tests). The
   first M3 run found two concurrency bugs in the code and a flaw in the test fixture; the first M8
   and M9 run found two problems, both in the tests.

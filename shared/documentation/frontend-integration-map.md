@@ -28,7 +28,9 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   no-store`. A backend endpoint added later is **not** reachable from the browser until it is listed
   there. It refuses `/auth/login` (sign-in has its own route), checks `Origin` / `Sec-Fetch-Site` on
   everything that is not a GET, caps a request body at 64 KB, forwards only a few headers each way, and
-  clears the cookie when the API answers 401.
+  clears the cookie when the API answers 401. Since M14 the headers it forwards include **who is asking**: the
+  client's address (the last `X-Forwarded-For` entry, which the proxy in front of this site wrote) and user
+  agent, so that the API's audit log records the person and not this server; the sign-in route does the same.
 * **Real enforcement is the backend's.** Every request to the API carries a token it validates against
   the database; the checks in the frontend (the `proxy.js` redirect, the `(app)` layout) are there so a
   person is not sent through a page that would only send them away. `getSession` (`src/server/session.js`)
@@ -70,7 +72,8 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 (header, sidebar, footer) **once**, so navigating between pages no longer remounts it; it also makes the
 signed-in routes `noindex`, which the marketing routes will not be at launch. `error.js` and `not-found.js`
 sit in the group. A link with a broken `%` is answered with a 404 by `proxy.js` (without that, the router
-fails with a server error).
+fails with a server error); since M14 `proxy.js` runs for every page and route except the framework's static
+files, so that holds for the public pages too.
 
 The sidebar is **Check, Checks history, Addresses, Graph, Monitoring, Alerts, Cases, Settings**, filtered by
 what the signed-in person's role may do (`GET /auth/me` lists the permissions; `src/data/appNav.js` says what
@@ -144,13 +147,17 @@ calls the API directly and proves itself with a signature, not for a browser. A 
   graph but means the rules that look for indirect exposure cannot run: the report would say so on every
   screening).
 * **Security headers** on every response (`next.config.mjs`): `nosniff`, `X-Frame-Options: DENY`,
-  `Referrer-Policy: same-origin`, a restrictive `Permissions-Policy`, and a minimal CSP
-  (`frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`). A real script CSP needs
-  per-request nonces and is left for M14.
+  `Referrer-Policy: same-origin` and a restrictive `Permissions-Policy`.
+* **A Content-Security-Policy with a nonce of its own for every page** (M14: `proxy.js` makes it, `src/lib/csp.js`
+  says what it is): scripts only with the request's nonce (and what they load, `'strict-dynamic'`), no inline
+  handler, no `eval`, `<style>` elements only with the nonce, style attributes allowed (the interface sets widths
+  and positions that way), everything else from this site, no framing, no plugins, `upgrade-insecure-requests`.
+  The root layout reads `x-nonce` for the theme script and for `GraphStyle`, which puts in the page the one `<style>`
+  element Cytoscape would otherwise create without a nonce. Every page therefore renders per request.
 
 ## 6. How it was checked
 
-* **Unit tests** (`npm test`, Node's runner, 90 tests, run in CI): the proxy's allow-list, path cleaning, origin
+* **Unit tests** (`npm test`, Node's runner, 104 tests since M14, run in CI): the proxy's allow-list, path cleaning, origin
   rule and header filtering; the session cookie options; the safe-redirect rule; the risk bands and
   wording; transaction-hash shapes; exact unit formatting; the graph helpers (node kinds, counterparties,
   gap grouping); the link and path guards; the API client; and, since M13, the permission names, the menu a
@@ -207,6 +214,15 @@ calls the API directly and proves itself with a signature, not for a browser. A 
   received (that needs a public URL); the browser runs are scripts kept outside the repository (they need Edge,
   a running API and worker, a seeded database and provider keys), not part of CI.
 
+* **The M14 browser run** (headless Edge, a production build, a real API on a scratch database with OFAC's list and three
+  people): every page carries a policy with a nonce of its own and no `unsafe-inline` or `unsafe-eval` for scripts;
+  no violation and no console error on 7 public and 11 signed-in pages; the sign-in form and a click handler work;
+  the graph draws (the run found the graph library's own `<style>` element refused, which is why `GraphStyle`
+  exists); injected markup (an inline handler, a `javascript:` link, an inline script in a frame, a `<style>`
+  without the nonce) is refused and reported; and the audit log records the client's address from
+  `X-Forwarded-For`, the proxy's own entry when a client prepended others, and the connection's address (as IPv4)
+  when there is no header.
+
 ## 7. What the audit found, and what became of it
 
 | Finding (audit of `ad35ac5`) | Now |
@@ -236,9 +252,9 @@ Still open:
 * `app/layout.js` loads Google Fonts through `next/font/google`, so `next build` needs internet.
 * There are no images (all artwork was removed in the rebrand); add `next/image` when real artwork exists.
 * The marketing pages keep their older relative imports and a design that was only rebranded, not redesigned.
-* No rate limiting (the reverse proxy's job, M14), no CSRF token beyond `SameSite=Lax` plus the origin check, no
-  refresh tokens: when the token expires the person signs in again. (API keys, roles, the audit log and a
-  sign-in lockout arrived with M13.)
+* Rate limiting is the reverse proxy's job (`deployment/nginx/`, M14), there is no CSRF token beyond `SameSite=Lax`
+  plus the origin check, and no refresh tokens: when the token expires the person signs in again. (API keys, roles,
+  the audit log and a sign-in lockout arrived with M13; the nonce policy and the client address with M14.)
 * Signing out forgets the cookie, but the token itself stays valid until it expires: the API keeps no session
   to end. The token is httpOnly, so page script cannot copy it, but a token that had been copied some other way
   would still work until then. M13 did **not** add revocable sessions; what it added is that a deactivated

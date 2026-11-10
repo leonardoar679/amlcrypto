@@ -40,8 +40,21 @@ Screenings and "read from the providers" run in the API's background worker, so 
 
 * `app/` is the router: public pages, `auth/`, the signed-in `(app)/` group (one layout that checks the
   session and mounts the shell once), and `api/` (the session routes and the API proxy).
-* `proxy.js` runs before routing: broken links are a 404, and an anonymous visitor to a signed-in page is
-  sent to sign in (an optimistic check; the API is what enforces access).
+* `proxy.js` runs before every page and route (not the framework's own static files): broken links are a
+  404, an anonymous visitor to a signed-in page is sent to sign in (an optimistic check; the API is what
+  enforces access), and every page gets a **Content-Security-Policy with a nonce of its own**.
+* The policy (`src/lib/csp.js`): scripts only with this request's nonce (and what they load), no inline event
+  handlers, no `eval`, `<style>` elements only with the nonce (style attributes are allowed, because the
+  interface sets widths and positions that way), everything else from this site, no framing, no plugins.
+  `app/layout.js` reads the nonce (`x-nonce`) for the one inline script, which sets the theme before paint,
+  and `GraphStyle` puts in the page the one `<style>` element the graph library would otherwise make for
+  itself, with the nonce. Reading the request makes every page render for its request. A new inline `<script>`
+  must take `nonce={nonce}`: a test fails for one that does not. Development needs `unsafe-eval`; the
+  production build does not.
+* The API sees the person, not this server: the proxy passes the client's address (the last entry of
+  `X-Forwarded-For`, which the proxy in front of this site wrote; a client's own earlier entries are not passed
+  on) and its user agent, so the audit log records them. With no proxy in front there is no address to pass and
+  none is made up. The API believes the header only as far as `TRUSTED_PROXY_HOPS` says.
 * `src/server/` is server-only code (`import 'server-only'`): the API client and the session lookup.
 * `src/lib/` is plain, framework-free code the pages are built from: the API client, the risk bands and
   wording, chain names and explorer links, the allow-list of what the proxy forwards, graph helpers, exact
@@ -52,6 +65,15 @@ Screenings and "read from the providers" run in the API's background worker, so 
 * What a person sees follows what their role may do. `GET /auth/me` lists the permissions; the sidebar
   (`src/data/appNav.js`), the forms and the buttons show only what the person can use. That is a courtesy:
   the API refuses the rest whatever the page shows, so never rely on a hidden link for protection.
+
+## The container image
+
+`Dockerfile` builds the app in two stages and runs the self-contained server Next makes with
+`NEXT_OUTPUT=standalone`: no source, no dev tools, the user `node`, port 3000, `BACKEND_URL` read when it starts.
+`deployment/docker-compose.yml` has the service (its port on the loopback address only, no secret in it). CI builds
+the image and calls it; it has never been built on a development machine (no Docker), but the standalone server was run
+here as the image would run it, with the static files beside it, and answered the pages, the policy, a broken link and
+the redirect of a protected page. `sharp` (an LGPL image library the pages do not need) is left out of that server.
 
 ## Rules that keep it safe
 
