@@ -15,7 +15,10 @@ PASSWORD = "correct horse battery staple"
 
 
 @pytest.fixture
-def cli_env(monkeypatch, database_url):
+def cli_env(monkeypatch, database_url, committing_db):
+    # The command line commits for real. committing_db empties what the tests wrote when each one
+    # ends, which matters on MySQL, where every test shares one database: without it the audit
+    # entries and the people of one test are still there for the next.
     monkeypatch.setitem(Settings.model_config, "env_file", None)
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("SECRET_KEY", TEST_SECRET)

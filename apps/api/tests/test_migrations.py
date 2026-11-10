@@ -77,7 +77,7 @@ def test_there_is_a_single_head():
 
 def test_users_that_exist_before_roles_become_admins_and_roles_cannot_be_empty(migration_url):
     from sqlalchemy import text
-    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.exc import DBAPIError
 
     stamp = "2026-01-01"
     insert_org = text(
@@ -107,8 +107,10 @@ def test_users_that_exist_before_roles_become_admins_and_roles_cannot_be_empty(m
                 text("SELECT role FROM users WHERE email = 'old@example.com'")
             ).scalar()
             assert role == "admin"
-        # there is no default: whoever makes a user chooses a role
-        with pytest.raises(IntegrityError), engine.begin() as connection:
+        # there is no default: whoever makes a user chooses a role. SQLite refuses the NULL with an
+        # integrity error; MySQL says the field has no default value (error 1364, an operational
+        # one). Either way the row is refused.
+        with pytest.raises(DBAPIError), engine.begin() as connection:
             connection.execute(insert_user, {"org": org, "email": "new@example.com", "t": stamp})
     finally:
         migrations.upgrade(migration_url)  # leave the shared database at head, and clean up
