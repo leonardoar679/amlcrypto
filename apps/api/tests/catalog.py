@@ -273,6 +273,15 @@ add(
 )
 add("DELETE", "/editor/incidents/{incident_id}", path=lambda s: f"/editor/incidents/{s.incident()}")
 
+# --- incidents, for anybody (published only) ----------------------------------------------------
+add("GET", "/public/incidents")
+add("GET", "/public/incidents/{slug}", path=lambda s: f"/public/incidents/{s.published_slug()}")
+add(
+    "GET",
+    "/public/addresses/{chain}/{address}/incidents",
+    path=lambda s: f"/public/addresses/ethereum/{s.address()}/incidents",
+)
+
 # --- from the provider, not from a person -------------------------------------------------------
 add(
     "POST",

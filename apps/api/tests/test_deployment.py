@@ -90,6 +90,14 @@ def test_the_example_proxy_does_what_the_api_and_the_web_app_count_on():
     assert re.search(r"limit_req_zone \$binary_remote_addr zone=aml_login:\w+ rate=\d+r/m;", code)
     assert re.search(r"location = /api/session/login \{\s*limit_req zone=aml_login", code)
     assert re.search(r"location = /api/v1/auth/login \{\s*return 404;", code)
+    # what anybody may read is limited by address and cannot be written through that location
+    assert re.search(r"limit_req_zone \$binary_remote_addr zone=aml_public:\w+ rate=\d+r/s;", code)
+    assert re.search(
+        r"location /api/v1/public/ \{\s*limit_req zone=aml_public"
+        r".*?limit_except GET \{\s*deny all;",
+        code,
+        re.S,
+    )
     # a body larger than the API accepts never reaches it, and nothing waits forever for one
     assert "client_max_body_size 1m;" in code and "client_body_timeout" in code
     assert "server_tokens off;" in code and "Strict-Transport-Security" in code

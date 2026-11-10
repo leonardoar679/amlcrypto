@@ -18,6 +18,7 @@ from app.api.v1 import (
     jobs,
     monitoring,
     providers,
+    public_incidents,
     screening,
     users,
     version,
@@ -44,3 +45,4 @@ api_router.include_router(users.router)
 api_router.include_router(api_keys.router)
 api_router.include_router(audit.router)
 api_router.include_router(editor_incidents.router)
+api_router.include_router(public_incidents.router)

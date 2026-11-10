@@ -24,6 +24,10 @@ PUBLIC = {
     ("POST", "/api/v1/auth/login"),
     # called by the provider, not by a person: it proves itself with a signature on the body
     ("POST", "/api/v1/webhooks/alchemy"),
+    # what has been published, for anybody: read only, nothing of any organization's
+    ("GET", "/api/v1/public/incidents"),
+    ("GET", "/api/v1/public/incidents/{slug}"),
+    ("GET", "/api/v1/public/addresses/{chain}/{address}/incidents"),
 }
 # Open to anyone who is signed in, whatever their role: nothing here is more than reading what is
 # public to the whole platform (the chains) or about the caller themselves.

@@ -8,7 +8,8 @@
 # programs that hold an API key:
 #
 #   app.example.com   the web app: people sign in here
-#   api.example.com   the API, for programs, and the provider's webhook
+#   api.example.com   the API, for programs, the provider's webhook and, if you want it public,
+#                     the read-only incidents anybody may read (/api/v1/public/)
 #
 # Run only the first if no program will call the API, and expose the webhook alone on the second.
 #
@@ -23,6 +24,7 @@ limit_req_zone $binary_remote_addr zone=aml_login:10m rate=5r/m;   # guessing a 
 limit_req_zone $binary_remote_addr zone=aml_web:10m rate=20r/s;    # pages and the web app's calls
 limit_req_zone $binary_remote_addr zone=aml_api:10m rate=10r/s;    # programs with an API key
 limit_req_zone $binary_remote_addr zone=aml_hook:10m rate=5r/s;    # the provider's webhook
+limit_req_zone $binary_remote_addr zone=aml_public:10m rate=10r/s; # published incidents, for anybody
 limit_conn_zone $binary_remote_addr zone=aml_conn:10m;
 limit_req_status 429;
 limit_conn_status 429;
@@ -136,6 +138,18 @@ server {
     # block if a script has to sign in as a person.
     location = /api/v1/auth/login {
         return 404;
+    }
+
+    # What has been published, for anybody: no key, read only. The API marks its answers as cacheable
+    # for a minute; the limit keeps one address from asking for everything over and over. The web
+    # app reads these through its own server, so this block is only for programs outside it.
+    location /api/v1/public/ {
+        limit_req zone=aml_public burst=20 nodelay;
+        limit_except GET {
+            deny all;
+        }
+        proxy_pass http://aml_api;
+        include /etc/nginx/aml/proxy-headers.conf;
     }
 
     location /api/v1/ {

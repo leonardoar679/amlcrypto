@@ -308,6 +308,10 @@ class Fresh:
     def published_incident(self) -> int:
         return self.world.incident(publish=True)
 
+    def published_slug(self) -> str:
+        """The address of the page of a new published incident."""
+        return self.world.slugs[self.world.incident(publish=True)]
+
     def credentials(self) -> dict[str, str]:
         return {"email": self.team.admin_email, "password": PASSWORD}
 
@@ -350,6 +354,9 @@ class Ghost:
 
     def published_incident(self) -> int:
         return GHOST
+
+    def published_slug(self) -> str:
+        return "no-such-incident"
 
     def credentials(self) -> dict[str, str]:
         return {"email": "nobody@example.com", "password": PASSWORD}
