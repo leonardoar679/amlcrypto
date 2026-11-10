@@ -9,6 +9,8 @@ Contents: [what runs where](#what-runs-where) · [first deployment](#first-deplo
 [settings that matter](#settings-that-matter-in-production) · [every day](#every-day) ·
 [backups and restores](#backups-and-restores) · [upgrading](#upgrading) ·
 [SQLite to MySQL](#moving-from-sqlite-to-mysql) · [rotating secrets](#rotating-secrets) ·
+[label sources](#label-sources-and-keeping-them-current) ·
+[the public incidents and their editors](#the-public-incidents-and-their-editors) ·
 [when something goes wrong](#when-something-goes-wrong) · [what is kept, and for how long](#what-is-kept-and-for-how-long) ·
 [hardening checklist](#hardening-checklist)
 
@@ -24,7 +26,10 @@ Contents: [what runs where](#what-runs-where) · [first deployment](#first-deplo
 | reverse proxy | nginx in front of `web` and `api` (`deployment/nginx/`): TLS, rate limits, body limits | | 80, 443 |
 
 The browser only ever talks to `web`. The API is reachable by programs that hold an API key, and by
-the data provider that calls the webhook, through the second host name of the nginx example.
+the data provider that calls the webhook, through the second host name of the nginx example. The one
+part of `web` that needs no sign-in is the published incidents (`/incidents`): the web server reads
+them from the API's public endpoints itself, so its cache and the nginx limits on the web host stand
+in front of the API (see [the public incidents](#the-public-incidents-and-their-editors)).
 
 With SQLite there must be **one** worker process and one API process writing to the file (the limits
 the worker enforces live in its process, and SQLite has one writer at a time). MySQL has no such
@@ -73,6 +78,7 @@ All settings are environment variables; `apps/api/.env.example` lists every one 
 | `ACCESS_TOKEN_TTL_MINUTES` | 60 | There are no refresh tokens: when it passes, the person signs in again |
 | `ALCHEMY_WEBHOOK_SIGNING_KEY` | unset, or the webhook's key | Unset, the webhook answers 404 |
 | `HISTORY_REQUEST_BUDGET`, `GRAPH_REQUEST_BUDGET`, `HISTORY_MAX_ITEMS` | defaults | Cap what one screening may spend of the providers' quotas, which every organization shares |
+| `LABEL_REFRESH_SOURCES`, `LABEL_REFRESH_TICK_SECONDS` | the sources to keep current by themselves (`ofac_sdn` at least), 3600 | Nothing refreshes a label source otherwise; a stale one lowers every screening's confidence ([label sources](#label-sources-and-keeping-them-current)) |
 
 ## Every day
 
@@ -189,6 +195,89 @@ MySQL has not been run here.)
 The four provider keys used while this was being built were pasted into a chat: rotate them before
 production.
 
+## Label sources and keeping them current
+
+A label source is a list of addresses that somebody says something about. Every screening is checked against
+**every** source that exists, so what the sources are, and how current, is part of every report.
+
+```powershell
+python -m app.cli labels sources                       # what exists, how current; sources not yet imported are listed too
+python -m app.cli labels refresh                       # OFAC's sanctions list (the default)
+python -m app.cli labels refresh --source elliptic_binance   # Elliptic's Binance blocklist
+python -m app.cli labels refresh --source elliptic_binance --file list.csv   # a local copy, no download
+python -m app.cli incidents project                    # rebuild the labels the published incidents give
+```
+
+* **A source does not exist until its first successful import.** `labels sources` shows the ones that could be
+  imported but have not been, and nothing is checked against them. A first import that fails (a bad file, a
+  server error) leaves nothing behind, so a source nobody has fetched can never cost a screening anything.
+* **A stale source costs every screening.** A source is *due* after its refresh interval (a day for OFAC and for
+  Elliptic's list) and *stale* after twice that; a stale or never-fetched source multiplies the confidence of
+  **every** screening by 0.8 and adds a warning to its report, not only of the screenings that touch the list.
+  So listing a source for refresh is a promise to keep it current, and `doctor` warns when one is not.
+* **The worker can keep them current:** set `LABEL_REFRESH_SOURCES=ofac_sdn,elliptic_binance` (comma separated;
+  empty, the default, means nothing refreshes by itself). Each `LABEL_REFRESH_TICK_SECONDS` (default an hour) the
+  worker queues one `REFRESH_LABEL_SOURCE` job for each named source whose last check is older than its
+  interval, at most one waiting per source; a refresh that fails is tried again at the next tick, so a server
+  that is down for a day does not make the source stale. A name that has no reader stops the worker at start.
+  The job's result and error are kept on the job in the queue (the job has no organization, so the API's
+  `GET /jobs/{id}` does not show it).
+* **The first import of a list is an event.** It can add tens of thousands of labels at once. Every monitored
+  address that has exposure to a listed address raises a `new_finding` alert at its next check (see D17 in the
+  limitations register), and the figures a listing at 60% adds to a score are in D15. Import it on a scratch
+  copy first (`copy-database`) if there are monitors you care about.
+* **A list that stops being what it was is refused, not applied.** A file that is a web page, has several columns,
+  is not text, or holds no address this platform reads is an import failure, and what was stored is left as it
+  was: a list that changed shape must never withdraw every claim.
+* **Elliptic's list carries no terms of reuse.** If the deployment has not settled that with Elliptic, leave it
+  out of `LABEL_REFRESH_SOURCES` and do not run its refresh (item 10 of the data-licensing review).
+* **The incident tracker is a source too**, written by the editors and brought up to date by the act of
+  publishing, not by a download: it appears after the first published incident that names an address screening
+  may act on, is never stale (it is confirmed at every change), and can be rebuilt from what is published with
+  `incidents project` (audited as the system).
+
+## The public incidents and their editors
+
+**Who writes.** Only a platform editor, made so from the command line (it is not a role, and an
+organization's administrator cannot do it):
+
+```powershell
+python -m app.cli user set-editor editor@example.com          # may write the public incidents
+python -m app.cli user set-editor editor@example.com --off    # may not
+python -m app.cli user list                                   # the "editor" column says who is one
+```
+
+The editor is **Incident editor** in the sidebar of such a person (and nobody else's), where an incident is
+written, sent to review, published, taken back, archived and, once published, added to. Everything they do is
+in the audit log (`incident.create`, `.content`, `.status` with how many labels it put in force, `.update`,
+`.delete`, `.project`), as that person, with no organization. Read
+[the editorial policy](editorial-policy.md) before the first publication, and see its item 9 of "Before
+production": counsel has not read it.
+
+**Who reads.** Anybody, at `/incidents` (the list, with filters by kind and chain, and a lookup of an address)
+and `/incidents/<name>`; the API's own public endpoints are `GET /api/v1/public/incidents`,
+`/public/incidents/{name}` and `/public/addresses/{chain}/{address}/incidents`. They answer with only what was
+published (a draft, an incident in review and an archived one are "no such incident"), nothing from an
+organization and nothing from the shared chain data, and carry `Cache-Control: public, max-age=60` on a success.
+The pages are `noindex` and have no sitemap until a brand and a domain exist.
+
+* **The web server reads them, the browser does not.** The pages are made on the server and ask the API for the
+  data, which the web server keeps for **one minute** (in its memory, with a time limit, so that what is gone
+  from the API is gone from the pages when the minute is up; a failed read is remembered for five seconds so
+  that a crowd does not queue at an API that is down). The browser never calls the API's public endpoints, and
+  the proxy would refuse it.
+* **With the API away** the incident pages say "not available right now" as pages, and the home page, which makes
+  no request, is unaffected. The container image is checked for this in CI (`/incidents` answers 200 with the
+  notice, a link that is not an incident answers 404).
+* **Taking something down.** Move it back to review: it leaves screening at once and the public pages within a
+  minute (longer if a proxy caches them; do not cache `/incidents` for long). A correction is a timeline entry.
+  The routine for a complaint is in the editorial policy.
+* **Limits at the proxy.** The example nginx file gives the API host a zone for `/api/v1/public/` (10 requests a
+  second per address, GET only) and the web host its general zone (20 a second) for the pages. Neither has been
+  through `nginx -t` (see O10 in the limitations register).
+* **If the pages are not meant to be open yet**, do not put the web host on the internet, or add authentication
+  in front of `/incidents` at the proxy; the application has no switch that turns the public pages off.
+
 ## When something goes wrong
 
 **A provider is down, or rate-limits.** Nothing to do. A history or a screening that needs it is
@@ -237,6 +326,8 @@ Everything is kept until someone removes it by hand; **nothing expires automatic
 | Stored histories of addresses (transfers, transactions) | global tables, shared by all organizations | Derived from the providers' answers; see the data-licensing review before keeping them long |
 | Raw provider answers | Bitcoin and Solana transactions only, compressed, 256 KB at most each | `STORE_RAW_RESPONSES=false` turns it off |
 | Reports, findings, alerts, cases, monitored addresses | per organization | Reports are kept verbatim |
+| Label sources, their entities, claims and import log | global | A claim a newer copy no longer holds is kept inactive with the time it left; imports are logged (`label_imports`) |
+| Incidents, their documents, amounts, addresses and timeline | global, written only by platform editors | A published incident is archived, never deleted; only a draft that was never published can be; the editors' private note is in the database and in backups |
 | The audit log | per organization, append-only (the application never updates or deletes a row; the database does not forbid it) | An organization with a history cannot be deleted from under it (foreign key `RESTRICT`) |
 | Backups | `DATA_DIR/backups` by default | Keep with `--keep`; encrypt and copy off the machine |
 
@@ -253,6 +344,8 @@ manual operation on the database for now, and is listed in the limitations regis
 - [ ] The API host does not offer `/api/v1/auth/login` (the example returns 404 for it): people sign in on the web host.
 - [ ] Watchman, if used, has no `ports:` entry; `INCLUDED_LISTS` names only lists whose terms you accept (never OpenSanctions without a license).
 - [ ] Provider keys only in the environment of `api` and `worker`; none in `web`.
+- [ ] `LABEL_REFRESH_SOURCES` names every label source the deployment relies on, and none whose terms are not settled (Elliptic's list); `doctor` shows the sources fresh.
+- [ ] Only the people who should be editors are (`user list`); nobody outside the team can reach `/incidents` until counsel has read the editorial policy; `/incidents` is not cached for long in front of the web host.
 - [ ] Backups scheduled, copied off the machine, and a restore rehearsed.
 - [ ] Administrators are few; analysts and viewers are the default for everyone else; API keys have the lowest role that works and an expiry.
 - [ ] The data-licensing review's *before production* list has been worked through.

@@ -1,6 +1,6 @@
 # Limitations register
 
-What this platform does not do, does only in part, or has not been checked on, as of milestone M14.
+What this platform does not do, does only in part, or has not been checked on, as of milestone M15.
 It is the list to read before relying on it: a deployment candidate is one whose limits are known.
 Each entry says what the limit is, what it costs, and what to do about it. Where a limit is a decision
 and not a gap, it says so.
@@ -13,7 +13,7 @@ matters), **risk** (works, with a cost to know).
 | # | Status | Limit | Cost | What to do |
 | --- | --- | --- | --- | --- |
 | D1 | by design | **No finding is not a clearance.** A report states what was examined and what could not be; the interface never says an address is clear | A customer who reads an empty report as "safe" | The wording is in every report and in the interface; say it in contracts |
-| D2 | gap | **Only OFAC's list is a source of labels.** UN, EU, UK and commercial lists are not integrated; mixers, scams, ransomware, darknet and the like have no data | Only the sanctions rules (AML-001/002/007/008 for sanctions) can fire on real data; AML-003 (mixers) cannot | Add sources with licences that allow it (see the data-licensing review) |
+| D2 | gap | **Three sources of labels exist, and only OFAC's is on by default:** OFAC's sanctions list, Elliptic's free blocklist for one incident (`STOLEN_FUNDS`, optional, see D14 to D17), and the addresses the platform's own editors name in published incidents (`STOLEN_FUNDS`, narrowly: see the editorial policy). UN, EU, UK and commercial lists are not integrated; mixers, scams, ransomware, darknet and the like have no data | Besides the sanctions rules, only the rules that read "stolen funds" can fire on real data, and only for the addresses of those two sources; AML-003 (mixers) cannot | Add sources with licences that allow it (see the data-licensing review) |
 | D3 | risk | **Weights, thresholds and confidence figures are uncalibrated defaults**, stored in every report | A score is a ranking aid, not a measurement | Calibrate on the organization's own cases before using levels as policy; rules can be switched off or tuned (global, not per organization) |
 | D4 | risk | **Taint through a labelled service is reported, not discounted.** Funds an exchange received from a sanctioned address "could have" reached anyone who was paid by it: AML-002 reports the route at its hop weight (MODERATE at two hops) and now names the exchange in the middle (`via`) | An exchange's customers can be MODERATE for what other customers deposited | The finding says it passes a service; analysts dismiss with that context. A discount per service is a policy decision not yet taken |
 | D5 | risk | **Value from a sanctioned address counts in any amount** (AML-001), so a dusting attack makes the victim CRITICAL | A false positive the policy accepts (OFAC sets no threshold) | The evidence shows the amount; an analyst can close the alert as `false_positive` |
@@ -25,6 +25,12 @@ matters), **risk** (works, with a cost to know).
 | D11 | risk | Rows a provider sends that cannot be read are skipped and counted; since M14 a skipped row makes the report PARTIAL (`rows_not_read` gap) | Reports on odd data are less sure, never silently complete | |
 | D12 | unverified | **BNB Smart Chain and Alchemy's Bitcoin** answered "not enabled for this app" when tried; BNB is verified only against documentation, real transactions from public nodes and an in-memory provider | | Enable the networks in the Alchemy app; run `history` on a known address |
 | D13 | unverified | **Watchman** (second opinion) was wired from its documentation and tested against an in-memory copy; no Docker on the development machine | | Run it, call `labels lookup` |
+| D14 | risk | **A label has no date.** The rules read a label by its category, and a claim says when this platform first saw it, not from when the address was the thief's. An address that was used for something ordinary before an incident is flagged all the same, in every history it appears in. This holds for Elliptic's list and for the incident tracker | A false positive that grows with how busy the address was | The editorial policy says to name only the addresses that belong to an incident; for a list, read D15 |
+| D15 | risk | **Elliptic's list carries intermediaries, and a listing is not an owner.** At 60% a listed address one hop from the one screened is a HIGH finding (AML-007) worth 24 points (MODERATE), 17 at two hops, 10 at three and nothing at four (`tests/test_intel_elliptic.py` pins the figures). An exchange or a service that received funds from a listed address is a hop away from everyone who deals with it | Alerts and MODERATE or LOW scores for customers of a service that touched the funds | Read the numbers before enabling it; an analyst closes such an alert as `false_positive` with that context. The list is optional, and its labels carry the confidence and the source in every report |
+| D16 | risk | **A source that is stale or was never fetched lowers the confidence of every screening, not only of those that touch it** (by 0.8, with a warning in the report). Elliptic's list is due after a day and stale after two | Enabling it is a promise to refresh it; a refresh that fails for two days costs every screening | `LABEL_REFRESH_SOURCES` queues the refresh and retries each tick (off by default); `doctor` warns when a source is not fresh. A source that nobody has imported does not exist, so it costs nothing |
+| D17 | risk | **Importing a list can raise an alert for every monitored address that has exposure to a newly listed address**, in a burst, at each one's next check (`new_finding`: a finding the monitor has not seen before, at or above its minimum severity) | A burst of alerts on the first import, and again when a list grows | Import where nothing is monitored yet, or expect the burst and close it as the alerts are worked |
+| D18 | by design | **From an incident, only an address in the role "received funds reported as taken", at a status somebody stands behind and with its document, becomes a label**, while the incident is published. A victim, an intermediary, an exchange, a bridge, a mixer and every community, inferred or disputed claim is shown and never acted on | Screening acts on far less than the pages show | This is the policy: see [editorial-policy.md](editorial-policy.md) section 4 |
+| D19 | risk | **Elliptic's file names no chain.** An address that is valid on several chains (every EVM address) is a claim on each of Ethereum and BNB Smart Chain, as for OFAC, which is right for a key and may not be for a contract (the same address can be nothing, or something else, on the other chain). XRP Ledger, Cosmos and other lines are counted and not stored | A listed EVM address may be flagged on a chain where it was never used | Accept (a thief's key is the same on both), or leave the source out |
 
 ## Security and access
 
@@ -58,6 +64,10 @@ matters), **risk** (works, with a cost to know).
 | O11 | unverified | The **MySQL leg of the SQLite-to-MySQL copy** runs only in the `api-mysql` CI jobs (it passed on MySQL 8.0 and 8.4 for `b38a1aa`, with the test data of `tests/fill.py`, not with yours) | | Rehearse on a copy of your data |
 | O12 | risk | The web image's build fetches Google Fonts at build time and needs the network (the fonts are then served from this site) | A build with no network fails | Build where the network is available |
 | O13 | gap | A browser other than headless Edge was not tried; no screen reader was tried; no right-to-left or other languages | | |
+| O14 | risk | **The public incident pages keep what they read for one minute** (in the web server's memory, with the data cached and not the page, because every page carries a nonce of its own), and the API marks its answers cacheable for a minute. A withdrawn incident can still be served for up to a minute, and for longer behind a caching proxy | A takedown is not instant on the pages (it is on screening) | Take it back to review, wait a minute; restart the web server if it must go at once; do not put a long cache in front of `/incidents` |
+| O15 | gap | **The incident editor is one person's tool.** The whole content is replaced on each save (the last save wins; there is no protection against two editors), there is no revision history beyond the audit entries (which say that and by whom, not what), no attachments or images, and text is plain | Two editors can overwrite each other | Keep to one editor at a time; the timeline keeps what matters |
+| O16 | gap | The public pages are `noindex` with no sitemap, no feed and no search beyond a lookup of one address; a brand and domain are open | | Decide before launch |
+| O17 | unverified | The public pages and the editor were run in headless Edge against a real API only; the nginx rate zone for `/api/v1/public/` has never been through `nginx -t` (see O10) | | Run `nginx -t`; try the pages in other browsers |
 
 ## Licensing and legal
 
@@ -68,6 +78,8 @@ matters), **risk** (works, with a cost to know).
 | L3 | risk | The public Esplora instance has no terms; the OFAC list's reuse terms were not found; Watchman's image has no stated licence | | |
 | L4 | risk | Chain data is stored in **tables shared between organizations**, and the raw movements endpoint serves provider-derived rows | May be redistribution under some providers' terms | Serve derived results only, or cache per organization |
 | L5 | by design | The platform is software for obliged entities; it gives indicators, not legal determinations, and is not a substitute for the entity's own programme | | |
+| L6 | risk | **Elliptic's blocklist states no terms of reuse.** The platform uses it for screening only and never republishes its addresses | Whether a commercial platform may store it and show its labels to customers is not established | Ask Elliptic in writing, or leave the source out of `LABEL_REFRESH_SOURCES` and never refresh it |
+| L7 | risk | **What the public incident pages say about addresses can be wrong or defamatory, and an address can be personal data.** The editorial policy is enforced where it can be and relies on an editor where it cannot; **no lawyer has read it** | The one exposure here that is not technical | Counsel's review before the pages reach anyone outside the team (item 9 of the "before production" list) |
 
 ## How these were found
 
@@ -76,3 +88,8 @@ O5, O8 and L1 to L4 were found or confirmed in milestone M14, by attacking the p
 isolation, hostile input, escalation, concurrency, outages, parsers over malformed rows, benign
 patterns) and by reading the sources' published terms. What those found that was a bug, and not a
 limit, was fixed; the list is in the milestone's section of `apps/api/README.md`.
+
+D14 to D19, O14 to O17, L6 and L7 were found in M15, by reading the proposal for the incident tracker against
+the code (what the rules read, what a stale source costs, what the proxy and the framework cache) and by
+running the pages in a browser: one run found that the framework's own revalidating cache would have gone on
+serving an incident after it was taken off the pages, which is why the pages keep their own, with a time limit.

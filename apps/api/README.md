@@ -1146,6 +1146,130 @@ into accusations are a dataset (`tests/test_false_positives.py`), and every rule
 * Not run: nginx (`nginx -t`), a restore on another machine, the data providers' live terms (the review says
   what could not be read).
 
+## Public incidents, a second label source and the platform editor (milestone M15)
+
+M15 is the first slice of "public blockchain intelligence": an **Incident Tracker** that anybody can read, and
+**Elliptic's free Binance blocklist** as a second source of labels for screening, with a deliberately narrow
+link between the two. The rules for what may be published are in
+[shared/documentation/editorial-policy.md](../../shared/documentation/editorial-policy.md) (**no lawyer has read
+them**); the operator's side in [operations.md](../../shared/documentation/operations.md); what it costs and does
+not do in [limitations.md](../../shared/documentation/limitations.md) (D14 to D19, O14 to O17, L6, L7).
+
+### The incident tracker
+
+* **What it is.** An incident is a story an editor writes from cited documents: a title, a summary, a kind
+  (hack, exploit, theft, scam, other), the documents it rests on (publisher, title, a web address, the day it was
+  read, an optional quotation of at most 500 characters), **the amount each source reports, one line per source and
+  never a total**, the addresses it names (a chain this platform reads, a role such as "received funds reported
+  as taken" or "victim wallet", and how firmly that is established, in fixed words), and a timeline. Five global
+  tables (`incidents`, `incident_evidence`, `incident_amounts`, `incident_addresses`, `incident_updates`, migration
+  `0011_incidents`, reversible) and one column, `users.is_platform_editor`. No row comes from the shared chain
+  data and none from an organization.
+* **Who writes: a platform editor.** The permission `incidents:curate` is held by **no role**: `get_principal` adds
+  it for a signed-in person whose `is_platform_editor` is set, never for an API key (a key made by an editor, of any
+  role, never writes incidents), and the flag is set only from the command line
+  (`python -m app.cli user set-editor <email> [--off]`; `user list` has an `editor` column). So an organization's
+  administrator, who can make any role, cannot make an editor. Every change is audited as the person with **no
+  organization** (`incident.create`, `.content`, `.status`, `.update`, `.delete`), so no organization reads it in
+  its own log.
+* **States.** draft, in review, published, archived, with only the moves draft to review, review to draft or
+  published, published to review or archived, archived to review. A draft or an incident in review has its **whole
+  content replaced at once, after all of it is checked** (validation as a whole: nothing half-written is kept);
+  a published incident **only grows** (`POST .../updates`; a correction is an update of that kind); to change
+  anything else it is taken back to review, which removes it from the public pages and from screening. Only a
+  draft that was never published can be deleted. Publishing needs a summary, a date, at least one document, and
+  the document for every address whose status says someone stands behind it.
+* **What is checked.** Text is plain (control and direction-changing characters are refused), links are `http` or
+  `https` with no credentials, dates are not later than tomorrow, an address is stored in the form its chain
+  defines (a second spelling is the same address), and counts are bounded (50 documents, 30 amounts, 200
+  addresses, 200 timeline entries).
+* **Who reads: anybody, and only what was published.** Three anonymous `GET`s, written field by field in
+  `app/incidents/public.py` (a column added to a table cannot reach the public by being there): the list
+  (`/public/incidents`, filters `kind` and `chain`, 20 to a page, at most 100), one incident (`/public/incidents/{slug}`)
+  and the published incidents that name an address (`/public/addresses/{chain}/{address}/incidents`). A draft, an
+  incident in review and an archived one are **404 in the same words as one that does not exist**. A success carries
+  `Cache-Control: public, max-age=60`, an error never does. The example nginx file has a rate zone for the path.
+* **The editor API** (`/editor/incidents`, seven routes: list with a state filter, create, read with what stops
+  publication and what may be done next, replace the content, move to another state, add a timeline entry, delete a
+  draft) answers the editor in the shape it accepts, so it is read, changed and sent back.
+
+### What screening acts on, which is far less than the pages show
+
+The risk engine reads a label by its category and nothing else (no floor on how sure it is), so only a small part of
+an incident becomes a label, and the rest is shown and never acted on (`app/incidents/projection.py`):
+
+* only an address in the role **received funds reported as taken** (a victim, an intermediary, an exchange, a
+  bridge or a mixer named in a story is never flagged: the engine would treat a victim exactly as a thief);
+* only at a status someone stands behind (confirmed, corroborated, reported by an analyst), with its document;
+* only while the incident is **published**, on the chain the editor named, as `STOLEN_FUNDS` with the address's own
+  confidence (the status gives 95, 85 or 80 unless the editor sets one). Taking the incident out of publication
+  switches its labels off **in the same transaction**, and a label that is off is kept, with the time it was;
+* under one label source, `incident_tracker` (kind analytics), which does not exist until there is a label to give,
+  has a refresh interval of ten years (nothing is downloaded, so it does not go stale) and is confirmed at every
+  projection. The projection is the whole set of claims the published incidents make, applied the way an imported
+  list is (new, changed, withdrawn, logged in `label_imports`), skipped when nothing changed, and rebuilt on demand with
+  `python -m app.cli incidents project` (audited as the system). A publication's audit entry says how many labels it
+  put in force.
+
+A label has **no date**: an address that was used for something ordinary before the incident is flagged all the
+same (D14 in the limitations register).
+
+### Elliptic's blocklist, and sources that are not OFAC
+
+* `app/intel/importer.py` was OFAC-only. It now holds a **reader per source** (`READERS`): a reader says what its file
+  is and what claims it holds (`app/intel/sources.py`: the spec of the source's row, the claim, the parsed copy), and
+  everything after that (storing, withdrawing what is gone, the source's state, the log, redirects, size limits) is
+  shared. OFAC's behaviour is unchanged: its tests (91 across the importer, the reader, the job, the lookups, the
+  API and the doctor) passed untouched through the change. **A source's row is made by its first
+  successful import and by nothing else**: a failed first import leaves no row, because a row that nobody has
+  fetched would count against every screening (below).
+* `app/intel/elliptic.py` reads the list: one address per line, no header, no chain, no date. EVM addresses are read
+  in lower case (a mis-cased checksum still names the address) and become claims on Ethereum and BNB Smart Chain; TRON,
+  Bitcoin and Solana by format; every other line (XRP Ledger, Cosmos, hexadecimal strings) is counted in the import
+  log and not stored. A file that is a web page, has several columns, is not text, has more than 200,000 lines or holds
+  **nothing readable is refused and withdraws nothing**. Category `STOLEN_FUNDS`, entity "Binance hack", kind analytics,
+  **confidence 60%** (a list of this kind carries intermediaries and says where funds went, not who holds the address),
+  due after a day. Its page states no terms: screening only, never republished
+  ([data-licensing-and-regulatory-review.md](../../shared/documentation/data-licensing-and-regulatory-review.md)).
+* **A stale or never-fetched source lowers the confidence of every screening by 0.8**, not only of those that touch it.
+  So the worker can keep sources current: `LABEL_REFRESH_SOURCES=ofac_sdn,elliptic_binance` (empty by default) makes a
+  second scheduled task (`app/intel/schedule.py`, alongside monitoring's) queue one deduplicated `REFRESH_LABEL_SOURCE`
+  job for each named source whose last check is a refresh interval old, every `LABEL_REFRESH_TICK_SECONDS` (an hour),
+  which is also how often a failed refresh is tried again. A name with no reader stops the worker at start.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli labels sources                              # also the sources that could be imported and have not been
+.\.venv\Scripts\python.exe -m app.cli labels refresh --source elliptic_binance [--file list.csv]
+.\.venv\Scripts\python.exe -m app.cli user set-editor editor@example.com [--off]
+.\.venv\Scripts\python.exe -m app.cli incidents project                           # rebuild what published incidents give screening
+```
+
+### Checked against
+
+* 3,249 backend tests and 1 skipped on SQLite (3,038 before M15, plus the incident service, both APIs, the
+  projection, the reader, the schedule and the structural tests every new route must satisfy: access control,
+  tenant isolation, hostile input, bounds, audit integrity, a pool of one connection, escalation), ruff clean,
+  `alembic check` clean on a migrated database, migration `0011` up, down and up again and over a populated database;
+  147 frontend unit tests (104 before). The MySQL test layout was rehearsed on SQLite (`emulate_mysql_harness`,
+  which reproduced both earlier MySQL CI failures): 3,173 passed, and the two tests that fail in it for reasons of
+  the emulation alone failed as before; MySQL and Docker themselves ran only in CI, **and CI has not run on M15**.
+* About 106 mutations of the backend code (the projection's role, status, state, evidence, category, confidence,
+  chain and fingerprint rules; the transition hook; the reader; the importer's lazy creation and failure paths; the
+  schedule and its settings): every real gap was closed by a test, and the survivors were equivalent. 226 mutations of
+  the new frontend modules left 14 equivalent survivors.
+* A headless-Edge run (97 checks) of the public pages and the editor on a production build against this API, on a
+  scratch database with **synthetic** incidents only: see the integration map (section 6).
+* **Calibration, pinned in `tests/test_intel_elliptic.py`:** at 60% a listed address one hop from the one screened
+  is a HIGH finding (AML-007) worth 24 points, MODERATE; 17 at two hops, 10 at three, none at four; a list of 20,000
+  addresses (25,000 claims) imports in about four seconds.
+
+### Not done
+
+Trending addresses, large transfers, public wallet profiles, community submissions, news, USD prices, a funds trail or
+graph on the incident pages, any paid feed (Whale Alert, Chainabuse, a commercial attribution) and DeFiLlama's hacks
+list; a licence for Elliptic's list; a legal read of the editorial policy; a brand and a domain (the pages are
+`noindex`).
+
 ## Testing against MySQL
 
 Point `TEST_DATABASE_URL` at an **empty, throwaway** MySQL 8 database and run the suite as usual:
@@ -1170,6 +1294,8 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 | `GET/POST /users`, `PATCH /users/{id}`, `POST /users/{id}/password` | `users:manage` | the people of the organization (see "Access control, monitoring, alerts and cases") |
 | `GET/POST /api-keys`, `DELETE /api-keys/{id}` | `apikeys:manage` | API keys; the secret is returned once |
 | `GET /audit` | `audit:read` | the audit log |
+| `GET /public/incidents`, `GET /public/incidents/{slug}`, `GET /public/addresses/{chain}/{address}/incidents` | none | the published incidents, for anybody: read only, only what was published, nothing of any organization's (see "Public incidents, a second label source and the platform editor") |
+| `GET/POST /editor/incidents`, `GET/DELETE /editor/incidents/{id}`, `PUT /editor/incidents/{id}/content`, `POST /editor/incidents/{id}/transition`, `POST /editor/incidents/{id}/updates` | `incidents:curate` | the incident editor: held by no role, only by a person made a platform editor from the command line, never by an API key |
 | `POST/GET /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST /monitoring/addresses/{id}/check` | `monitoring:write` / `monitoring:read` | monitored addresses |
 | `GET /alerts`, `GET /alerts/summary`, `GET /alerts/{id}`, `PATCH /alerts/{id}` | `alerts:read` / `alerts:manage` | alerts and the analyst's workflow on them |
 | `POST/GET /cases`, `GET /cases/summary`, `GET/PATCH /cases/{id}`, `POST /cases/{id}/notes`, `POST /cases/{id}/links`, `DELETE /cases/{id}/links/{link}`, `GET /cases/{id}/export` | `cases:write` / `cases:read` | cases |
@@ -1216,7 +1342,8 @@ upper bounds, and a path id past them is a 422, not a 404.
 | `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter base (`SourceAdapter`) and the account-model adapter on top of it, and the lookup from a chain name to its adapter |
 | `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/`, `app/chains/solana/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis; Solana its own transaction record, the instruction decoder checked against balance changes, and a wallet's per-transaction activity |
 | `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), storing and reusing it (`sync`, with `families` for what differs per chain family, `raw` for the kept provider answers, `detail` for single transactions), the history job, the text views for the CLI |
-| `app/intel/` | address intelligence: the claim model and confidence (`model`), OFAC's list reader (`ofac`), the importer and downloader (`importer`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`) and what the CLI and API share (`service`) |
+| `app/intel/` | address intelligence: the claim model and confidence (`model`), what a label source is and how its row is made (`sources`), the readers of OFAC's list (`ofac`) and Elliptic's blocklist (`elliptic`), the importer and downloader (`importer`, with the reader of each source in `READERS`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`), the worker's schedule that keeps named sources current (`schedule`) and what the CLI and API share (`service`) |
+| `app/incidents/` | the incident tracker: the vocabulary (`model`), writing an incident as a whole and moving it between states (`service`), what an editor sees (`views`) and what anybody sees (`public`), and the narrow part that screening acts on (`projection`) |
 | `app/graph/` | the transaction graph: movements from stored records (`flows`), where histories come from and how complete they are (`reader`), the bounded expansion (`builder`), exposure paths (`exposure`), fan-in and fan-out (`patterns`), bridges (`bridges`), the text output (`render`), what the CLI, API and job share (`service`) and the job (`jobs`) |
 | `app/risk/` | the risk engine: the records of a report (`model`), the fifteen rules and their registry (`rules/`), scoring and confidence (`scoring`), screening a graph (`engine`) or a transaction (`transactions`), the text output (`render`), what the CLI, API and job share (`service`) and the screening jobs (`jobs`) |
 | `app/worker/` | the job runner (`python -m app.worker`), its handlers and its scheduled tasks |
@@ -1252,6 +1379,11 @@ upper bounds, and a path id past them is a 422, not a 404.
 * Every integer a route accepts has both bounds (`app/api/limits.py`) and every text a length; a test reads
   the OpenAPI schema and names the field that has none.
 * A parser's public entry point is wrapped in `@refusing_malformed`; do not catch `AttributeError` around one.
+* A label source's row is made by its first successful import, never before and never by a failure: every row in
+  `label_sources` is consulted by every screening, and one that has never been fetched lowers all their confidence.
+* What anybody may read is written field by field (`app/incidents/public.py`), and what screening takes from an
+  incident is decided in one place (`app/incidents/projection.py`); a test holds the exact set of both, so a column
+  added later cannot reach the public or the engine by being there.
 * SQLite has two session modes. `create_session_factory(engine)` is read-only (writes fail at once);
   anything that writes uses `create_session_factory(engine, write=True)` and keeps its transaction
   short. Never hold a write transaction across network I/O. See `app/database/connection.py`.

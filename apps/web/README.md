@@ -2,8 +2,11 @@
 
 The platform's web app: Next.js 16 (App Router, plain JavaScript) with React 19. The signed-in screens
 (screening, reports, checks history, addresses, the transaction graph, monitoring, alerts, cases, and
-settings with people, API keys and the audit log) show data from the API in `apps/api`; the public pages
-(`/`, `/faq`, `/products/*`) are static marketing pages. How the two halves fit together, route by route, is in
+settings with people, API keys and the audit log, and the incident editor for platform editors) show data from the
+API in `apps/api`; the public pages are the marketing pages (`/`, `/faq`, `/products/*`) and the **published
+incidents** anybody can read (`/incidents`, `/incidents/<name>`). None of them is static: every page carries a
+Content-Security-Policy with a nonce of its own, so every page is made on the server for each request. How the two
+halves fit together, route by route, is in
 [shared/documentation/frontend-integration-map.md](../../shared/documentation/frontend-integration-map.md).
 
 ## Run it
@@ -55,13 +58,30 @@ Screenings and "read from the providers" run in the API's background worker, so 
   `X-Forwarded-For`, which the proxy in front of this site wrote; a client's own earlier entries are not passed
   on) and its user agent, so the audit log records them. With no proxy in front there is no address to pass and
   none is made up. The API believes the header only as far as `TRUSTED_PROXY_HOPS` says.
-* `src/server/` is server-only code (`import 'server-only'`): the API client and the session lookup.
+* `src/server/` is server-only code (`import 'server-only'`): the API client, the session lookup and `publicApi.js`,
+  how the incident pages read the API's anonymous endpoints (below).
+* **The public incident pages** (`app/incidents/`, `src/components/incidents/`) are server components that need no
+  session. They read `/api/v1/public/*` themselves through `src/lib/publicRead.js`, never the browser through the
+  proxy: it builds a path only from safe characters, never follows a redirect, gives up after 8 seconds and never
+  throws (`{ ok, status, data }`, status 0 when the API cannot be reached). **What it reads is kept for one minute in
+  the server's memory, with a time limit and nothing else**, a failure for five seconds, a refusal never: the
+  framework's own revalidating cache was tried and rejected because it goes on serving an answer that has run out when
+  the refresh is a refusal, which would keep an incident on the pages after it was taken off. The filters, the pages
+  and the address lookup are links and a GET form, so the pages work without a script. A page asks the API for
+  nothing that a visitor typed unless it has checked it first (`src/lib/incidents.js`: names, filters, pages,
+  addresses). The home page asks for nothing, so the container can be checked with the API away, which CI does.
+* **The incident editor** (`app/(app)/editor/`, `src/components/editor/`) is for a platform editor: no role has its
+  permission (`incidents:curate`), the sidebar shows it to nobody else, every view is mounted only behind
+  `EditorGate`, and the API refuses anybody else whatever the page shows. It edits the whole content of a draft as
+  one form and warns, under an address, when screening will act on it; a published incident is read-only apart from
+  the timeline.
 * `src/lib/` is plain, framework-free code the pages are built from: the API client, the risk bands and
   wording, chain names and explorer links, the allow-list of what the proxy forwards, graph helpers, exact
   unit formatting. These modules use **relative imports** so that `node --test` can load them; the `@/*`
   alias (`./src/*`) is for the pages and the server code.
 * `src/components/` is organised by screen: `check/`, `risk/` (the report), `address/`, `graph/`,
-  `monitoring/`, `alerts/`, `cases/`, `settings/`, `ui/` (small shared pieces), `layout/`.
+  `monitoring/`, `alerts/`, `cases/`, `settings/`, `incidents/` (the public pages), `editor/` (the incident
+  editor), `ui/` (small shared pieces), `layout/`.
 * What a person sees follows what their role may do. `GET /auth/me` lists the permissions; the sidebar
   (`src/data/appNav.js`), the forms and the buttons show only what the person can use. That is a courtesy:
   the API refuses the rest whatever the page shows, so never rely on a hidden link for protection.

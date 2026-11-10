@@ -43,12 +43,29 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   job is polled every two seconds until it finishes, and a failed poll is retried instead of dropped.
 * **The frontend never reads a data provider.** Anything that needs fresh chain data queues a job
   (`POST /screen/address`, `POST /graph/update`) and follows it; the worker does the reading.
+* **The incidents anybody may read are read by the web server, not by the browser (M15).** `/incidents` and
+  `/incidents/[slug]` are server components that need no session, so they cannot use the proxy (which wants the
+  cookie) and do not: `src/server/publicApi.js` reads the API's `/public/` endpoints with
+  `src/lib/publicRead.js`, which only builds paths from a safe set of characters, never follows a redirect,
+  gives up after 8 seconds, never throws (the answer is `{ ok, status, data }`, status 0 when the API cannot be
+  reached) and **keeps what it read for one minute in the server's memory, with a time limit and nothing
+  else**: an answer that has run out is gone, a refusal ("no such incident") is never kept, and a failure is
+  remembered for five seconds so that a crowd does not queue at an API that is down. The data is cached and
+  not the page, because every page carries a nonce of its own. The framework's own revalidating fetch cache
+  was tried first and **rejected after a browser run found that it keeps serving an answer that has run out
+  while the refresh returns a refusal**, so an incident taken off the public pages would have stayed on them.
+  The page and its title share one read per request (`React.cache`). The proxy lists none of these
+  endpoints, so the browser cannot ask for them through it (a test pins this).
+* **The editor is the one place the proxy forwards a `PUT`** (`PUT /editor/incidents/{id}/content`, which
+  replaces the whole content of a draft or an incident in review).
 
 ## 2. Routes
 
 | Route | Kind | What it is | API it uses |
 |---|---|---|---|
-| `/`, `/faq`, `/products/*` | static | marketing pages (still `noindex` site-wide until a real domain exists) | none |
+| `/`, `/faq`, `/products/*` | server pages, made for each request | marketing pages. They are not static: the nonce in every page's policy needs a render per request (the build lists every page as "server-rendered on demand"). Still `noindex` site-wide until a real domain exists. The home page asks the API for nothing, so it works with the API away | none |
+| `/incidents` | server page, public | the published incidents for anybody: filters by kind and chain (links), pages of 20, and a lookup of one address (a form that sends its answer in the address bar), all without a script; "not available right now" when the API cannot be reached | `GET /public/incidents`, `GET /public/addresses/{chain}/{address}/incidents`, read by the web server, never through the proxy |
+| `/incidents/[slug]` | server page, public | one published incident: the story, **each source's amount on its own line (never a total)**, the addresses with the part each plays and how firmly, in the platform's fixed words, the timeline and the sources; a draft, an incident in review, an archived one and one that does not exist are the same 404 | `GET /public/incidents/{slug}` |
 | `/auth` | server page + client form | email and password sign-in, back to the page asked for (`?next=`, same-site paths only); a signed-in visitor is sent on | `POST /api/session/login` |
 | `/check` | `(app)` | screen an address or a transaction; chain detection (an EVM address offers Ethereum or BNB); options (hops, look-back, read the providers first, refresh); the last five checks | `POST /address/validate`, `POST /screen/address`, `POST /screen/transaction`, `GET /screenings` |
 | `/check/[id]` | `(app)` | the screening: waiting, failed (with a retry) or the report | `GET /screen/{id}`, `GET /screen/{id}/export` |
@@ -65,6 +82,9 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 | `/settings/people` | `(app)` | admins: the people of the organization, add one, change a role, switch an account on or off, reset a password | `GET/POST /users`, `PATCH /users/{id}`, `POST /users/{id}/password` |
 | `/settings/api-keys` | `(app)` | admins: make a key (shown once), see the keys and when they were last used, revoke one | `GET/POST /api-keys`, `DELETE /api-keys/{id}` |
 | `/settings/audit` | `(app)` | admins: the audit log with filters | `GET /audit` |
+| `/editor/incidents` | `(app)`, platform editors only | every incident in every state, filtered by state, with how much each holds and who changed it last | `GET /editor/incidents` |
+| `/editor/incidents/new` | `(app)`, platform editors only | start a draft: title, the permanent address of its page (suggested from the title), kind, date, summary | `POST /editor/incidents` |
+| `/editor/incidents/[id]` | `(app)`, platform editors only | write an incident: details, documents it rests on, amounts, addresses (with a warning under one that screening will act on) and timeline, saved as a whole; what stops it being published; send to review, publish, take back, archive (two clicks for the two that change what everybody sees), delete a draft that was never published. Once published it is read-only and only the timeline grows (a correction is an entry) | `GET/DELETE /editor/incidents/{id}`, `PUT /editor/incidents/{id}/content`, `POST /editor/incidents/{id}/transition`, `POST /editor/incidents/{id}/updates` |
 | `/api/session/{login,logout,expired}` | route handlers | set, clear, and clear-then-redirect for the session cookie | `POST /auth/login` |
 | `/api/v1/[...path]` | route handler | the allow-listed proxy | see `proxyRules.js` |
 
@@ -75,7 +95,8 @@ sit in the group. A link with a broken `%` is answered with a 404 by `proxy.js` 
 fails with a server error); since M14 `proxy.js` runs for every page and route except the framework's static
 files, so that holds for the public pages too.
 
-The sidebar is **Check, Checks history, Addresses, Graph, Monitoring, Alerts, Cases, Settings**, filtered by
+The sidebar is **Check, Checks history, Addresses, Graph, Monitoring, Alerts, Cases, Incident editor, Settings**
+(the editor only for a platform editor: no role has its permission, `incidents:curate`), filtered by
 what the signed-in person's role may do (`GET /auth/me` lists the permissions; `src/data/appNav.js` says what
 each entry needs): a viewer is not offered "Check", because they cannot ask for a screening. This is a
 courtesy, never the protection: the API refuses what a role may not do whatever the page shows, and the
@@ -136,8 +157,22 @@ the API README ("Access control, monitoring, alerts and cases") describes each. 
 and **deliberately does not list `POST /webhooks/alchemy`**: that endpoint is for the data provider, which
 calls the API directly and proves itself with a signature, not for a browser. A test pins this.
 
+### Added for M15 (the incident tracker)
+
+Ten endpoints, described in the API README ("Public incidents and the platform editor"): three anonymous reads
+under `/public/` (the list, one incident, the incidents that name an address) and seven under `/editor/incidents`
+for a platform editor (`GET` list, `POST` create, `GET` one, `PUT .../content`, `POST .../transition`,
+`POST .../updates`, `DELETE`). `GET /auth/me` lists `incidents:curate` for an editor and for nobody else. The
+proxy's allow-list gained the seven editor routes (and the method `PUT`) and **deliberately lists none of the
+public ones**: the pages that need them read them on the server. Address pages show a claim from the incident
+tracker with a link to the incident it comes from.
+
 ## 5. Decisions
 
+* **The editor is not a role** (M15). An organization's administrator can make any role, so a role would have
+  let an administrator make themselves an editor. `users.is_platform_editor` is set from the command line only.
+* **The public incident pages cache the data and not the page, with a time limit of their own** (M15): see
+  section 1 for why the framework's cache was not used.
 * **The consumer screens were removed** (user decision, 2026-11-06): pricing, top-up and fake checkout,
   payment history, social rating, achievements, the per-user local quota, "My account" and its demo risk
   panel. The platform is a B2B tool; a quota, if one is wanted, belongs to the API.
@@ -157,7 +192,7 @@ calls the API directly and proves itself with a signature, not for a browser. A 
 
 ## 6. How it was checked
 
-* **Unit tests** (`npm test`, Node's runner, 104 tests since M14, run in CI): the proxy's allow-list, path cleaning, origin
+* **Unit tests** (`npm test`, Node's runner, 147 tests since M15, run in CI; 104 before it): the proxy's allow-list, path cleaning, origin
   rule and header filtering; the session cookie options; the safe-redirect rule; the risk bands and
   wording; transaction-hash shapes; exact unit formatting; the graph helpers (node kinds, counterparties,
   gap grouping); the link and path guards; the API client; and, since M13, the permission names, the menu a
@@ -222,6 +257,29 @@ calls the API directly and proves itself with a signature, not for a browser. A 
   without the nonce) is refused and reported; and the audit log records the client's address from
   `X-Forwarded-For`, the proxy's own entry when a client prepended others, and the connection's address (as IPv4)
   when there is no header.
+
+* **The M15 browser run** (headless Edge, a production build, a real API on a scratch database with **synthetic**
+  incidents only: 24 published, a draft, an archived one, two people, one of them an editor; 97 checks, all passing at
+  the end). *Anonymous:* the list is 200, `noindex`, two pages of 24, filters narrow it, a filter nobody knows is
+  ignored; a draft, an archived incident, an unknown name, a name that is not a name and a broken `%` are all 404;
+  an incident shows each source's amount on its own line and no total, every address with its fixed words, no
+  note to editors anywhere, every link out with `rel="noopener noreferrer"`; the address lookup finds a named
+  address in any spelling, says an unnamed one is not thereby clean, says an address on the wrong chain is not
+  one, and does not echo a hostile query as markup; five visits cost the API at most one request and three
+  visits to a missing incident cost three; no CSP violation and no console error on the home page, the list,
+  an incident, a 404 and a lookup; no sideways scroll at 390 px; dark theme; with the API stopped the list, an
+  incident and the lookup say "not available right now" as pages and the home page is untouched; a failure is
+  remembered for five seconds and then forgotten. *Editor:* the editor is in the menu of an editor and not of an
+  administrator who is not one (whose direct request the API refuses with 403, read and write); an incident
+  is written in the browser (a document, an address with the warning that screening will act on it, saved,
+  checked against what stops publication), sent to review, published with a second click, found on its public
+  page, **and the address it names is now a STOLEN_FUNDS label from the incident tracker at 80%**; a correction is
+  added to the published incident and is on the public page within the minute; taking it back to review ends the
+  label at once (it keeps its history) and removes the page within the minute; on the profile page of a named
+  address the claim shows with a link to the incident, and the victim the same incident names carries none;
+  **no provider key in any response or in the build**. The run found and fixed one real defect (the framework's
+  cache kept serving a withdrawn incident, see section 1) and showed that errors were being asked for twice per
+  render (now once). Not covered: other browsers, a screen reader, nginx, Docker (CI covers the image).
 
 ## 7. What the audit found, and what became of it
 

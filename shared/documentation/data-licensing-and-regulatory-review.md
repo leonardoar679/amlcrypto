@@ -8,7 +8,9 @@ put the platform into production.
 that need a lawyer or a contract are asked early and specifically. Every statement about a term comes
 from a page fetched and read by an automated agent on **2026-11-09**, quoted in at most a few words;
 terms change, so read the current page before relying on any of it. Where a page could not be opened or
-read, that is said, and the point is **unverified**, not clear.
+read, that is said, and the point is **unverified**, not clear. (Elliptic's blocklist page was read on
+**2026-11-10**, when the incident tracker was added; the sources of the proposal listed after it were
+checked the same day in search results only, and their terms pages were not read.)
 
 ## Summary
 
@@ -32,6 +34,14 @@ read, that is said, and the point is **unverified**, not clear.
 7. **Personal data.** The EDPB's final guidelines treat blockchain addresses as personal data where a
    person can be identified by means reasonably likely to be used. The platform stores addresses,
    labels and reports with no automatic expiry and no erasure tool: see [personal data](#personal-data).
+8. **Elliptic's Binance blocklist states no terms at all.** Its page offers the file free, to any business,
+   to download and screen against, and says nothing about licence, reuse or redistribution. The platform
+   therefore uses it for screening only: a customer meets it as a label on an address they asked about, no
+   endpoint lists its addresses, and no public page shows them. Ask Elliptic in writing before production.
+9. **The public incident pages are a publishing decision, not a data licence.** What they say about an
+   address can be wrong or defamatory, and an address can be personal data. The rules the platform
+   enforces and the rules it leaves to an editor are in [the editorial policy](editorial-policy.md),
+   which no lawyer has read.
 
 ## Data sources
 
@@ -141,6 +151,73 @@ what to do before production. "Stored" is what the database keeps (it is kept un
 * **Before production:** never add other lists to `INCLUDED_LISTS` without reading their terms. Do not add
   OpenSanctions without a licence from them.
 
+### Elliptic: Binance hack blocklist (a label source, optional)
+
+* **Used for:** a list of addresses that Elliptic attributes to the Binance hack, imported as claims in the
+  category `STOLEN_FUNDS` (`labels refresh --source elliptic_binance`). **Stored:** the claims, with the
+  source and its age; claims that a later copy no longer holds are kept inactive. The source does not exist
+  until its first successful import. Shown to customers as a label on an address they asked about, with the
+  source's name, the entity "Binance hack", the confidence and the page of the list; no endpoint lists a
+  source's addresses and no public page shows them.
+* **What its page says (read 2026-11-10):** the list is one CSV file, offered free, with no account or key,
+  to any business that wants to download it and screen against it, with a suggestion to fetch it every hour.
+  It states **no licence, no terms of use, and nothing on reuse or redistribution**. The size on the page had
+  grown several times in a few weeks (8,000 to about 22,000 lines at the last read).
+* **What the file is:** one address per line, no header, no date, no chain. The lines are of several kinds:
+  the chains this platform reads, and others it does not (XRP Ledger and Cosmos addresses, hexadecimal
+  strings that are not addresses); some EVM addresses are there twice in different letter case. An address
+  that is valid on several chains (every EVM address) becomes a claim on each, as for OFAC. Lines that are not
+  addresses on a chain read here are counted in the import log and not stored. Only a copy that is plainly a
+  list of addresses is accepted (a web page served in its place, a file with several columns, or one with
+  nothing readable is refused and leaves what was stored alone).
+* **What it is worth:** 60%, below the 80% an analytics provider's attribution usually is, because a list of
+  this kind carries intermediaries as well as the thief's own wallets, and a listing says where funds went,
+  not who holds the address. What a claim at 60% adds to a screening is in [limitations.md](limitations.md).
+* **What the platform does about staleness:** the list is due after a day and stale after two. A stale or
+  never-fetched source **lowers the confidence of every screening, not only of those that touch the list**
+  (by 0.8), so the label refresh that keeps it current is a commitment (`LABEL_REFRESH_SOURCES`, off by
+  default; see [operations.md](operations.md)).
+* **Before production:** ask Elliptic in writing whether a commercial platform may store the list and show
+  its labels to customers, and whether a paid feed is the intended route for that; until then it is used as the
+  page offers it, for screening. If a deployment has not agreed to this, leave it out of
+  `LABEL_REFRESH_SOURCES` and never run its refresh.
+
+### Other sources of the proposal that was built from (not integrated; checked in search results on 2026-11-10)
+
+Their terms pages were **not read**; nothing is integrated, and each needs reading before it is.
+
+* **DeFiLlama:** a free API covers value locked, fees and prices; whether its list of hacks is free or part of
+  a paid plan (third parties quote about $250 to $300 a month for the Pro API) was not confirmed.
+* **Whale Alert:** the $29.95-a-month plan is for personal use only; a REST plan is $699 a month with 30 days of
+  history; larger use is quoted. Not suitable for this product at the personal tier.
+* **Chainabuse (TRM Labs):** a free API key allows 10 calls a month (up to 50 reports each); more needs a
+  partner request.
+* **CoinGecko:** commercial plans start at about $129 a month, and redistributing prices through the
+  platform's own interfaces or API needs the enterprise plan. A source of US-dollar prices (for large
+  transfers) is a decision for the slice that needs it.
+
+### The incident pages (editorial content)
+
+Not a data licence, but the one new part of the platform that publishes something **about** third parties
+to people who are not customers, so it belongs in this review.
+
+* **What is published:** a story an editor writes from cited documents, the amounts each source reports, the
+  addresses the sources name with how firmly, and a timeline. Nothing comes from the shared chain data or
+  from an organization's records; no provider row, graph or movement is shown (that would hand provider
+  data to third parties: see "Sharing data between organizations").
+* **The exposure:** an address listed as receiving stolen funds can be wrong, or can be a service's address
+  that the thief also used; saying so in the page's own voice could be defamatory. The platform answers it by
+  what it enforces (a cited document for every statement, fixed words that say who reported what and how
+  firmly, no total and no choice between sources, the weakest status the sources support) and what it asks of
+  an editor (no private individuals, no inference of ownership, corrections on the timeline, a day-one
+  response to a complaint): all in [the editorial policy](editorial-policy.md).
+* **Personal data:** an address can be personal data (see the next sections), including a victim's. The
+  policy keeps private individuals out. A request to correct or remove something is handled by an editor and
+  is audited.
+* **Search engines:** every page is `noindex` until a real domain and brand exist, and there is no sitemap.
+* **Before production:** counsel's read of the editorial policy and of what the pages say, before they reach
+  anyone outside the team.
+
 ### OpenSanctions (not used)
 
 Its data is licensed CC BY-NC 4.0, and its own page says "Any use inside a for-profit business requires a
@@ -243,3 +320,7 @@ and audit needs differ by customer and jurisdiction.
 6. Other sanctions lists the customers' jurisdictions require (each with its own terms).
 7. A third-party notices file generated from the lock files.
 8. Counsel's review of this document and of the contracts with the five providers.
+9. Counsel's review of the editorial policy and of the incident pages, before they reach anyone outside
+   the team; and the editors' complaint and takedown routine, tried once.
+10. Elliptic's answer on reuse of its blocklist, or leave it out (`LABEL_REFRESH_SOURCES`, and never run its
+    refresh).
