@@ -32,6 +32,7 @@ from app.database.models import (
     IncidentEvidence,
     IncidentUpdate,
 )
+from app.incidents import projection
 from app.incidents.model import (
     DEFAULT_CONFIDENCE,
     EDITABLE,
@@ -651,6 +652,10 @@ def transition(
     incident.updated_by = user_id
     incident.updated_at = moment
     session.flush()
+    if IncidentStatus.PUBLISHED in (current, target):
+        # What screening acts on follows what is published, in this same transaction: an incident
+        # that is pulled from view is not one the engine goes on flagging addresses for.
+        projection.project(session, now=moment)
     return incident
 
 

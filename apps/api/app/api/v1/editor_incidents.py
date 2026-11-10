@@ -29,7 +29,7 @@ from app.api.deps import (
 from app.api.errors import APIError
 from app.api.limits import IdPath
 from app.database.models import Incident
-from app.incidents import service, views
+from app.incidents import projection, service, views
 from app.incidents.model import (
     MAX_ADDRESSES,
     MAX_AMOUNTS,
@@ -345,7 +345,13 @@ def move_incident(
         "incident.status",
         target_type="incident",
         target_id=incident.id,
-        details={"slug": incident.slug, "from": before, "to": incident.status},
+        details={
+            "slug": incident.slug,
+            "from": before,
+            "to": incident.status,
+            # What screening now acts on because of this incident (see app.incidents.projection).
+            "labels_in_force": projection.labels_in_force(session, incident),
+        },
         actor=actor,
     )
     session.commit()

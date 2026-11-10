@@ -310,7 +310,12 @@ def test_every_change_is_audited_for_the_platform_and_no_organization_reads_it(
     ]
     assert {row.organization_id for row in rows} == {None}
     assert {(row.actor_type, row.actor_label) for row in rows} == {("user", "editor@example.com")}
-    assert rows[2].details == {"slug": "a-theft", "from": "draft", "to": "in_review"}
+    assert rows[2].details == {
+        "slug": "a-theft",
+        "from": "draft",
+        "to": "in_review",
+        "labels_in_force": 0,
+    }
     assert rows[1].details["addresses"] == 1 and rows[0].details["title"] == "A theft"
 
     # the editor's own organization sees none of it in its log

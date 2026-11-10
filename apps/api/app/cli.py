@@ -51,6 +51,7 @@ from app.graph.service import (
     load_registry,
     resolve,
 )
+from app.incidents import projection
 from app.ingestion.detail import save_detail, stored_solana_detail
 from app.ingestion.raw import RawCollector
 from app.ingestion.read import (
@@ -606,6 +607,47 @@ def _cmd_labels_sources(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_incidents_project(args: argparse.Namespace) -> int:
+    """Make the labels that screening acts on match the published incidents. A status change does
+    this by itself; the command is for repair (a label that was changed by hand, a restored
+    backup) and applies the whole of it again, whether or not anything seems to have changed."""
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_session_factory(engine, write=True)() as session:
+            report = projection.project(session, force=True)
+            if report is not None:
+                record(
+                    session,
+                    actor=CLI,
+                    action="incident.project",
+                    target_type="label_source",
+                    target_id=projection.SLUG,
+                    details={
+                        "labels": report.claims,
+                        "added": report.added,
+                        "updated": report.updated,
+                        "removed": report.removed,
+                    },
+                )
+            session.commit()
+    finally:
+        engine.dispose()
+    if args.json:
+        print(json.dumps(None if report is None else report.to_dict()))
+    elif report is None:
+        print(
+            "Nothing to project: no published incident names an address that screening may act "
+            "on, and none ever did."
+        )
+    else:
+        print(
+            f"{report.source}: {report.claims} address(es) from {report.entries} published "
+            f"incident(s) are in force: {report.added} added, {report.updated} changed, "
+            f"{report.unchanged} confirmed, {report.removed} switched off."
+        )
+    return 0
+
+
 def _cmd_labels_lookup(args: argparse.Namespace) -> int:
     """What is known about an address, who says so, how sure and how current. Exit 0 when it is
     clean as far as the sources go, 2 when it carries a label in force. Reads only stored data (and
@@ -1051,6 +1093,17 @@ def main(argv: list[str] | None = None) -> int:
     find.add_argument("address")
     find.add_argument("--json", action="store_true", help="print JSON instead of text")
     find.set_defaults(run=_cmd_labels_lookup)
+
+    incidents = commands.add_parser(
+        "incidents", help="the public incidents, and what screening takes from them"
+    ).add_subparsers(dest="incidents_command", required=True)
+    project = incidents.add_parser(
+        "project",
+        help="make the labels screening acts on match the published incidents (a status change "
+        "does this by itself; this is the repair)",
+    )
+    project.add_argument("--json", action="store_true", help="print JSON instead of a sentence")
+    project.set_defaults(run=_cmd_incidents_project)
 
     graph = commands.add_parser(
         "graph",
