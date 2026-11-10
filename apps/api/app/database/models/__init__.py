@@ -14,6 +14,13 @@ from app.database.models.chain_data import (
     StoredUnattributed,
 )
 from app.database.models.chains import Chain, ChainAsset
+from app.database.models.incidents import (
+    Incident,
+    IncidentAddress,
+    IncidentAmount,
+    IncidentEvidence,
+    IncidentUpdate,
+)
 from app.database.models.intel import AddressLabel, Entity, LabelImport, LabelSource
 from app.database.models.jobs import FetchJob, JobStatus
 from app.database.models.monitoring import Alert, MonitoredAddress
@@ -38,6 +45,11 @@ __all__ = [
     "Entity",
     "FetchJob",
     "FetchRun",
+    "Incident",
+    "IncidentAddress",
+    "IncidentAmount",
+    "IncidentEvidence",
+    "IncidentUpdate",
     "JobStatus",
     "LabelImport",
     "LabelSource",

@@ -12,6 +12,7 @@ from app import cli
 from app.core.config import Settings, get_settings
 from app.database import migrations
 from app.database.connection import create_db_engine
+from app.database.models import Base
 from app.operations import backup as ops
 from tests.conftest import MYSQL_URL, TEST_SECRET
 from tests.fill import fill
@@ -47,7 +48,8 @@ def test_backup_writes_a_verified_backup_to_the_data_directory_by_default(
 
     out = capsys.readouterr().out
     made = only_backup(tmp_path / "data" / "backups")
-    assert f"Backed up to {made}" in out and "sha256" in out and "30 tables" in out
+    assert f"Backed up to {made}" in out and "sha256" in out
+    assert f"{len(Base.metadata.tables)} tables" in out
     assert ops.verify(made).ok
 
 

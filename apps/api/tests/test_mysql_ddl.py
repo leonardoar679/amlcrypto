@@ -112,6 +112,28 @@ def test_mysql_monitored_addresses_and_alerts_keep_addresses_case_sensitive():
     assert "evidence JSON NOT NULL" in alerts
 
 
+def test_mysql_incidents_keep_addresses_and_hashes_case_sensitive():
+    addresses = ddl("incident_addresses", mysql.dialect())
+    updates = ddl("incident_updates", mysql.dialect())
+    assert "chain_id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in addresses
+    assert "address VARCHAR(128) COLLATE utf8mb4_bin NOT NULL" in addresses
+    assert "tx_hash VARCHAR(100) COLLATE utf8mb4_bin" in updates
+    assert "amount_usd_low BIGINT NOT NULL" in ddl("incident_amounts", mysql.dialect())
+    # the slug is the permanent address of a page and is compared as text, in lower case
+    assert "slug VARCHAR(80) NOT NULL" in ddl("incidents", mysql.dialect())
+
+
+def test_the_offline_mysql_migration_adds_the_editor_flag_with_a_default():
+    config = migrations.alembic_config(MYSQL_URL)
+    config.output_buffer = io.StringIO()
+    command.upgrade(config, "head", sql=True)
+    script = config.output_buffer.getvalue().replace("\n", " ")
+
+    assert "ALTER TABLE users ADD COLUMN is_platform_editor BOOL NOT NULL DEFAULT false" in script
+    assert "CREATE TABLE incident_addresses" in script
+    assert "CONSTRAINT uq_incident_addresses_incident_id_chain_id_address_role UNIQUE" in script
+
+
 def test_mysql_cases_keep_addresses_and_link_keys_case_sensitive():
     cases = ddl("cases", mysql.dialect())
     links = ddl("case_links", mysql.dialect())

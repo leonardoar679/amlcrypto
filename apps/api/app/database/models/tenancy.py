@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.models.base import Base, IntegerPK, TimestampMixin, UTCDateTime
@@ -38,4 +38,10 @@ class User(TimestampMixin, Base):
     # admin, analyst or viewer (app.access.permissions). Never defaulted: whoever makes a user says.
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # A platform editor may write the incidents everybody can read (app.incidents). It belongs to
+    # the person, not to a role: any administrator can make any role, so a role could be made by
+    # anyone. Set only from the command line (`user set-editor`).
+    is_platform_editor: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
