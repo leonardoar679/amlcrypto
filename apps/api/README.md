@@ -1137,8 +1137,14 @@ into accusations are a dataset (`tests/test_false_positives.py`), and every rule
   refused and reported; sign-in through the form works; and the audit log records the client's address
   from `X-Forwarded-For`, the proxy's own entry when a client prepended others, and the connection's address
   when there is no header.
-* Not run here: Docker (CI builds and calls both images), nginx, MySQL (CI runs the whole suite on 8.0 and 8.4),
-  a restore on another machine, the data providers' live terms (the review says what could not be read).
+* CI, all five jobs passed for `b38a1aa`: the whole suite on MySQL 8.0 and 8.4 (the MySQL leg of the copy test
+  included) and both Docker images built and called, the web one too. The first run, on `addc465`, failed both
+  MySQL jobs on about 390 tests, all while setting up: a flaw in the MySQL test harness (every session of a test
+  shares one connection inside an outer transaction, and the API's early rollback of its read connection undid
+  the rows the test had created), fixed in `b38a1aa` by making the harness's read sessions close where they are
+  asked to roll back.
+* Not run: nginx (`nginx -t`), a restore on another machine, the data providers' live terms (the review says
+  what could not be read).
 
 ## Testing against MySQL
 
@@ -1240,7 +1246,9 @@ upper bounds, and a path id past them is a 422, not a 404.
   when MySQL names you the deadlock victim (error 1213).
 * A request holds one database connection at a time: take what you need from the read session, call
   `session.rollback()` to give it back, then use the write session (see `get_principal` and `login`). The
-  pool-of-one test fails for any route that does not.
+  pool-of-one test fails for any route that does not. (In the MySQL test layout every session shares the
+  test's one connection, so a read session's `rollback()` is turned into a `close()` there: see `_ReadSession`
+  in `tests/conftest.py`.)
 * Every integer a route accepts has both bounds (`app/api/limits.py`) and every text a length; a test reads
   the OpenAPI schema and names the field that has none.
 * A parser's public entry point is wrapped in `@refusing_malformed`; do not catch `AttributeError` around one.

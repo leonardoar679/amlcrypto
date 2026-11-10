@@ -71,9 +71,9 @@ Screenings and "read from the providers" run in the API's background worker, so 
 `Dockerfile` builds the app in two stages and runs the self-contained server Next makes with
 `NEXT_OUTPUT=standalone`: no source, no dev tools, the user `node`, port 3000, `BACKEND_URL` read when it starts.
 `deployment/docker-compose.yml` has the service (its port on the loopback address only, no secret in it). CI builds
-the image and calls it; it has never been built on a development machine (no Docker), but the standalone server was run
-here as the image would run it, with the static files beside it, and answered the pages, the policy, a broken link and
-the redirect of a protected page. `sharp` (an LGPL image library the pages do not need) is left out of that server.
+the image and calls it (it passed for `b38a1aa`: the pages, the policy, a broken link, the redirect of a protected page
+and a user that is not root); it has never been built on a development machine (no Docker), but the standalone server
+was run here as the image would run it, with the static files beside it, and answered the same. `sharp` (an LGPL image library the pages do not need) is left out of that server.
 
 ## Rules that keep it safe
 

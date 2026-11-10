@@ -54,8 +54,8 @@ matters), **risk** (works, with a cost to know).
 | O7 | gap | No file attachments on cases; no per-organization rule configuration; no people picker for non-admins (only admins may list people) | | |
 | O8 | risk | **Provider quotas are shared by every organization.** One organization's large graph spends the same requests another needs; budgets cap a single screening, not an organization | A busy tenant can starve the others | Per-organization budgets are future work |
 | O9 | risk | Work per request grows with the amount of stored history (a graph is built from storage) | Large graphs are slow | Limits on nodes, edges and hops (`GRAPH_*`) |
-| O10 | unverified | **Docker, nginx and MySQL could not be run on the development machine.** Docker images are built and called in CI; the compose file is only parsed; the nginx example has never been through `nginx -t`; MySQL is exercised by the CI jobs only | | CI results are the record; run `nginx -t` first |
-| O11 | unverified | The **MySQL leg of the SQLite-to-MySQL copy** runs only in the `api-mysql` CI jobs | | Rehearse on a copy of your data |
+| O10 | unverified | **Docker, nginx and MySQL could not be run on the development machine.** In CI (all five jobs passed for `b38a1aa`) both Docker images are built and called and the whole suite runs on MySQL 8.0 and 8.4; the compose file is only parsed; the nginx example has never been through `nginx -t` | | CI results are the record; run `nginx -t` first |
+| O11 | unverified | The **MySQL leg of the SQLite-to-MySQL copy** runs only in the `api-mysql` CI jobs (it passed on MySQL 8.0 and 8.4 for `b38a1aa`, with the test data of `tests/fill.py`, not with yours) | | Rehearse on a copy of your data |
 | O12 | risk | The web image's build fetches Google Fonts at build time and needs the network (the fonts are then served from this site) | A build with no network fails | Build where the network is available |
 | O13 | gap | A browser other than headless Edge was not tried; no screen reader was tried; no right-to-left or other languages | | |
 
