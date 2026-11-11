@@ -1258,7 +1258,8 @@ same (D14 in the limitations register).
   which reproduced both earlier MySQL CI failures): 3,215 passed, and the two tests that fail in it for reasons of
   the emulation alone failed as before; MySQL and Docker themselves ran only in CI, where all five
   jobs passed on the first run, for `e45dedd` (run 42935869229: SQLite, MySQL 8.0 and 8.4, the web build, and both
-  Docker images, the web one with its `/incidents` check).
+  Docker images, the web one with its `/incidents` check), and again on the first run for the funds trail, `a1316eb`
+  (run 43039937757), which put migration `0012` and its table through MySQL 8.0 and 8.4.
 * About 106 mutations of the backend code (the projection's role, status, state, evidence, category, confidence,
   chain and fingerprint rules; the transition hook; the reader; the importer's lazy creation and failure paths; the
   schedule and its settings) and 32 of the funds trail (the checks of a movement, its storage and both serializers):
