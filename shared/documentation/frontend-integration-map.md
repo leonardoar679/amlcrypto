@@ -194,7 +194,7 @@ tracker with a link to the incident it comes from.
 
 ## 6. How it was checked
 
-* **Unit tests** (`npm test`, Node's runner, 147 tests since M15, run in CI; 104 before it): the proxy's allow-list, path cleaning, origin
+* **Unit tests** (`npm test`, Node's runner, 149 tests since M15, run in CI; 104 before it): the proxy's allow-list, path cleaning, origin
   rule and header filtering; the session cookie options; the safe-redirect rule; the risk bands and
   wording; transaction-hash shapes; exact unit formatting; the graph helpers (node kinds, counterparties,
   gap grouping); the link and path guards; the API client; and, since M13, the permission names, the menu a

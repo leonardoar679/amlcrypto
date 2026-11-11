@@ -994,7 +994,8 @@ monitoring alert that somebody had acknowledged recording "from open", the `mine
 everyone's alerts, and a timeline, a link count and a summary that were not scoped to their own case or
 organization. Migrations `0008`-`0010` round-trip (up, down to `0007`, up) and `alembic check` finds no drift
 on SQLite. The screens were driven in a real browser against the real chain (83 checks, see the integration
-map). **MySQL is checked only by CI, which has not run on these commits yet.** One existing worker test
+map). **MySQL is checked only by CI**: its first run, on `4d08d61`, failed both MySQL jobs on four test-side tests
+(fixed at the start of M14), and the suite has passed on MySQL 8.0 and 8.4 since `b38a1aa`. One existing worker test
 (`test_draining_runs_every_due_job_within_the_concurrency_limit`) failed once in a full run under load and
 passed on every rerun; it asserts a degree of concurrency that a slow machine can miss.
 
@@ -1250,9 +1251,11 @@ same (D14 in the limitations register).
   projection, the reader, the schedule and the structural tests every new route must satisfy: access control,
   tenant isolation, hostile input, bounds, audit integrity, a pool of one connection, escalation), ruff clean,
   `alembic check` clean on a migrated database, migration `0011` up, down and up again and over a populated database;
-  147 frontend unit tests (104 before). The MySQL test layout was rehearsed on SQLite (`emulate_mysql_harness`,
+  149 frontend unit tests (104 before). The MySQL test layout was rehearsed on SQLite (`emulate_mysql_harness`,
   which reproduced both earlier MySQL CI failures): 3,173 passed, and the two tests that fail in it for reasons of
-  the emulation alone failed as before; MySQL and Docker themselves ran only in CI, **and CI has not run on M15**.
+  the emulation alone failed as before; MySQL and Docker themselves ran only in CI, where all five
+  jobs passed on the first run, for `e45dedd` (run 42935869229: SQLite, MySQL 8.0 and 8.4, the web build, and both
+  Docker images, the web one with its `/incidents` check).
 * About 106 mutations of the backend code (the projection's role, status, state, evidence, category, confidence,
   chain and fingerprint rules; the transition hook; the reader; the importer's lazy creation and failure paths; the
   schedule and its settings): every real gap was closed by a test, and the survivors were equivalent. 226 mutations of
