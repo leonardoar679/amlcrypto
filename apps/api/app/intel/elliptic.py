@@ -6,9 +6,9 @@ fetching it every hour. It states no licence and no terms of reuse, so this plat
 for screening only and never republishes an address from it.
 
 What the file is: one address per line, no header, no date and no chain. The addresses are of
-several kinds (the chains this platform reads, and others it does not, XRP Ledger and Cosmos among
-them) and some EVM addresses appear twice in different letter case. An address that is valid on
-several chains, which every EVM address is, becomes a claim on each of them, as it does for OFAC.
+several kinds (the chains this platform reads, and others it does not: XRP Ledger, Cosmos and NEAR
+among them) and an EVM address may come in any letter case. An address that is valid on several
+chains, which every EVM address is, becomes a claim on each of them, as it does for OFAC.
 
 A listing says where funds went, not who holds the address, and a list of this kind can carry
 intermediaries as well as the thief's own wallets. That is why the claims are worth 60%, less than
@@ -63,7 +63,7 @@ ENTITY = EntityRecord(
     ),
 )
 
-# Far beyond what a free blocklist holds (it has grown from 8,000 to about 22,000 lines); a file
+# Far beyond what a free blocklist holds (it has grown from 8,000 to 24,000 lines); a file
 # larger than this is not the one this reader was written for.
 MAX_LINES = 200_000
 # Not an address on a chain this platform reads: another chain's, or not an address at all.

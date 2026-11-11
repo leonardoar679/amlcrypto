@@ -162,14 +162,23 @@ what to do before production. "Stored" is what the database keeps (it is kept un
 * **What its page says (read 2026-11-10):** the list is one CSV file, offered free, with no account or key,
   to any business that wants to download it and screen against it, with a suggestion to fetch it every hour.
   It states **no licence, no terms of use, and nothing on reuse or redistribution**. The size on the page had
-  grown several times in a few weeks (8,000 to about 22,000 lines at the last read).
+  grown several times in a few weeks (8,000 to about 22,000 lines at the read of 2026-11-10; the file itself
+  had 24,059 lines on 2026-11-11).
 * **What the file is:** one address per line, no header, no date, no chain. The lines are of several kinds:
-  the chains this platform reads, and others it does not (XRP Ledger and Cosmos addresses, hexadecimal
-  strings that are not addresses); some EVM addresses are there twice in different letter case. An address
+  the chains this platform reads, and others it does not (XRP Ledger, Cosmos and NEAR addresses, hexadecimal
+  strings that are not addresses); an EVM address may come in any letter case. An address
   that is valid on several chains (every EVM address) becomes a claim on each, as for OFAC. Lines that are not
   addresses on a chain read here are counted in the import log and not stored. Only a copy that is plainly a
   list of addresses is accepted (a web page served in its place, a file with several columns, or one with
   nothing readable is refused and leaves what was stored alone).
+* **What the reader made of the real file (2026-11-11):** two copies, fetched 28 minutes apart, were imported
+  into an empty scratch database. Both are plain UTF-8 with Unix line ends, no header and no byte-order mark. The
+  first held 24,058 addresses: 27,937 claims on the five chains (Ethereum and BNB Smart Chain 5,362 each,
+  TRON 8,076, Solana 6,390, Bitcoin 2,747) and 1,483 lines not read (1,251 that look like XRP Ledger addresses,
+  106 hexadecimal strings of 64 digits, 105 Cosmos addresses and 21 NEAR names). No EVM address was listed twice
+  and one was in mixed letter case. The second copy had one more Bitcoin address and the lines in another order:
+  imported after the first it made 1 claim new and left the other 27,937 unchanged. The first import took about
+  six seconds on SQLite, and importing the same file again changed nothing.
 * **What it is worth:** 60%, below the 80% an analytics provider's attribution usually is, because a list of
   this kind carries intermediaries as well as the thief's own wallets, and a listing says where funds went,
   not who holds the address. What a claim at 60% adds to a screening is in [limitations.md](limitations.md).

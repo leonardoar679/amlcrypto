@@ -1226,7 +1226,7 @@ same (D14 in the limitations register).
   fetched would count against every screening (below).
 * `app/intel/elliptic.py` reads the list: one address per line, no header, no chain, no date. EVM addresses are read
   in lower case (a mis-cased checksum still names the address) and become claims on Ethereum and BNB Smart Chain; TRON,
-  Bitcoin and Solana by format; every other line (XRP Ledger, Cosmos, hexadecimal strings) is counted in the import
+  Bitcoin and Solana by format; every other line (XRP Ledger, Cosmos, NEAR, hexadecimal strings) is counted in the import
   log and not stored. A file that is a web page, has several columns, is not text, has more than 200,000 lines or holds
   **nothing readable is refused and withdraws nothing**. Category `STOLEN_FUNDS`, entity "Binance hack", kind analytics,
   **confidence 60%** (a list of this kind carries intermediaries and says where funds went, not who holds the address),
