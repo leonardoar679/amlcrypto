@@ -81,6 +81,7 @@ def test_the_incident_tables_and_the_editor_flag_come_and_go_with_their_revision
         "incident_amounts",
         "incident_addresses",
         "incident_updates",
+        "incident_flows",
     }
     try:
         migrations.upgrade(migration_url)
@@ -118,6 +119,34 @@ def test_the_incident_revision_comes_and_goes_on_a_database_that_holds_data(sqli
                 text("SELECT COUNT(*) FROM users WHERE is_platform_editor")
             ).scalar()
         assert (now, editors) == (people, 0)
+    finally:
+        engine.dispose()
+
+
+def test_the_flows_revision_comes_and_goes_on_a_database_that_holds_data(sqlite_url):
+    """Taking the trail table away (down) and back (up) leaves every other table as it was; the
+    movements are the only data the downgrade gives up."""
+    from sqlalchemy import text
+
+    from tests.fill import fill
+
+    engine = create_db_engine(sqlite_url)
+    try:
+        fill(engine)
+        with engine.connect() as connection:
+            incidents = connection.execute(text("SELECT COUNT(*) FROM incidents")).scalar()
+            movements = connection.execute(text("SELECT COUNT(*) FROM incident_flows")).scalar()
+        assert incidents and movements
+
+        migrations.downgrade(sqlite_url, "0011")
+        assert "incident_flows" not in _tables(sqlite_url)
+        assert {"incidents", "incident_evidence", "incident_addresses"} <= _tables(sqlite_url)
+        migrations.upgrade(sqlite_url)
+
+        with engine.connect() as connection:
+            kept = connection.execute(text("SELECT COUNT(*) FROM incidents")).scalar()
+            back = connection.execute(text("SELECT COUNT(*) FROM incident_flows")).scalar()
+        assert (kept, back) == (incidents, 0)
     finally:
         engine.dispose()
 

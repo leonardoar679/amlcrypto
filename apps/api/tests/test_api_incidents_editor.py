@@ -108,7 +108,9 @@ def test_the_list_pages_and_filters_by_state(client, staff):
     everything = client.get(V1, params={"limit": 2}, headers=staff["editor"]).json()
     assert everything["total"] == 4 and len(everything["items"]) == 2 and everything["limit"] == 2
     item = everything["items"][0]
-    assert {"id", "slug", "title", "status", "evidence", "addresses", "updates"} <= set(item)
+    assert {"id", "slug", "title", "status", "evidence", "addresses", "flows", "updates"} <= set(
+        item
+    )
     assert "summary" not in item and "internal_note" not in item  # a list shows no content
 
     reviewing = client.get(V1, params={"status": "in_review"}, headers=staff["editor"]).json()
@@ -191,6 +193,131 @@ def test_a_body_may_carry_only_what_it_offers(client, staff):
     ):
         response = getattr(client, method)(path, json=payload, headers=staff["editor"])
         assert response.status_code == 422, (path, response.text)
+
+
+# --- the funds trail ----------------------------------------------------------------------------
+
+OTHER = "0x" + "cd" * 20
+TX = "0x" + "ab" * 32
+
+
+def with_trail(*movements, **changes):
+    """The example story, naming a second address, with these movements of funds between them."""
+    named = {
+        "chain": "ethereum",
+        "address": OTHER,
+        "role": "INTERMEDIARY",
+        "attribution_status": "COMMUNITY_REPORTED",
+    }
+    return body(addresses=[*DOCUMENT["addresses"], named], flows=list(movements), **changes)
+
+
+def movement(**changes):
+    return {
+        "from_chain": "ethereum",
+        "from_address": EVM,
+        "to_chain": "ethereum",
+        "to_address": OTHER,
+        "evidence_ref": "e1",
+        "tx_hash": TX,
+        "amount_text": "about 4,500 ETH",
+        "occurred_on": "2026-01-15",
+        "note": "As the firm reported.",
+        **changes,
+    }
+
+
+def test_a_funds_trail_is_written_read_back_and_sent_again(client, staff):
+    two = [movement(), movement(from_address=OTHER, to_address=EVM, tx_hash=None, note=None)]
+    made = client.post(
+        V1, json={"slug": "with-a-trail", **with_trail(*two)}, headers=staff["editor"]
+    ).json()["incident"]
+
+    flows = made["content"]["flows"]
+    assert flows[0] == movement()  # in the shape that was sent, so it can be sent back
+    assert [flow["from_address"] for flow in flows] == [EVM, OTHER]  # in the order given
+    assert flows[1]["tx_hash"] is None and flows[1]["note"] is None
+    assert made["flows"] == 2
+
+    again = client.get(f"{V1}/{made['id']}", headers=staff["editor"]).json()["incident"]
+    assert again["content"] == made["content"]
+    resent = client.put(f"{V1}/{made['id']}/content", json=made["content"], headers=staff["editor"])
+    assert resent.status_code == 200 and resent.json()["incident"]["content"] == made["content"]
+
+    listed = client.get(V1, headers=staff["editor"]).json()["items"]
+    assert [item["flows"] for item in listed] == [2]
+
+
+def test_a_movement_across_chains_is_read_back_with_both_chains(client, staff):
+    tron = "TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy"
+    named = {
+        "chain": "tron",
+        "address": tron,
+        "role": "EXCHANGE",
+        "attribution_status": "REPORTED_BY_ANALYST",
+        "evidence_ref": "e1",
+    }
+    document = body(
+        addresses=[*DOCUMENT["addresses"], named],
+        flows=[movement(to_chain="tron", to_address=tron, tx_hash=None)],
+    )
+    made = client.post(V1, json={"slug": "bridged", **document}, headers=staff["editor"])
+
+    (flow,) = made.json()["incident"]["content"]["flows"]
+    assert (flow["from_chain"], flow["from_address"]) == ("ethereum", EVM)
+    assert (flow["to_chain"], flow["to_address"]) == ("tron", tron)
+
+
+def test_content_sent_without_a_trail_leaves_none(client, staff):
+    made = client.post(
+        V1, json={"slug": "with-a-trail", **with_trail(movement())}, headers=staff["editor"]
+    ).json()["incident"]
+    emptied = client.put(f"{V1}/{made['id']}/content", json=body(), headers=staff["editor"])
+
+    assert emptied.status_code == 200 and emptied.json()["incident"]["content"]["flows"] == []
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"to_address": "0x" + "ef" * 20}, "receiver is not one of the addresses"),
+        ({"evidence_ref": "e9"}, "names the document"),
+        ({"to_address": EVM}, "same address"),
+        ({"tx_hash": "nope"}, "not a transaction hash"),
+    ],
+)
+def test_a_movement_that_does_not_hold_is_refused_with_a_reason(client, staff, change, message):
+    response = client.post(
+        V1,
+        json={"slug": "bad-trail", **with_trail(movement(**change))},
+        headers=staff["editor"],
+    )
+
+    assert response.status_code == 422 and response.json()["error"]["code"] == "invalid_incident"
+    assert message in response.json()["error"]["message"]
+
+
+def test_a_movement_may_carry_only_what_it_offers_and_a_trail_is_bounded(client, staff):
+    extra = client.post(
+        V1,
+        json={"slug": "extra", **with_trail(movement(price_usd=5))},
+        headers=staff["editor"],
+    )
+    too_many = client.post(
+        V1,
+        json={
+            "slug": "too-many",
+            **with_trail(*[movement(tx_hash=f"{n:064x}") for n in range(151)]),
+        },
+        headers=staff["editor"],
+    )
+    too_long = client.post(
+        V1,
+        json={"slug": "too-long", **with_trail(movement(amount_text="x" * 81))},
+        headers=staff["editor"],
+    )
+
+    assert extra.status_code == too_many.status_code == too_long.status_code == 422
 
 
 # --- who may --------------------------------------------------------------------------------------
@@ -317,6 +444,7 @@ def test_every_change_is_audited_for_the_platform_and_no_organization_reads_it(
         "labels_in_force": 0,
     }
     assert rows[1].details["addresses"] == 1 and rows[0].details["title"] == "A theft"
+    assert rows[1].details["flows"] == 0
 
     # the editor's own organization sees none of it in its log
     listed = client.get("/api/v1/audit", params={"limit": 200}, headers=staff["admin"]).json()

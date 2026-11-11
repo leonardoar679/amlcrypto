@@ -15,10 +15,11 @@ organization's own records.
   how firmly that is established (the attribution status). An address on a chain this platform
   does not read cannot be stored here.
 * `incident_updates` are the timeline; after publication they are only added to.
+* `incident_flows` are the movements of funds the documents report, entered by hand: from one of
+  the incident's addresses to another, with the document, the amount as that source reported it,
+  and a transaction when there is one. The public page draws its funds trail from them.
 
-A later slice adds the money trail (from, to, transaction, amount as reported, entered by hand)
-that a public graph is drawn from. Nothing here is ever derived from provider data held for
-customers.
+Nothing here is ever derived from provider data held for customers.
 """
 
 from __future__ import annotations
@@ -139,6 +140,44 @@ class IncidentAddress(TimestampMixin, Base):
     )
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_verified_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(
+        IntegerPK, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class IncidentFlow(TimestampMixin, Base):
+    __tablename__ = "incident_flows"
+    __table_args__ = (
+        UniqueConstraint("incident_id", "position", name="uq_incident_flows_incident_id_position"),
+    )
+
+    id: Mapped[int] = mapped_column(IntegerPK, primary_key=True, autoincrement=True)
+    # The unique key above starts with the incident, so it is also the index its foreign key needs.
+    incident_id: Mapped[int] = mapped_column(
+        IntegerPK, ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)  # the order the editor gave
+    # Both ends are addresses the incident names (checked when the content is stored), so every
+    # node on the trail has a role and an attribution status. Funds may cross chains (a bridge).
+    from_chain_id: Mapped[str] = mapped_column(
+        identifier(CHAIN_ID_LENGTH), ForeignKey("chains.id", ondelete="RESTRICT"), nullable=False
+    )
+    from_address: Mapped[str] = mapped_column(identifier(ADDRESS_LENGTH), nullable=False)
+    to_chain_id: Mapped[str] = mapped_column(
+        identifier(CHAIN_ID_LENGTH), ForeignKey("chains.id", ondelete="RESTRICT"), nullable=False
+    )
+    to_address: Mapped[str] = mapped_column(identifier(ADDRESS_LENGTH), nullable=False)
+    # Every movement cites the document that reports it.
+    evidence_id: Mapped[int] = mapped_column(
+        IntegerPK,
+        ForeignKey("incident_evidence.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tx_hash: Mapped[str | None] = mapped_column(identifier(HASH_LENGTH), nullable=True)  # sender's
+    amount_text: Mapped[str | None] = mapped_column(String(80), nullable=True)  # as reported
+    occurred_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_by: Mapped[int | None] = mapped_column(
         IntegerPK, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

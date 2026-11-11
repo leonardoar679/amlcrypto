@@ -123,6 +123,19 @@ def test_mysql_incidents_keep_addresses_and_hashes_case_sensitive():
     assert "slug VARCHAR(80) NOT NULL" in ddl("incidents", mysql.dialect())
 
 
+def test_mysql_incident_flows_keep_addresses_and_hashes_case_sensitive():
+    flows = ddl("incident_flows", mysql.dialect())
+    for column in ("from_chain_id", "to_chain_id"):
+        assert f"{column} VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in flows
+    for column in ("from_address", "to_address"):
+        assert f"{column} VARCHAR(128) COLLATE utf8mb4_bin NOT NULL" in flows
+    assert "tx_hash VARCHAR(100) COLLATE utf8mb4_bin" in flows
+    # the order an editor gave is kept, once for each place
+    assert (
+        "CONSTRAINT uq_incident_flows_incident_id_position UNIQUE (incident_id, position)" in flows
+    )
+
+
 def test_the_offline_mysql_migration_adds_the_editor_flag_with_a_default():
     config = migrations.alembic_config(MYSQL_URL)
     config.output_buffer = io.StringIO()

@@ -1,11 +1,11 @@
 """Writing incidents: a whole story is checked before any of it is kept.
 
 An editor sends the content of an incident as one document (the story, the documents it rests
-on, the amounts they report, the addresses it names, the timeline). It is validated as a whole
-and then replaces what was there, so a half-written story never reaches the database. That is
-only possible while the incident is `draft` or `in_review`: a published incident only grows
-(`append_update`, a correction is one), and an editor who must change what was published moves
-it back to review first.
+on, the amounts they report, the addresses it names, the movements of funds between them, the
+timeline). It is validated as a whole and then replaces what was there, so a half-written story
+never reaches the database. That is only possible while the incident is `draft` or `in_review`: a
+published incident only grows (`append_update`, a correction is one), and an editor who must
+change what was published moves it back to review first.
 
 What may be published is checked when it is published (`publish_problems`): a story with nothing to
 rest on is not published.
@@ -30,6 +30,7 @@ from app.database.models import (
     IncidentAddress,
     IncidentAmount,
     IncidentEvidence,
+    IncidentFlow,
     IncidentUpdate,
 )
 from app.incidents import projection
@@ -37,9 +38,12 @@ from app.incidents.model import (
     DEFAULT_CONFIDENCE,
     EDITABLE,
     MAX_ADDRESSES,
+    MAX_AMOUNT_TEXT,
     MAX_AMOUNTS,
     MAX_EVIDENCE,
     MAX_EXCERPT,
+    MAX_FLOW_NOTE,
+    MAX_FLOWS,
     MAX_NOTE,
     MAX_SUMMARY,
     MAX_TITLE,
@@ -117,6 +121,21 @@ class UpdateInput:
 
 
 @dataclass(frozen=True, slots=True)
+class FlowInput:
+    """Funds that moved from one address the incident names to another, as a document reports."""
+
+    from_chain: str  # a slug or a CAIP-2 id
+    from_address: str
+    to_chain: str
+    to_address: str
+    evidence_ref: str  # the document that says so: every movement has one
+    tx_hash: str | None = None  # on the sender's chain
+    amount_text: str | None = None  # as that document reported it, in its own words
+    occurred_on: date | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Content:
     title: str
     summary: str
@@ -127,6 +146,7 @@ class Content:
     evidence: tuple[EvidenceInput, ...] = ()
     amounts: tuple[AmountInput, ...] = ()
     addresses: tuple[AddressInput, ...] = ()
+    flows: tuple[FlowInput, ...] = ()
     updates: tuple[UpdateInput, ...] = ()
 
 
@@ -234,6 +254,9 @@ class _Resolved:
     addresses: tuple[
         tuple[AddressInput, str, str, int], ...
     ]  # input, chain id, address, confidence
+    flows: tuple[
+        tuple[FlowInput, str, str, str, str], ...
+    ]  # input, sender's chain id and address, receiver's chain id and address
     updates: tuple[tuple[UpdateInput, str | None, str | None], ...]  # input, chain id, tx hash
 
 
@@ -350,6 +373,60 @@ def _aware(value: datetime | None, name: str) -> datetime | None:
     return value
 
 
+def _check_flows(
+    items: tuple[FlowInput, ...], refs: set[str], named: set[tuple[str, str]], limit: date
+) -> tuple[tuple[FlowInput, str, str, str, str], ...]:
+    """The movements of funds. Both ends must be addresses the incident names (so each has a role
+    and a status on the page), and every movement cites the document that reports it."""
+    if len(items) > MAX_FLOWS:
+        raise IncidentError(f"An incident has at most {MAX_FLOWS} movements of funds.")
+    seen: set[tuple[str, str, str, str, str]] = set()
+    checked = []
+    for number, item in enumerate(items, 1):
+        label = f"Movement {number}"
+        sender = _address(item.from_chain, item.from_address, f"{label}: the sender")
+        receiver = _address(item.to_chain, item.to_address, f"{label}: the receiver")
+        for side, end in (("sender", sender), ("receiver", receiver)):
+            if end not in named:
+                raise IncidentError(
+                    f"{label}: the {side} is not one of the addresses this incident names; "
+                    "add it to the addresses first, with its role and its source."
+                )
+        if sender == receiver:
+            raise IncidentError(f"{label}: the sender and the receiver are the same address.")
+        if item.evidence_ref not in refs:
+            raise IncidentError(f"{label}: every movement names the document that reports it.")
+        tx_hash = None
+        if item.tx_hash is not None:
+            tx_hash = item.tx_hash.strip()
+            if not _TX_HASH.match(tx_hash):
+                raise IncidentError(f"{label}: that is not a transaction hash.")
+            key = (*sender, *receiver, tx_hash)
+            if key in seen:
+                raise IncidentError(f"{label}: that transaction is already listed for this pair.")
+            seen.add(key)
+        checked.append(
+            (
+                FlowInput(
+                    from_chain=item.from_chain,
+                    from_address=sender[1],
+                    to_chain=item.to_chain,
+                    to_address=receiver[1],
+                    evidence_ref=item.evidence_ref,
+                    tx_hash=tx_hash,
+                    amount_text=_clean(
+                        item.amount_text, f"{label}: the amount", maximum=MAX_AMOUNT_TEXT
+                    ),
+                    occurred_on=_not_future(item.occurred_on, f"{label}: the date", limit),
+                    note=_clean(item.note, f"{label}: the note", maximum=MAX_FLOW_NOTE),
+                ),
+                *sender,
+                *receiver,
+            )
+        )
+    return tuple(checked)
+
+
 def _check_update(
     item: UpdateInput, refs: set[str], label: str
 ) -> tuple[UpdateInput, str | None, str | None]:
@@ -391,6 +468,8 @@ def _check(content: Content, limit: date) -> _Resolved:
     refs = {item.ref for item in evidence}
     if len(content.updates) > MAX_UPDATES:
         raise IncidentError(f"An incident has at most {MAX_UPDATES} timeline entries.")
+    addresses = _check_addresses(content.addresses, refs)
+    named = {(chain_id, address) for _, chain_id, address, _ in addresses}
     return _Resolved(
         title=_clean(content.title, "The title", maximum=MAX_TITLE, required=True),
         summary=_clean(
@@ -406,7 +485,8 @@ def _check(content: Content, limit: date) -> _Resolved:
         ),
         evidence=evidence,
         amounts=_check_amounts(content.amounts, refs, limit),
-        addresses=_check_addresses(content.addresses, refs),
+        addresses=addresses,
+        flows=_check_flows(content.flows, refs, named, limit),
         updates=tuple(
             _check_update(item, refs, f"Timeline entry {number}")
             for number, item in enumerate(content.updates, 1)
@@ -430,7 +510,7 @@ def _store(
     incident.updated_by = user_id
     incident.updated_at = now
 
-    for model in (IncidentUpdate, IncidentAddress, IncidentAmount, IncidentEvidence):
+    for model in (IncidentFlow, IncidentUpdate, IncidentAddress, IncidentAmount, IncidentEvidence):
         session.execute(delete(model).where(model.incident_id == incident.id))
     session.flush()
 
@@ -475,6 +555,25 @@ def _store(
                 evidence_id=None if item.evidence_ref is None else rows[item.evidence_ref].id,
                 note=item.note,
                 last_verified_at=item.last_verified_at,
+                created_by=user_id,
+            )
+        )
+    for position, (item, from_chain, from_address, to_chain, to_address) in enumerate(
+        document.flows
+    ):
+        session.add(
+            IncidentFlow(
+                incident_id=incident.id,
+                position=position,
+                from_chain_id=from_chain,
+                from_address=from_address,
+                to_chain_id=to_chain,
+                to_address=to_address,
+                evidence_id=rows[item.evidence_ref].id,
+                tx_hash=item.tx_hash,
+                amount_text=item.amount_text,
+                occurred_on=item.occurred_on,
+                note=item.note,
                 created_by=user_id,
             )
         )
@@ -668,7 +767,7 @@ def delete_incident(session: Session, incident: Incident) -> None:
         raise IncidentConflict(
             "Only a draft that was never published can be deleted; archive the rest."
         )
-    for model in (IncidentUpdate, IncidentAddress, IncidentAmount, IncidentEvidence):
+    for model in (IncidentFlow, IncidentUpdate, IncidentAddress, IncidentAmount, IncidentEvidence):
         session.execute(delete(model).where(model.incident_id == incident.id))
     session.delete(incident)
     session.flush()

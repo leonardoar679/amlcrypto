@@ -19,6 +19,7 @@ from app.database.models import (
     IncidentAddress,
     IncidentAmount,
     IncidentEvidence,
+    IncidentFlow,
     IncidentUpdate,
     User,
 )
@@ -76,6 +77,20 @@ def address_view(row: IncidentAddress, refs: dict[int, str]) -> dict[str, Any]:
     }
 
 
+def flow_view(row: IncidentFlow, refs: dict[int, str]) -> dict[str, Any]:
+    return {
+        "from_chain": _slug(row.from_chain_id),
+        "from_address": row.from_address,
+        "to_chain": _slug(row.to_chain_id),
+        "to_address": row.to_address,
+        "evidence_ref": refs.get(row.evidence_id),
+        "tx_hash": row.tx_hash,
+        "amount_text": row.amount_text,
+        "occurred_on": _date(row.occurred_on),
+        "note": row.note,
+    }
+
+
 def update_view(row: IncidentUpdate, refs: dict[int, str]) -> dict[str, Any]:
     return {
         "occurred_at": iso(row.occurred_at),
@@ -115,6 +130,7 @@ def editor_item(
         "updated_by": _person(row.updated_by, emails or {}),
         "evidence": counts.get("evidence", 0),
         "addresses": counts.get("addresses", 0),
+        "flows": counts.get("flows", 0),
         "updates": counts.get("updates", 0),
     }
 
@@ -135,6 +151,7 @@ def list_for_editor(
     for name, model in (
         ("evidence", IncidentEvidence),
         ("addresses", IncidentAddress),
+        ("flows", IncidentFlow),
         ("updates", IncidentUpdate),
     ):
         if not ids:
@@ -171,6 +188,11 @@ def editor_detail(session: Session, incident: Incident) -> dict[str, Any]:
         .where(IncidentAddress.incident_id == incident.id)
         .order_by(IncidentAddress.id)
     ).all()
+    flows = session.scalars(
+        select(IncidentFlow)
+        .where(IncidentFlow.incident_id == incident.id)
+        .order_by(IncidentFlow.position)
+    ).all()
     updates = session.scalars(
         select(IncidentUpdate)
         .where(IncidentUpdate.incident_id == incident.id)
@@ -181,7 +203,12 @@ def editor_detail(session: Session, incident: Incident) -> dict[str, Any]:
     return {
         **editor_item(
             incident,
-            {"evidence": len(evidence), "addresses": len(addresses), "updates": len(updates)},
+            {
+                "evidence": len(evidence),
+                "addresses": len(addresses),
+                "flows": len(flows),
+                "updates": len(updates),
+            },
             emails,
         ),
         "created_by": _person(incident.created_by, emails),
@@ -195,6 +222,7 @@ def editor_detail(session: Session, incident: Incident) -> dict[str, Any]:
             "evidence": [evidence_view(row) for row in evidence],
             "amounts": [amount_view(row, refs) for row in amounts],
             "addresses": [address_view(row, refs) for row in addresses],
+            "flows": [flow_view(row, refs) for row in flows],
             "updates": [update_view(row, refs) for row in updates],
         },
         "publish_problems": service.publish_problems(session, incident),

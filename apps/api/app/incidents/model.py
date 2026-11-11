@@ -127,6 +127,9 @@ MAX_AMOUNTS = 30
 MAX_ADDRESSES = 200
 MAX_UPDATES = 200
 MAX_UPDATE_BODY = 2000
+MAX_FLOWS = 150
+MAX_AMOUNT_TEXT = 80
+MAX_FLOW_NOTE = 300
 MAX_EXCERPT = 500
 MAX_USD = 10**13  # ten trillion dollars: more than every crypto asset is worth
 

@@ -129,3 +129,97 @@ def test_the_example_proxy_does_what_the_api_and_the_web_app_count_on():
     assert "proxy_set_header X-Forwarded-For $remote_addr;" in headers
     assert "$proxy_add_x_forwarded_for" not in headers + code
     assert "proxy_set_header X-Request-ID $request_id;" in headers
+
+
+def test_a_fully_loaded_incident_still_fits_what_the_web_app_lets_an_editor_save():
+    """An editor saves a whole incident in one request, through the web app, which refuses a body
+    over its own limit (src/lib/proxyRules.js). Fill every part of an incident the way a heavy one
+    is filled: the most documents, amounts, addresses, movements and timeline entries the platform
+    takes, each with a long but ordinary text. It must stay well under that limit, so that raising
+    any of the platform's own limits is a decision about this one too, and not a surprise to an
+    editor."""
+
+    import json
+
+    from app.incidents.model import MAX_ADDRESSES, MAX_AMOUNTS, MAX_EVIDENCE, MAX_FLOWS, MAX_UPDATES
+
+    where = "0x" + "a" * 40
+    hash_ = "0x" + "a" * 64
+    body = {
+        "title": "T" * 200,
+        "summary": "S" * 5000,
+        "kind": "hack",
+        "occurred_on": "2026-01-01",
+        "attribution_note": "A" * 2000,
+        "internal_note": "N" * 2000,
+        "evidence": [
+            {
+                "ref": f"e{n}",
+                "publisher": "P" * 40,
+                "title": "T" * 100,
+                "url": "https://example.org/" + "u" * 80,
+                "kind": "analytics",
+                "retrieved_on": "2026-01-02",
+                "published_on": "2026-01-01",
+                "excerpt": "E" * 300,
+            }
+            for n in range(MAX_EVIDENCE)
+        ],
+        "amounts": [
+            {
+                "evidence_ref": "e1",
+                "amount_usd_low": 6430000000,
+                "amount_usd_high": 6500000000,
+                "as_of": "2026-01-02",
+                "label": "L" * 60,
+            }
+            for _ in range(MAX_AMOUNTS)
+        ],
+        "addresses": [
+            {
+                "chain": "ethereum",
+                "address": where,
+                "role": "ATTACKER_FUNDS_RECEIVER",
+                "attribution_status": "REPORTED_BY_ANALYST",
+                "confidence": 80,
+                "evidence_ref": "e1",
+                "note": "N" * 300,
+                "last_verified_at": "2026-01-02T10:00:00Z",
+            }
+            for _ in range(MAX_ADDRESSES)
+        ],
+        "flows": [
+            {
+                "from_chain": "ethereum",
+                "from_address": where,
+                "to_chain": "ethereum",
+                "to_address": where,
+                "evidence_ref": "e1",
+                "tx_hash": hash_,
+                "amount_text": "A" * 80,
+                "occurred_on": "2026-01-02",
+                "note": "N" * 300,
+            }
+            for _ in range(MAX_FLOWS)
+        ],
+        "updates": [
+            {
+                "occurred_at": "2026-01-02T10:00:00Z",
+                "kind": "event",
+                "body": "B" * 500,
+                "evidence_ref": "e1",
+                "chain": "ethereum",
+                "tx_hash": hash_,
+            }
+            for _ in range(MAX_UPDATES)
+        ],
+    }
+    size = len(json.dumps(body, separators=(",", ":")).encode())  # as the browser sends it
+
+    rules = (WEB / "src" / "lib" / "proxyRules.js").read_text(encoding="utf-8")
+    cap = re.search(r"MAX_CONTENT_BYTES = (\d+) \* 1024;", rules)
+    assert cap, "the web app's limit for saving an incident was not found"
+    limit = int(cap.group(1)) * 1024
+    # larger than the 64 KB every other request gets (that is why the route has a limit of its own),
+    # and not within a sixth of the limit
+    assert 64 * 1024 < size < limit * 0.85, f"{size} bytes against a limit of {limit}"

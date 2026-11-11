@@ -19,6 +19,7 @@ from app.database.models import (
     IncidentAddress,
     IncidentAmount,
     IncidentEvidence,
+    IncidentFlow,
     IncidentUpdate,
 )
 from app.incidents.model import (
@@ -137,7 +138,8 @@ def get_published(session: Session, slug: str) -> Incident | None:
 
 def detail(session: Session, incident: Incident) -> dict[str, Any]:
     """A published incident as anybody may read it: the story, what it rests on, the amounts as each
-    source reports them, the addresses with how firmly each is attributed, and the timeline."""
+    source reports them, the addresses with how firmly each is attributed, the movements of funds
+    between them, and the timeline."""
     evidence = session.scalars(
         select(IncidentEvidence)
         .where(IncidentEvidence.incident_id == incident.id)
@@ -153,6 +155,11 @@ def detail(session: Session, incident: Incident) -> dict[str, Any]:
         select(IncidentAddress)
         .where(IncidentAddress.incident_id == incident.id)
         .order_by(IncidentAddress.id)
+    ).all()
+    flows = session.scalars(
+        select(IncidentFlow)
+        .where(IncidentFlow.incident_id == incident.id)
+        .order_by(IncidentFlow.position)
     ).all()
     updates = session.scalars(
         select(IncidentUpdate)
@@ -214,6 +221,20 @@ def detail(session: Session, incident: Incident) -> dict[str, Any]:
                 "last_verified_at": iso(row.last_verified_at),
             }
             for row in addresses
+        ],
+        # What the sources report moved, between addresses named above (never derived from stored
+        # chain data): the page draws its funds trail from these.
+        "flows": [
+            {
+                "from": {"chain": _slug(row.from_chain_id), "address": row.from_address},
+                "to": {"chain": _slug(row.to_chain_id), "address": row.to_address},
+                "amount_text": row.amount_text,
+                "occurred_on": _date(row.occurred_on),
+                "tx_hash": row.tx_hash,
+                "note": row.note,
+                "source": source(row.evidence_id),
+            }
+            for row in flows
         ],
         "timeline": [
             {

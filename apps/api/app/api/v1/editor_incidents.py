@@ -32,9 +32,12 @@ from app.database.models import Incident
 from app.incidents import projection, service, views
 from app.incidents.model import (
     MAX_ADDRESSES,
+    MAX_AMOUNT_TEXT,
     MAX_AMOUNTS,
     MAX_EVIDENCE,
     MAX_EXCERPT,
+    MAX_FLOW_NOTE,
+    MAX_FLOWS,
     MAX_NOTE,
     MAX_SUMMARY,
     MAX_TITLE,
@@ -94,6 +97,26 @@ class AddressBody(BaseModel):
     last_verified_at: datetime | None = None
 
 
+class FlowBody(BaseModel):
+    """Funds that moved between two addresses the incident names, as a document reports."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    from_chain: str = Field(
+        min_length=1, max_length=100, description="A chain slug or a CAIP-2 id."
+    )
+    from_address: str = Field(min_length=1, max_length=512)
+    to_chain: str = Field(min_length=1, max_length=100, description="A chain slug or a CAIP-2 id.")
+    to_address: str = Field(min_length=1, max_length=512)
+    evidence_ref: Ref
+    tx_hash: str | None = Field(None, max_length=100, description="On the sender's chain.")
+    amount_text: str | None = Field(
+        None, max_length=MAX_AMOUNT_TEXT, description="In the words of the document."
+    )
+    occurred_on: DateText | None = None
+    note: str | None = Field(None, max_length=MAX_FLOW_NOTE)
+
+
 class UpdateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -119,6 +142,7 @@ class ContentBody(BaseModel):
     evidence: list[EvidenceBody] = Field(default_factory=list, max_length=MAX_EVIDENCE)
     amounts: list[AmountBody] = Field(default_factory=list, max_length=MAX_AMOUNTS)
     addresses: list[AddressBody] = Field(default_factory=list, max_length=MAX_ADDRESSES)
+    flows: list[FlowBody] = Field(default_factory=list, max_length=MAX_FLOWS)
     updates: list[UpdateBody] = Field(default_factory=list, max_length=MAX_UPDATES)
 
 
@@ -203,6 +227,20 @@ def _content(body: ContentBody) -> service.Content:
                 last_verified_at=item.last_verified_at,
             )
             for item in body.addresses
+        ),
+        flows=tuple(
+            service.FlowInput(
+                from_chain=item.from_chain,
+                from_address=item.from_address,
+                to_chain=item.to_chain,
+                to_address=item.to_address,
+                evidence_ref=item.evidence_ref,
+                tx_hash=item.tx_hash,
+                amount_text=item.amount_text,
+                occurred_on=_day(item.occurred_on),
+                note=item.note,
+            )
+            for item in body.flows
         ),
         updates=tuple(_update(item) for item in body.updates),
     )
@@ -315,6 +353,7 @@ def replace_content(
             "evidence": len(body.evidence),
             "amounts": len(body.amounts),
             "addresses": len(body.addresses),
+            "flows": len(body.flows),
             "updates": len(body.updates),
         },
         actor=actor,

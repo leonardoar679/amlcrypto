@@ -17,12 +17,16 @@ from tests.incident_helpers import (
     EVM,
     EVM_CHECKSUMMED,
     PUBLIC_ROUTES,
+    body,
     create,
     make_editor,
     move,
     publish,
 )
 from tests.world import World
+
+OTHER = "0x" + "cd" * 20
+TX = "0x" + "ab" * 32
 
 ITEM_FIELDS = {
     "slug",
@@ -49,9 +53,11 @@ DETAIL_FIELDS = {
     "reported_amounts",
     "sources",
     "addresses",
+    "flows",
     "timeline",
     "notice",
 }
+FLOW_FIELDS = {"from", "to", "amount_text", "occurred_on", "tx_hash", "note", "source"}
 SOURCE_FIELDS = {"ref", "publisher", "title", "url", "kind", "published_on"}
 
 
@@ -149,6 +155,66 @@ def test_an_incident_is_read_without_signing_in(client, editor):
     assert address["role_words"] == "Received funds reported as taken"
     (entry,) = incident["timeline"]
     assert set(entry) == {"occurred_at", "kind", "body", "source", "chain", "tx_hash"}
+    assert incident["flows"] == []  # an incident without a trail says so
+
+
+def two_addresses_and_a_trail(**movement):
+    named = {
+        "chain": "ethereum",
+        "address": OTHER,
+        "role": "INTERMEDIARY",
+        "attribution_status": "COMMUNITY_REPORTED",
+    }
+    return {
+        "addresses": [*body()["addresses"], named],
+        "flows": [
+            {
+                "from_chain": "ethereum",
+                "from_address": EVM,
+                "to_chain": "ethereum",
+                "to_address": OTHER,
+                "evidence_ref": "e1",
+                "tx_hash": TX,
+                "amount_text": "about 4,500 ETH",
+                "occurred_on": "2026-01-15",
+                "note": "As the firm reported.",
+                **movement,
+            },
+            {
+                "from_chain": "ethereum",
+                "from_address": OTHER,
+                "to_chain": "ethereum",
+                "to_address": EVM,
+                "evidence_ref": "e1",
+            },
+        ],
+    }
+
+
+def test_the_funds_trail_is_read_with_its_incident_and_only_then(client, editor):
+    made = create(client, editor, **two_addresses_and_a_trail())
+    assert client.get(f"{PUBLIC_ROUTES}/a-theft").status_code == 404  # a draft shows nothing
+    publish(client, editor, made["id"])
+
+    incident = client.get(f"{PUBLIC_ROUTES}/a-theft").json()["incident"]
+
+    first, second = incident["flows"]  # in the order the editor gave
+    assert set(first) == FLOW_FIELDS and set(second) == FLOW_FIELDS
+    assert first["from"] == {"chain": "ethereum", "address": EVM}
+    assert first["to"] == {"chain": "ethereum", "address": OTHER}
+    assert (first["amount_text"], first["occurred_on"], first["tx_hash"]) == (
+        "about 4,500 ETH",
+        "2026-01-15",
+        TX,
+    )
+    assert first["note"] == "As the firm reported."
+    assert set(first["source"]) == SOURCE_FIELDS and first["source"]["ref"] == "e1"
+    assert (second["tx_hash"], second["amount_text"], second["note"]) == (None, None, None)
+    assert set(set(first["from"]) | set(first["to"])) == {"chain", "address"}
+
+    # taken back to review, the trail goes with the incident: it is not found in the same way
+    move(client, editor, made["id"], "in_review")
+    assert client.get(f"{PUBLIC_ROUTES}/a-theft").status_code == 404
 
 
 def test_nothing_an_editor_alone_should_see_reaches_the_public(client, editor):

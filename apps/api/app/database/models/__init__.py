@@ -19,6 +19,7 @@ from app.database.models.incidents import (
     IncidentAddress,
     IncidentAmount,
     IncidentEvidence,
+    IncidentFlow,
     IncidentUpdate,
 )
 from app.database.models.intel import AddressLabel, Entity, LabelImport, LabelSource
@@ -49,6 +50,7 @@ __all__ = [
     "IncidentAddress",
     "IncidentAmount",
     "IncidentEvidence",
+    "IncidentFlow",
     "IncidentUpdate",
     "JobStatus",
     "LabelImport",
