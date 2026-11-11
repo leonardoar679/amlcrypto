@@ -45,6 +45,18 @@ and say so to search engines, but a link works for anybody who has it.)
 * **Amounts are reports, one line per source.** Publishers disagree about the same event, and the page shows
   each figure with its source and its date. There is no field for a total, and the page never adds the lines up
   or chooses one. Amounts are whole US dollars, as the source states them, or a range when it gives one.
+* **Movements of funds are reports too.** An incident may show where the sources say funds went. A movement
+  says that funds went from one address of the incident to another, according to a document that is cited
+  **(enforced)**, with the amount in that document's own words (80 characters; there is no dollar field and no
+  total), a transaction when there is one, and a date. The page words it as a report ("as reported"), never as
+  the platform's own finding, and never as who did it. Both ends must be addresses the incident already names,
+  each with its part and its status, so that no address appears on the trail without one **(enforced)**. The
+  platform does not check a movement against the chain, and a movement says where funds went, not who controls
+  the address that received them. In the drawing an address is coloured by its part only when its status is
+  one somebody stands behind (confirmed, corroborated, reported by an analyst); a community report, a pattern
+  or a contested attribution is drawn plain and dashed, whatever its part. The trail is part of the content:
+  it changes with the content, and after publication only by taking the incident back to review (a movement
+  that happens later can be told in the timeline meanwhile).
 * **Addresses are on a chain the platform reads** (Ethereum, BNB Smart Chain, TRON, Bitcoin, Solana) and are
   stored in the form the chain defines, so two spellings of one address are one address. **(enforced)** An
   address on any other chain cannot be entered.
@@ -111,6 +123,10 @@ a small part of an incident into labels, and **never anything derived from a rol
   the time it was.
 * Always the category `STOLEN_FUNDS`, with the address's own confidence. `MIXER` and `BRIDGE` are never
   produced from an incident: they would fire rules about a kind of service nobody said the address was.
+* **Never from a movement.** The funds trail is shown and nothing else: no label comes from it, and an address
+  at the far end of a movement is no more acted on for being there. **(enforced: a test publishes every part
+  in every status, joined by a chain of movements, and checks that screening acts on the same three
+  addresses it acts on without them)**
 
 **A label has no date.** An address that was used for something ordinary before the incident is flagged all
 the same, wherever it appears in a history. Add to an incident only the addresses that belong to it, not every
@@ -143,10 +159,13 @@ rebuilds the labels from what is published, if one was ever changed by hand.
 3. Is every address one that belongs to the incident (section 4), and none of them a private individual's,
    as a victim or as a suspect, that the sources only guess at?
 4. Do the amounts name their sources, and does the summary avoid choosing between them?
-5. Does anything in the text say, in the page's own voice, who did it?
-6. Is the note to editors kept to what editors need? It is never shown, but it is in the database and the
+5. Does every movement cite the document that reports it, give the amount in that document's words, and join
+   two addresses that belong to the incident? Does the trail avoid suggesting that whoever received funds is
+   anybody in particular?
+6. Does anything in the text say, in the page's own voice, who did it?
+7. Is the note to editors kept to what editors need? It is never shown, but it is in the database and the
    backups.
-7. Has someone other than the author read it in review? With one editor today that is the author a day later.
+8. Has someone other than the author read it in review? With one editor today that is the author a day later.
 
 ## 7. What this does not cover yet
 

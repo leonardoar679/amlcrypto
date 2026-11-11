@@ -67,7 +67,7 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 |---|---|---|---|
 | `/`, `/faq`, `/products/*` | server pages, made for each request | marketing pages. They are not static: the nonce in every page's policy needs a render per request (the build lists every page as "server-rendered on demand"). Still `noindex` site-wide until a real domain exists. The home page asks the API for nothing, so it works with the API away | none |
 | `/incidents` | server page, public | the published incidents for anybody: filters by kind and chain (links), pages of 20, and a lookup of one address (a form that sends its answer in the address bar), all without a script; "not available right now" when the API cannot be reached | `GET /public/incidents`, `GET /public/addresses/{chain}/{address}/incidents`, read by the web server, never through the proxy |
-| `/incidents/[slug]` | server page, public | one published incident: the story, **each source's amount on its own line (never a total)**, the addresses with the part each plays and how firmly, in the platform's fixed words, the timeline and the sources; a draft, an incident in review, an archived one and one that does not exist are the same 404 | `GET /public/incidents/{slug}` |
+| `/incidents/[slug]` | server page, public | one published incident: the story, **each source's amount on its own line (never a total)**, the addresses with the part each plays and how firmly, in the platform's fixed words, **the funds trail** (one card for each movement the sources report, with its document, the amount in the source's own words and a link to the transaction, and a drawing of the same movements that colours an address by its part only when its status is one somebody stands behind), the timeline and the sources; a draft, an incident in review, an archived one and one that does not exist are the same 404 | `GET /public/incidents/{slug}` |
 | `/auth` | server page + client form | email and password sign-in, back to the page asked for (`?next=`, same-site paths only); a signed-in visitor is sent on | `POST /api/session/login` |
 | `/check` | `(app)` | screen an address or a transaction; chain detection (an EVM address offers Ethereum or BNB); options (hops, look-back, read the providers first, refresh); the last five checks | `POST /address/validate`, `POST /screen/address`, `POST /screen/transaction`, `GET /screenings` |
 | `/check/[id]` | `(app)` | the screening: waiting, failed (with a retry) or the report | `GET /screen/{id}`, `GET /screen/{id}/export` |
@@ -86,7 +86,7 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 | `/settings/audit` | `(app)` | admins: the audit log with filters | `GET /audit` |
 | `/editor/incidents` | `(app)`, platform editors only | every incident in every state, filtered by state, with how much each holds and who changed it last | `GET /editor/incidents` |
 | `/editor/incidents/new` | `(app)`, platform editors only | start a draft: title, the permanent address of its page (suggested from the title), kind, date, summary | `POST /editor/incidents` |
-| `/editor/incidents/[id]` | `(app)`, platform editors only | write an incident: details, documents it rests on, amounts, addresses (with a warning under one that screening will act on) and timeline, saved as a whole; what stops it being published; send to review, publish, take back, archive (two clicks for the two that change what everybody sees), delete a draft that was never published. Once published it is read-only and only the timeline grows (a correction is an entry) | `GET/DELETE /editor/incidents/{id}`, `PUT /editor/incidents/{id}/content`, `POST /editor/incidents/{id}/transition`, `POST /editor/incidents/{id}/updates` |
+| `/editor/incidents/[id]` | `(app)`, platform editors only | write an incident: details, documents it rests on, amounts, addresses (with a warning under one that screening will act on), the funds trail (movements chosen between the addresses named) and timeline, saved as a whole; what stops it being published; send to review, publish, take back, archive (two clicks for the two that change what everybody sees), delete a draft that was never published. Once published it is read-only and only the timeline grows (a correction is an entry) | `GET/DELETE /editor/incidents/{id}`, `PUT /editor/incidents/{id}/content`, `POST /editor/incidents/{id}/transition`, `POST /editor/incidents/{id}/updates` |
 | `/api/session/{login,logout,expired}` | route handlers | set, clear, and clear-then-redirect for the session cookie | `POST /auth/login` |
 | `/api/v1/[...path]` | route handler | the allow-listed proxy | see `proxyRules.js` |
 
@@ -194,7 +194,7 @@ tracker with a link to the incident it comes from.
 
 ## 6. How it was checked
 
-* **Unit tests** (`npm test`, Node's runner, 149 tests since M15, run in CI; 104 before it): the proxy's allow-list, path cleaning, origin
+* **Unit tests** (`npm test`, Node's runner, 161 tests since the funds trail, run in CI; 104 before M15): the proxy's allow-list, path cleaning, origin
   rule and header filtering; the session cookie options; the safe-redirect rule; the risk bands and
   wording; transaction-hash shapes; exact unit formatting; the graph helpers (node kinds, counterparties,
   gap grouping); the link and path guards; the API client; and, since M13, the permission names, the menu a
@@ -282,6 +282,21 @@ tracker with a link to the incident it comes from.
   **no provider key in any response or in the build**. The run found and fixed one real defect (the framework's
   cache kept serving a withdrawn incident, see section 1) and showed that errors were being asked for twice per
   render (now once). Not covered: other browsers, a screen reader, nginx, Docker (CI covers the image).
+
+* **The funds-trail browser run** (the same harness, 47 checks, all passing; an incident of five addresses and four
+  movements across three chains, **synthetic**, made through the site). *Editor:* the four movements are rows of
+  the form; a change to one is kept with the others; an added movement from an address to itself is flagged
+  before anything is sent and nothing is saved; it is removed and the trail saves again; a movement to an address
+  the incident does not name is refused by the platform with the reason; a published incident shows its trail
+  read-only. *Anonymous:* a draft is a 404; once published the page has one card for each movement, in order,
+  each with its amount in the source's words, both ends with their parts, its source and a transaction link that
+  opens safely; the drawing is not blank, and tapping an address or an arrow in it says what it is; the legend names exactly the looks on the trail (an address no movement
+  touches is not on it, and one no source stands behind is dashed); no console error or policy violation; no
+  sideways scroll at 390 px; dark theme. *Screening:* only the one address that received the funds carries a
+  label; the victim, the exchange, the community-reported intermediary and an intermediary the trail does not touch
+  carry none; taking the incident back to review ends the label at once, and the page is gone within the minute the
+  pages keep what they read. The run led to one change: the movements were first a seven-column table, which a
+  screenshot showed cramped on a desktop and cut off on a phone, so they are cards.
 
 ## 7. What the audit found, and what became of it
 

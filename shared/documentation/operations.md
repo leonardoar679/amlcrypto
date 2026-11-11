@@ -276,7 +276,9 @@ The pages are `noindex` and have no sitemap until a brand and a domain exist.
   second per address, GET only) and the web host its general zone (20 a second) for the pages. The web host takes
   bodies of 128 KB, except one location of its own (640 KB) for an editor saving the whole content of an incident:
   the web app forwards 64 KB of anything and 512 KB of that one request, which an incident that names a couple of
-  hundred addresses needs (about 90 KB). Keep the two in step if you change either. None of it has been through
+  hundred addresses needs (about 90 KB; one filled to every limit the platform has, with the funds trail and the timeline,
+  is about 380 KB, and a test holds it under 85% of the cap). Keep the two in step if you change either, and if you
+  raise a limit of the incident content. None of it has been through
   `nginx -t` (see O10 in the limitations register).
 * **If the pages are not meant to be open yet**, do not put the web host on the internet, or add authentication
   in front of `/incidents` at the proxy; the application has no switch that turns the public pages off.
@@ -330,7 +332,7 @@ Everything is kept until someone removes it by hand; **nothing expires automatic
 | Raw provider answers | Bitcoin and Solana transactions only, compressed, 256 KB at most each | `STORE_RAW_RESPONSES=false` turns it off |
 | Reports, findings, alerts, cases, monitored addresses | per organization | Reports are kept verbatim |
 | Label sources, their entities, claims and import log | global | A claim a newer copy no longer holds is kept inactive with the time it left; imports are logged (`label_imports`) |
-| Incidents, their documents, amounts, addresses and timeline | global, written only by platform editors | A published incident is archived, never deleted; only a draft that was never published can be; the editors' private note is in the database and in backups |
+| Incidents, their documents, amounts, addresses, funds trail and timeline | global, written only by platform editors | A published incident is archived, never deleted; only a draft that was never published can be; the editors' private note is in the database and in backups |
 | The audit log | per organization, append-only (the application never updates or deletes a row; the database does not forbid it) | An organization with a history cannot be deleted from under it (foreign key `RESTRICT`) |
 | Backups | `DATA_DIR/backups` by default | Keep with `--keep`; encrypt and copy off the machine |
 

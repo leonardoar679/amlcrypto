@@ -73,8 +73,14 @@ Screenings and "read from the providers" run in the API's background worker, so 
 * **The incident editor** (`app/(app)/editor/`, `src/components/editor/`) is for a platform editor: no role has its
   permission (`incidents:curate`), the sidebar shows it to nobody else, every view is mounted only behind
   `EditorGate`, and the API refuses anybody else whatever the page shows. It edits the whole content of a draft as
-  one form and warns, under an address, when screening will act on it; a published incident is read-only apart from
-  the timeline.
+  one form and warns, under an address, when screening will act on it; the funds trail is a list of movements
+  chosen between the addresses the incident names (the form flags one whose address was taken out); a published
+  incident is read-only apart from the timeline.
+* **The funds trail on a public incident** is a list of cards made on the server, one for each movement, with the
+  drawing added in the browser by the one graph component (`GraphCanvas`, layout `trail`, loaded only on a page that
+  has movements). It is a view of the list and never says more: an address is coloured by its part only when its
+  status is one somebody stands behind, and anything weaker is drawn plain and dashed (`trailGraph` in
+  `src/lib/incidents.js`).
 * `src/lib/` is plain, framework-free code the pages are built from: the API client, the risk bands and
   wording, chain names and explorer links, the allow-list of what the proxy forwards, graph helpers, exact
   unit formatting. These modules use **relative imports** so that `node --test` can load them; the `@/*`

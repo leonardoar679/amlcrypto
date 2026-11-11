@@ -1162,9 +1162,12 @@ not do in [limitations.md](../../shared/documentation/limitations.md) (D14 to D1
   (hack, exploit, theft, scam, other), the documents it rests on (publisher, title, a web address, the day it was
   read, an optional quotation of at most 500 characters), **the amount each source reports, one line per source and
   never a total**, the addresses it names (a chain this platform reads, a role such as "received funds reported
-  as taken" or "victim wallet", and how firmly that is established, in fixed words), and a timeline. Five global
+  as taken" or "victim wallet", and how firmly that is established, in fixed words), **the funds trail** (each movement the
+  documents report between two of those addresses: the document that says so, the amount in its own words, a
+  transaction when there is one; display only, it never becomes a label) and a timeline. Six global
   tables (`incidents`, `incident_evidence`, `incident_amounts`, `incident_addresses`, `incident_updates`, migration
-  `0011_incidents`, reversible) and one column, `users.is_platform_editor`. No row comes from the shared chain
+  `0011_incidents`, reversible, and `incident_flows` for the funds trail, migration `0012_incident_flows`, also reversible)
+  and one column, `users.is_platform_editor`. No row comes from the shared chain
   data and none from an organization.
 * **Who writes: a platform editor.** The permission `incidents:curate` is held by **no role**: `get_principal` adds
   it for a signed-in person whose `is_platform_editor` is set, never for an API key (a key made by an editor, of any
@@ -1247,29 +1250,34 @@ same (D14 in the limitations register).
 
 ### Checked against
 
-* 3,249 backend tests and 1 skipped on SQLite (3,038 before M15, plus the incident service, both APIs, the
-  projection, the reader, the schedule and the structural tests every new route must satisfy: access control,
-  tenant isolation, hostile input, bounds, audit integrity, a pool of one connection, escalation), ruff clean,
-  `alembic check` clean on a migrated database, migration `0011` up, down and up again and over a populated database;
-  149 frontend unit tests (104 before). The MySQL test layout was rehearsed on SQLite (`emulate_mysql_harness`,
-  which reproduced both earlier MySQL CI failures): 3,173 passed, and the two tests that fail in it for reasons of
+* 3,291 backend tests and 1 skipped on SQLite (3,038 before M15, plus the incident service, both APIs, the
+  projection, the reader, the schedule, the funds trail and the structural tests every new route must satisfy: access
+  control, tenant isolation, hostile input, bounds, audit integrity, a pool of one connection, escalation), ruff clean,
+  `alembic check` clean on a migrated database, migrations `0011` and `0012` up, down and up again and over a
+  populated database; 161 frontend unit tests (104 before). The MySQL test layout was rehearsed on SQLite (`emulate_mysql_harness`,
+  which reproduced both earlier MySQL CI failures): 3,215 passed, and the two tests that fail in it for reasons of
   the emulation alone failed as before; MySQL and Docker themselves ran only in CI, where all five
   jobs passed on the first run, for `e45dedd` (run 42935869229: SQLite, MySQL 8.0 and 8.4, the web build, and both
   Docker images, the web one with its `/incidents` check).
 * About 106 mutations of the backend code (the projection's role, status, state, evidence, category, confidence,
   chain and fingerprint rules; the transition hook; the reader; the importer's lazy creation and failure paths; the
-  schedule and its settings): every real gap was closed by a test, and the survivors were equivalent. 226 mutations of
-  the new frontend modules left 14 equivalent survivors.
+  schedule and its settings) and 32 of the funds trail (the checks of a movement, its storage and both serializers):
+  every real gap was closed by a test, and the survivors were equivalent (the database's cascade makes the explicit
+  deletion of a trail's rows redundant). 226 mutations of the frontend modules left 14 equivalent survivors, and the 55
+  of the funds trail's helpers were all caught.
 * A headless-Edge run (97 checks) of the public pages and the editor on a production build against this API, on a
-  scratch database with **synthetic** incidents only: see the integration map (section 6).
+  scratch database with **synthetic** incidents only: see the integration map (section 6). A second run (47 checks) of
+  the funds trail: the list and the drawing of the movements, selecting an address or an arrow in the drawing, the
+  editor adding, flagging and removing a movement, that a trail changes nothing screening acts on, 390 px and the dark theme, and that the page follows a withdrawal within
+  the minute the pages keep what they read.
 * **Calibration, pinned in `tests/test_intel_elliptic.py`:** at 60% a listed address one hop from the one screened
   is a HIGH finding (AML-007) worth 24 points, MODERATE; 17 at two hops, 10 at three, none at four; a list of 20,000
   addresses (25,000 claims) imports in about four seconds.
 
 ### Not done
 
-Trending addresses, large transfers, public wallet profiles, community submissions, news, USD prices, a funds trail or
-graph on the incident pages, any paid feed (Whale Alert, Chainabuse, a commercial attribution) and DeFiLlama's hacks
+Trending addresses, large transfers, public wallet profiles, community submissions, news, USD prices, a dollar value or a
+total for the funds trail, any paid feed (Whale Alert, Chainabuse, a commercial attribution) and DeFiLlama's hacks
 list; a licence for Elliptic's list; a legal read of the editorial policy; a brand and a domain (the pages are
 `noindex`).
 
