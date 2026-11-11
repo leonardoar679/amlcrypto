@@ -37,11 +37,14 @@ test('the incident pages that anybody can read are not behind sign-in, and the e
 test('the public incident pages are made on the server and read the platform only through the public reader', () => {
   for (const file of PUBLIC_FILES) {
     const text = read(file);
-    // not the browser's way to the platform (which needs a session), and not code that runs in the page
-    assert.ok(!/['"]use client['"]/.test(text), `${file} runs in the browser`);
+    // not the browser's way to the platform (which needs a session)
     assert.ok(!/useApi|apiFetch|from ['"][^'"]*\/lib\/api['"]|backendFetch|cookies\(/.test(text), `${file} asks the platform in a way that needs a person`);
     assert.ok(!/dangerouslySetInnerHTML|innerHTML/.test(text), `${file} puts data into the page as markup`);
   }
+  // Nothing runs in the browser but the drawing of a funds trail (the graph library needs it): the
+  // page, the table of movements and every word on it are made on the server.
+  const inBrowser = PUBLIC_FILES.filter((file) => /['"]use client['"]/.test(read(file)));
+  assert.deepEqual(inBrowser, ['src/components/incidents/IncidentTrail.js']);
   const reads = PUBLIC_FILES.filter((file) => /publicFetch/.test(read(file)));
   assert.deepEqual(reads.sort(), ['app/incidents/[slug]/page.js', 'app/incidents/page.js']);
   for (const file of reads) {
@@ -54,6 +57,20 @@ test('what the public pages show of an incident is shown as text, and a link onl
   assert.ok(detail.includes("from '../../lib/links'") && detail.includes('safeHref('), 'the links of sources are not checked');
   const anchors = [...detail.matchAll(/<a [^>]*target="_blank"[^>]*>/g)].map((m) => m[0]);
   assert.ok(anchors.length >= 1 && anchors.every((tag) => tag.includes('rel="noopener noreferrer"')), 'a link out of the site leaks where it came from');
+});
+
+test('the funds trail is a list made on the server, with the drawing added in the browser', () => {
+  const detail = read('src/components/incidents/IncidentDetail.js');
+  assert.ok(!/['"]use client['"]/.test(detail));
+  // the record: one item for each movement, in order, with its source and a link to the transaction
+  const trail = detail.slice(detail.indexOf('function FundsTrail'), detail.indexOf('function Timeline'));
+  assert.ok(trail.includes('<ol className="movements">') && trail.includes('<SourceRef source={flow.source}') && trail.includes('explorerTxUrl('));
+  assert.ok(trail.includes('if (flows.length === 0)') && trail.includes('return null'), 'an incident with no movements shows no section');
+  // the picture: a view of the list, given the graph by the server, drawn by the one graph component
+  assert.ok(trail.includes('<IncidentTrail graph={trailGraph(incident)}'));
+  const picture = read('src/components/incidents/IncidentTrail.js');
+  assert.ok(picture.includes("from '../graph/GraphCanvas'") && picture.includes('layout="trail"'));
+  assert.ok(picture.includes('aria-label="How the addresses are drawn"'), 'the legend is read out');
 });
 
 test('the home page does not ask the platform for anything, so the image can be checked with the platform away', () => {

@@ -3190,6 +3190,127 @@ img {
   overflow-wrap: anywhere;
 }
 
+/* The funds trail: one card for each movement, then a drawing of them and what each look in it stands for. */
+.movements {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.movements > li {
+  padding: 1rem 1.2rem;
+}
+
+.movement-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.8rem;
+  margin-bottom: 0.7rem;
+}
+
+.movement-number {
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.movement-ends {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+}
+
+.movement-end {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.movement-end .mono {
+  font-size: 0.92rem;
+}
+
+.movement-arrow {
+  color: var(--text-soft);
+  font-size: 1.3rem;
+  line-height: 1.5;
+}
+
+.movements p {
+  margin: 0.6rem 0 0;
+}
+
+@media (max-width: 640px) {
+  .movement-ends {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.4rem;
+  }
+
+  .movement-arrow {
+    line-height: 1;
+    transform: rotate(90deg);
+    width: 1.3rem;
+  }
+}
+
+.incident-trail {
+  margin: 1.2rem 0 0;
+}
+
+.incident-trail .graph-canvas {
+  height: 380px;
+}
+
+.trail-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.trail-swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-right: 0.4rem;
+  border: 1.5px solid var(--text-soft);
+  border-radius: 50%;
+  vertical-align: -1px;
+  background: var(--band-none);
+}
+
+.trail-attacker {
+  background: var(--band-critical);
+}
+
+.trail-victim {
+  background: var(--slate);
+}
+
+.trail-service {
+  background: var(--teal);
+}
+
+.trail-recovery {
+  background: var(--band-low);
+}
+
+.trail-unsourced {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.trail-detail {
+  min-height: 1.4em;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- Incidents: the editor ---------- */
 
 .editor-row {

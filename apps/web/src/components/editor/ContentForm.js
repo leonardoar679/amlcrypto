@@ -1,16 +1,18 @@
 'use client';
 
-import { CHAINS } from '../../lib/chains';
+import { CHAINS, chainName } from '../../lib/chains';
 import {
   ADDRESS_ROLES,
   ATTRIBUTION_STATUSES,
   EVIDENCE_KINDS,
   KINDS,
   UPDATE_KINDS,
+  addressChoices,
   attributionLabel,
   blankAddress,
   blankAmount,
   blankEvidence,
+  blankFlow,
   blankUpdate,
   evidenceLabel,
   kindLabel,
@@ -18,6 +20,7 @@ import {
   screeningNote,
   updateLabel
 } from '../../lib/incidents';
+import { shortAddress } from '../../lib/risk';
 
 // The words the platform uses for each attribution status (it is the same table the public pages
 // use), and what each is worth when an editor does not say: the figure a status gives by default.
@@ -99,6 +102,15 @@ export default function ContentForm({ form, setForm, words }) {
 
   const refs = form.evidence.map((item) => ({ value: item.ref, label: `${item.ref}: ${item.publisher || 'a document'}` }));
   const cites = (blank) => [{ value: '', label: blank }, ...refs];
+  // The addresses a movement may join are the ones named above, so each end of the trail has a part and
+  // a status on the page.
+  const ends = addressChoices(form.addresses);
+  const endOptions = (current) => {
+    const options = [{ value: '', label: 'Choose an address' }, ...ends.map((end) => ({ value: end.value, label: `${chainName(end.chain)}: ${shortAddress(end.address, 10, 8)}` }))];
+    return current && !ends.some((end) => end.value === current)
+      ? [...options, { value: current, label: 'An address that is no longer named above' }]
+      : options;
+  };
 
   return (
     <>
@@ -271,6 +283,44 @@ export default function ContentForm({ form, setForm, words }) {
           <button className="btn btn-secondary btn-small" type="button" onClick={() => add('addresses', blankAddress())}>
             Add an address
           </button>
+        </div>
+      </section>
+
+      <section className="card inline-form">
+        <h2>Funds trail ({form.flows.length})</h2>
+        <p className="muted">
+          One line for each movement of funds that a document reports, between two of the addresses named above. Give the amount in
+          the document&apos;s own words; the page never adds amounts up. The trail is shown on the page and is never a reason for
+          screening to flag anything. After the incident is published it changes only by taking it back to review.
+        </p>
+        {form.flows.map((item, index) => (
+          <RowBox key={index} title={`Movement ${index + 1}`} onRemove={() => remove('flows', index)}>
+            <div className="form-row">
+              <Choice label="From" value={item.from} onChange={(value) => setRow('flows', index, 'from', value)} options={endOptions(item.from)} />
+              <Choice label="To" value={item.to} onChange={(value) => setRow('flows', index, 'to', value)} options={endOptions(item.to)} />
+              <Choice label="Reported by" value={item.evidence_ref} onChange={(value) => setRow('flows', index, 'evidence_ref', value)} options={cites('Choose a document')} />
+            </div>
+            <div className="form-row">
+              <Text label="Amount, as reported" value={item.amount_text} onChange={(value) => setRow('flows', index, 'amount_text', value)} maxLength={80} placeholder="about 4,500 ETH" hint="In the document's words." />
+              <label className="field">
+                <span>Date</span>
+                <input type="date" value={item.occurred_on} onChange={(event) => setRow('flows', index, 'occurred_on', event.target.value)} />
+              </label>
+            </div>
+            <Text label="Transaction hash (on the sending address's chain)" value={item.tx_hash} onChange={(value) => setRow('flows', index, 'tx_hash', value)} maxLength={100} mono spellCheck="false" />
+            <Text label="Note (optional, public)" value={item.note} onChange={(value) => setRow('flows', index, 'note', value)} maxLength={300} />
+          </RowBox>
+        ))}
+        <div>
+          <button
+            className="btn btn-secondary btn-small"
+            type="button"
+            disabled={ends.length < 2}
+            onClick={() => add('flows', blankFlow(form.addresses, form.evidence))}
+          >
+            Add a movement
+          </button>
+          {ends.length < 2 ? <span className="field-hint"> Name at least two addresses above first.</span> : null}
         </div>
       </section>
 

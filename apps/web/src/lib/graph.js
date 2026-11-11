@@ -6,8 +6,12 @@
 export const RISK_CATEGORIES = ['SANCTIONS', 'MIXER', 'DARKNET', 'SCAM', 'PHISHING', 'RANSOMWARE', 'STOLEN_FUNDS'];
 
 // 'root' (the address asked about), 'risky' (carries a risk label), 'labelled' (known, not a
-// risk) or 'plain'.
+// risk) or 'plain'. A node that says how it is to be drawn (`trail`, on an incident's funds trail,
+// where nobody asked about an address and the roles come from the incident) is drawn that way.
 export function nodeKind(node, rootId) {
+  if (node.trail) {
+    return node.trail;
+  }
   if (node.id === rootId) {
     return 'root';
   }
@@ -44,7 +48,7 @@ export function toElements(graph) {
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        label: `${edge.amount} ${edge.asset}`,
+        label: [edge.amount, edge.asset].filter(Boolean).join(' '),
         width: 1 + Math.min(5, Math.log2(Math.max(1, edge.transfers)))
       }
     }));

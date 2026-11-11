@@ -26,7 +26,7 @@ import {
   UPDATE_KINDS
 } from '../../lib/incidents';
 import { safeHref } from '../../lib/links';
-import { ago, formatWhen } from '../../lib/risk';
+import { ago, formatWhen, shortAddress } from '../../lib/risk';
 import { useApi } from '../../lib/useApi';
 import { ErrorNotice, Loading, Notice } from '../ui/Notice';
 import ContentForm from './ContentForm';
@@ -220,6 +220,43 @@ function ReadOnly({ content }) {
                       <span className="muted small">{item.confidence}%</span>
                     </td>
                     <td className="mono">{item.evidence_ref || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="card">
+        <h2>Funds trail ({(content.flows || []).length})</h2>
+        {(content.flows || []).length === 0 ? <p className="muted">None.</p> : null}
+        {(content.flows || []).length > 0 ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">From</th>
+                  <th scope="col">To</th>
+                  <th scope="col">Amount, as reported</th>
+                  <th scope="col">Transaction</th>
+                  <th scope="col">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {content.flows.map((item, index) => (
+                  <tr key={index}>
+                    <td>
+                      <span className="mono">{shortAddress(item.from_address, 10, 8)}</span>
+                      <div className="muted small">{chainName(item.from_chain)}</div>
+                    </td>
+                    <td>
+                      <span className="mono">{shortAddress(item.to_address, 10, 8)}</span>
+                      <div className="muted small">{chainName(item.to_chain)}</div>
+                    </td>
+                    <td>{item.amount_text || '-'}</td>
+                    <td className="mono">{item.tx_hash ? shortAddress(item.tx_hash, 10, 8) : '-'}</td>
+                    <td className="mono">{item.evidence_ref}</td>
                   </tr>
                 ))}
               </tbody>

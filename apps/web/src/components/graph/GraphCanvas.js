@@ -4,6 +4,10 @@ import { useEffect, useImperativeHandle, useRef } from 'react';
 import { toElements } from '../../lib/graph';
 
 function layoutOptions(name) {
+  if (name === 'trail') {
+    // An incident's funds trail: arrows run from where funds were to where they went.
+    return { name: 'breadthfirst', directed: true, animate: false, padding: 30, spacingFactor: 1.25, nodeDimensionsIncludeLabels: true };
+  }
   if (name === 'cose') {
     return { name: 'cose', animate: false, padding: 30, nodeRepulsion: 9000, idealEdgeLength: 70, nodeDimensionsIncludeLabels: true };
   }
@@ -22,7 +26,14 @@ function layoutOptions(name) {
 // Draws a graph with Cytoscape. The library is loaded in the browser only, when a graph is shown, so
 // it adds nothing to any other page. Clicking a node or a link reports its id; the drawing is a view
 // of the lists on the page, which hold the same information in a form a screen reader can use.
-export default function GraphCanvas({ graph, layout, theme, onSelect, handle }) {
+export default function GraphCanvas({
+  graph,
+  layout,
+  theme,
+  onSelect,
+  handle,
+  description = 'Transaction graph. The same information is listed in the tables below.'
+}) {
   const container = useRef(null);
   const instance = useRef(null);
   const select = useRef(onSelect);
@@ -88,8 +99,11 @@ export default function GraphCanvas({ graph, layout, theme, onSelect, handle }) 
             }
           },
           { selector: 'node[kind = "root"]', style: { 'background-color': color('--orange', '#ff8562'), width: 36, height: 36, 'border-width': 3, 'border-color': text } },
-          { selector: 'node[kind = "risky"]', style: { 'background-color': color('--band-critical', '#bb3e49') } },
-          { selector: 'node[kind = "labelled"]', style: { 'background-color': color('--slate', '#4e617d') } },
+          { selector: 'node[kind = "risky"], node[kind = "attacker"]', style: { 'background-color': color('--band-critical', '#bb3e49') } },
+          { selector: 'node[kind = "labelled"], node[kind = "victim"]', style: { 'background-color': color('--slate', '#4e617d') } },
+          { selector: 'node[kind = "service"]', style: { 'background-color': color('--teal', '#266763') } },
+          { selector: 'node[kind = "recovery"]', style: { 'background-color': color('--band-low', '#247a59') } },
+          { selector: 'node[kind = "unsourced"]', style: { 'border-style': 'dashed', 'background-opacity': 0.4 } },
           { selector: 'node[expanded = 0]', style: { 'border-style': 'dashed' } },
           {
             selector: 'edge',
@@ -130,5 +144,5 @@ export default function GraphCanvas({ graph, layout, theme, onSelect, handle }) 
     };
   }, [graph, layout, theme]);
 
-  return <div className="graph-canvas" ref={container} role="img" aria-label="Transaction graph. The same information is listed in the tables below." />;
+  return <div className="graph-canvas" ref={container} role="img" aria-label={description} />;
 }

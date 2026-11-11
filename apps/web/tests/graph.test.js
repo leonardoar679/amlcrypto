@@ -39,6 +39,23 @@ test('a node is the root, risky, labelled or plain', () => {
   assert.equal(nodeKind(node('x', { labels: [{ category: 'MIXER' }, { category: 'EXCHANGE' }] }), 'other'), 'risky');
 });
 
+test('a node that says how it is drawn is drawn that way, and a graph with no asset has a plain label', () => {
+  // an incident's funds trail: nobody asked about an address, and the looks come from the incident
+  for (const look of ['attacker', 'passthrough', 'victim', 'service', 'recovery', 'unsourced']) {
+    assert.equal(nodeKind(node('x', { trail: look, labels: [{ category: 'SANCTIONS' }] }), 'x'), look);
+  }
+  assert.equal(nodeKind(node('x', { trail: '' }), 'x'), 'root'); // an empty word is no word
+
+  const trail = {
+    root: null,
+    nodes: [node('a', { trail: 'attacker' }), node('b', { trail: 'unsourced' })],
+    edges: [edge('m1', 'a', 'b', { amount: 'about 4,500 ETH', asset: '' }), edge('m2', 'b', 'a', { amount: '', asset: '' })]
+  };
+  const elements = toElements(trail);
+  assert.deepEqual(elements.filter((e) => e.group === 'nodes').map((e) => e.data.kind), ['attacker', 'unsourced']);
+  assert.deepEqual(elements.filter((e) => e.group === 'edges').map((e) => e.data.label), ['about 4,500 ETH', '']);
+});
+
 test('the drawing has every node and only the edges whose ends exist', () => {
   const elements = toElements(GRAPH);
   assert.equal(elements.filter((e) => e.group === 'nodes').length, 5);

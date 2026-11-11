@@ -2,7 +2,7 @@
 // the platform sends is data to show, never markup: every page renders it as text.
 
 import { CHAINS } from './chains.js';
-import { humanize } from './risk.js';
+import { humanize, shortAddress } from './risk.js';
 
 export const KINDS = ['hack', 'exploit', 'theft', 'scam', 'other'];
 export const STATUSES = ['draft', 'in_review', 'published', 'archived'];
@@ -256,6 +256,7 @@ export function blankContent() {
     evidence: [],
     amounts: [],
     addresses: [],
+    flows: [],
     updates: []
   };
 }
@@ -299,6 +300,52 @@ export const blankAddress = () => ({
   note: '',
   last_verified_at: ''
 });
+
+// An address of the incident as one value to choose in a list: the chain and the address, the way the
+// platform keeps them (an 0x address is the same address whatever its letter case).
+export function flowKey(chain, address) {
+  const text = String(address ?? '').trim();
+  return `${String(chain ?? '').trim()}|${/^0x/i.test(text) ? text.toLowerCase() : text}`;
+}
+
+// ... and back into the chain and the address.
+export function splitFlowKey(key) {
+  const text = String(key ?? '');
+  const at = text.indexOf('|');
+  return at < 0 ? { chain: '', address: text } : { chain: text.slice(0, at), address: text.slice(at + 1) };
+}
+
+// The addresses a movement may join: the ones the incident names, once each, in the order named.
+export function addressChoices(addresses) {
+  const seen = new Set();
+  const choices = [];
+  for (const item of addresses || []) {
+    if (!String(item.address ?? '').trim()) {
+      continue;
+    }
+    const value = flowKey(item.chain, item.address);
+    if (!seen.has(value)) {
+      seen.add(value);
+      choices.push({ value, chain: String(item.chain).trim(), address: splitFlowKey(value).address });
+    }
+  }
+  return choices;
+}
+
+// The next movement offered to an editor: from the first address named to the second, citing the
+// first document.
+export const blankFlow = (addresses, evidence) => {
+  const [from, to] = addressChoices(addresses);
+  return {
+    from: from?.value || '',
+    to: to?.value || '',
+    evidence_ref: evidence?.[0]?.ref || '',
+    tx_hash: '',
+    amount_text: '',
+    occurred_on: '',
+    note: ''
+  };
+};
 
 export const blankUpdate = (now) => ({
   occurred_at: now || '',
@@ -360,6 +407,15 @@ export function toForm(content) {
       evidence_ref: text(item.evidence_ref),
       note: text(item.note),
       last_verified_at: toLocalInput(item.last_verified_at)
+    })),
+    flows: (source.flows || []).map((item) => ({
+      from: flowKey(item.from_chain, item.from_address),
+      to: flowKey(item.to_chain, item.to_address),
+      evidence_ref: text(item.evidence_ref),
+      tx_hash: text(item.tx_hash),
+      amount_text: text(item.amount_text),
+      occurred_on: text(item.occurred_on),
+      note: text(item.note)
     })),
     updates: (source.updates || []).map((item) => ({
       occurred_at: toLocalInput(item.occurred_at),
@@ -434,6 +490,21 @@ export function toBody(form) {
       note: orNull(item.note),
       last_verified_at: fromLocalInput(item.last_verified_at)
     })),
+    flows: (form.flows || []).map((item) => {
+      const from = splitFlowKey(item.from);
+      const to = splitFlowKey(item.to);
+      return {
+        from_chain: from.chain,
+        from_address: from.address,
+        to_chain: to.chain,
+        to_address: to.address,
+        evidence_ref: String(item.evidence_ref).trim(),
+        tx_hash: orNull(item.tx_hash),
+        amount_text: orNull(item.amount_text),
+        occurred_on: orNull(item.occurred_on),
+        note: orNull(item.note)
+      };
+    }),
     updates: form.updates.map((item) => ({
       occurred_at: fromLocalInput(item.occurred_at),
       kind: item.kind,
@@ -499,6 +570,34 @@ export function missingFor(form) {
       problems.push(`${name}: the document it cites is not in the list.`);
     }
   });
+  const named = new Set(addressChoices(form.addresses).map((choice) => choice.value));
+  (form.flows || []).forEach((item, index) => {
+    const name = `Movement ${index + 1}`;
+    if (!named.has(item.from)) {
+      problems.push(`${name}: choose the sending address from the addresses named above.`);
+    }
+    if (!named.has(item.to)) {
+      problems.push(`${name}: choose the receiving address from the addresses named above.`);
+    }
+    if (item.from && item.from === item.to) {
+      problems.push(`${name}: the sending and the receiving address are the same.`);
+    }
+    if (!refs.has(String(item.evidence_ref).trim())) {
+      problems.push(`${name}: choose the document that reports it.`);
+    }
+    if (orNull(item.tx_hash) !== null && !/^[A-Za-z0-9]{16,100}$/.test(String(item.tx_hash).trim())) {
+      problems.push(`${name}: that is not a transaction hash.`);
+    }
+    if (String(item.amount_text ?? '').trim().length > 80) {
+      problems.push(`${name}: the amount is at most 80 characters, in the document's own words.`);
+    }
+    if (String(item.note ?? '').trim().length > 300) {
+      problems.push(`${name}: the note is at most 300 characters.`);
+    }
+    if (orNull(item.occurred_on) !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(item.occurred_on).trim())) {
+      problems.push(`${name}: say the day as a date, or leave it empty.`);
+    }
+  });
   form.updates.forEach((item, index) => {
     const name = `Timeline entry ${index + 1}`;
     if (fromLocalInput(item.occurred_at) === null) {
@@ -512,4 +611,90 @@ export function missingFor(form) {
     }
   });
   return problems;
+}
+
+// --- the funds trail of a published incident --------------------------------------------------------
+
+// An address is drawn in the colour of the part it plays only when its status is one somebody stands
+// behind; any other attribution (a community report, a pattern, a contested one) is drawn plain and
+// dashed, whatever the part says. The picture must not say more than the status does.
+const SOURCED_STATUSES = ['OFFICIALLY_CONFIRMED', 'CORROBORATED', 'REPORTED_BY_ANALYST'];
+// When an address plays several parts, the first of these that it plays (at a status somebody stands
+// behind) decides how it is drawn.
+const TRAIL_PARTS = [
+  ['ATTACKER_FUNDS_RECEIVER', 'attacker'],
+  ['MIXER', 'service'],
+  ['BRIDGE', 'service'],
+  ['EXCHANGE', 'service'],
+  ['FREEZING_ADDRESS', 'recovery'],
+  ['RECOVERY_ADDRESS', 'recovery'],
+  ['VICTIM_WALLET', 'victim'],
+  ['INTERMEDIARY', 'passthrough']
+];
+
+// What each look on the trail stands for: the legend under the drawing.
+export const TRAIL_KINDS = {
+  attacker: 'Received funds reported as taken',
+  passthrough: 'Passed funds on',
+  victim: 'Wallet the funds were taken from',
+  service: 'Exchange, bridge or mixing service',
+  recovery: 'Froze funds, or received recovered funds',
+  unsourced: 'Attribution no source stands behind'
+};
+
+// How an address is drawn, from the rows that name it (one for each part it plays).
+export function trailKind(rows) {
+  const sourced = new Set(
+    (rows || []).filter((row) => SOURCED_STATUSES.includes(row.attribution_status)).map((row) => row.role)
+  );
+  const part = TRAIL_PARTS.find(([role]) => sourced.has(role));
+  return part ? part[1] : 'unsourced';
+}
+
+const endId = (end) => `${end.chain}:${end.address}`;
+
+// What the incident's movements look like as a graph, in the shape the graph component draws: an
+// address is one node however many movements touch it, a movement is an arrow labelled with the amount
+// in its source's words. Only an address a movement touches is on it.
+export function trailGraph(incident) {
+  const parts = new Map();
+  for (const row of incident?.addresses || []) {
+    parts.set(endId(row), [...(parts.get(endId(row)) || []), row]);
+  }
+  const touched = new Map();
+  const meet = (end) => {
+    const id = endId(end);
+    if (!touched.has(id)) {
+      touched.set(id, end);
+    }
+    return id;
+  };
+  const edges = (incident?.flows || []).map((flow, index) => ({
+    id: `m${index + 1}`,
+    number: index + 1,
+    source: meet(flow.from),
+    target: meet(flow.to),
+    amount: flow.amount_text || '',
+    asset: '',
+    transfers: 1,
+    timestamp: flow.occurred_on || null
+  }));
+  const nodes = [...touched].map(([id, end]) => ({
+    id,
+    label: shortAddress(end.address, 6, 4),
+    chain: end.chain,
+    address: end.address,
+    trail: trailKind(parts.get(id)),
+    expanded: true,
+    depth: 0,
+    labels: [],
+    bridge: null
+  }));
+  return { root: null, nodes, edges };
+}
+
+// The parts an address plays in the incident, in the platform's own words (for the table of movements).
+export function partsOf(incident, end) {
+  const id = endId(end);
+  return (incident?.addresses || []).filter((row) => endId(row) === id).map((row) => row.role_words);
 }

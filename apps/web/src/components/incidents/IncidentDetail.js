@@ -6,12 +6,15 @@ import {
   evidenceLabel,
   formatDate,
   kindLabel,
+  partsOf,
+  trailGraph,
   updateLabel,
   usdRange
 } from '../../lib/incidents';
 import { safeHref } from '../../lib/links';
 import { formatWhen, shortAddress } from '../../lib/risk';
 import { Notice } from '../ui/Notice';
+import IncidentTrail from './IncidentTrail';
 
 // A published incident as anybody reads it. Everything in it came from the platform as data and is
 // shown as text; a link is followed only when it is an ordinary web address, and always opens
@@ -132,6 +135,85 @@ function Addresses({ addresses }) {
   );
 }
 
+// One end of a movement: the address, its chain, and the parts the incident says it plays.
+function MovementEnd({ incident, end, label }) {
+  const parts = partsOf(incident, end);
+  return (
+    <div className="movement-end">
+      <span className="muted small">{label}</span>
+      <div>
+        <span className="mono" title={end.address}>
+          {shortAddress(end.address, 10, 8)}
+        </span>
+      </div>
+      <div className="muted small">
+        {chainName(end.chain)}
+        {parts.length > 0 ? ` · ${parts.join('; ')}` : ''}
+      </div>
+    </div>
+  );
+}
+
+// Where the sources say funds went. The list is the record, one card for each movement; the drawing
+// under it is a picture of it.
+function FundsTrail({ incident }) {
+  const flows = incident.flows || [];
+  if (flows.length === 0) {
+    return null;
+  }
+  return (
+    <section className="card" aria-labelledby="funds-trail">
+      <h2 id="funds-trail">Funds trail, as reported</h2>
+      <p className="muted">
+        Each movement is something the source named says took place between two of the addresses above. The platform has not checked
+        it against the chain, an amount is in the source&apos;s own words and is not added to anything, and a movement says where
+        funds went, not who controls the address that received them.
+      </p>
+      <ol className="movements">
+        {flows.map((flow, index) => {
+          const tx = flow.tx_hash ? explorerTxUrl(flow.from.chain, flow.tx_hash) : null;
+          return (
+            <li className="card movement" key={index}>
+              <div className="movement-head">
+                <span className="movement-number">
+                  <span className="sr-only">Movement </span>
+                  {index + 1}
+                </span>
+                <strong>{flow.amount_text || 'No amount given'}</strong>
+                {flow.occurred_on ? <span className="muted">{formatDate(flow.occurred_on)}</span> : null}
+              </div>
+              <div className="movement-ends">
+                <MovementEnd incident={incident} end={flow.from} label="From" />
+                <span className="movement-arrow" aria-hidden="true">
+                  →
+                </span>
+                <MovementEnd incident={incident} end={flow.to} label="To" />
+              </div>
+              <p className="muted small">
+                Source: <SourceRef source={flow.source} />
+                {flow.tx_hash ? (
+                  <>
+                    {' · '}Transaction{' '}
+                    {tx ? (
+                      <ExternalLink href={tx}>
+                        <span className="mono">{shortAddress(flow.tx_hash, 10, 8)}</span>
+                      </ExternalLink>
+                    ) : (
+                      <span className="mono">{shortAddress(flow.tx_hash, 10, 8)}</span>
+                    )}
+                  </>
+                ) : null}
+              </p>
+              {flow.note ? <p className="small">{flow.note}</p> : null}
+            </li>
+          );
+        })}
+      </ol>
+      <IncidentTrail graph={trailGraph(incident)} />
+    </section>
+  );
+}
+
 function Timeline({ entries }) {
   if (entries.length === 0) {
     return <p className="muted">Nothing has been added to the timeline.</p>;
@@ -242,6 +324,8 @@ export default function IncidentDetail({ incident }) {
         <h2>Addresses named in the reports</h2>
         <Addresses addresses={incident.addresses} />
       </section>
+
+      <FundsTrail incident={incident} />
 
       <section className="card">
         <h2>Timeline</h2>

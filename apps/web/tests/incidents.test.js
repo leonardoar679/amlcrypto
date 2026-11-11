@@ -14,9 +14,13 @@ import {
   blankAmount,
   blankContent,
   blankEvidence,
+  blankFlow,
   blankUpdate,
+  TRAIL_KINDS,
+  addressChoices,
   cleanFilters,
   evidenceLabel,
+  flowKey,
   formatDate,
   fromLocalInput,
   kindLabel,
@@ -27,15 +31,19 @@ import {
   needsConfirmation,
   nextRef,
   pageNumber,
+  partsOf,
   reportedSpan,
   roleLabel,
   screeningNote,
   slugFromTitle,
+  splitFlowKey,
   statusLabel,
   statusTone,
   toBody,
   toForm,
   toLocalInput,
+  trailGraph,
+  trailKind,
   transitionLabel,
   updateLabel,
   usd,
@@ -310,6 +318,7 @@ test('content read from the platform fills the form with strings and nothing is 
   assert.equal(form.updates[0].occurred_at, '2026-01-15T10:00');
   assert.deepEqual(toBody(form), {
     ...CONTENT,
+    flows: [],
     addresses: [{ ...CONTENT.addresses[0], last_verified_at: '2026-01-16T08:30:00Z' }],
     updates: [{ ...CONTENT.updates[0], occurred_at: '2026-01-15T10:00:00Z' }]
   });
@@ -404,4 +413,213 @@ test('a document name must be one the platform takes', () => {
     form.addresses[0].evidence_ref = good;
     assert.deepEqual(missingFor(form), [], good);
   }
+});
+
+// --- the funds trail ----------------------------------------------------------------------------------
+
+const OTHER = `0x${'cd'.repeat(20)}`;
+const TX = `0x${'ab'.repeat(32)}`;
+const SECOND = {
+  chain: 'ethereum',
+  address: OTHER,
+  role: 'INTERMEDIARY',
+  attribution_status: 'COMMUNITY_REPORTED',
+  confidence: 50,
+  evidence_ref: null,
+  note: null,
+  last_verified_at: null
+};
+const MOVEMENT = {
+  from_chain: 'ethereum',
+  from_address: CONTENT.addresses[0].address,
+  to_chain: 'ethereum',
+  to_address: OTHER,
+  evidence_ref: 'e1',
+  tx_hash: TX,
+  amount_text: 'about 4,500 ETH',
+  occurred_on: '2026-01-15',
+  note: null
+};
+const TRAIL = { ...CONTENT, addresses: [...CONTENT.addresses, SECOND], flows: [MOVEMENT] };
+
+test('an address is one value to choose, in the form the platform keeps, and each is offered once', () => {
+  assert.equal(flowKey('ethereum', ` 0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed `), 'ethereum|0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed');
+  assert.equal(flowKey('tron', ' TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy '), 'tron|TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy'); // not 0x: its case is part of it
+  assert.deepEqual(splitFlowKey('tron|TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy'), { chain: 'tron', address: 'TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy' });
+  assert.deepEqual(splitFlowKey('no separator'), { chain: '', address: 'no separator' });
+  assert.deepEqual(splitFlowKey('|0xabc'), { chain: '', address: '0xabc' }); // no chain, and the separator is not part of the address
+  assert.deepEqual(splitFlowKey('a|b|c'), { chain: 'a', address: 'b|c' });
+  assert.deepEqual(splitFlowKey(null), { chain: '', address: '' });
+
+  const choices = addressChoices([
+    { chain: 'ethereum', address: OTHER },
+    { chain: 'ethereum', address: '  ' }, // not typed yet
+    { chain: 'ethereum', address: OTHER.toUpperCase().replace('0X', '0x') }, // the same address, another spelling
+    { chain: 'bsc', address: OTHER }, // the same address on another chain is another end
+    { chain: 'tron', address: 'TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy' }
+  ]);
+  assert.deepEqual(
+    choices.map((choice) => choice.value),
+    [`ethereum|${OTHER}`, `bsc|${OTHER}`, 'tron|TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy']
+  );
+  assert.deepEqual(addressChoices(null), []);
+});
+
+test('a new movement goes from the first address to the second and cites the first document', () => {
+  const blank = blankFlow(TRAIL.addresses, TRAIL.evidence);
+  assert.deepEqual(blank, {
+    from: flowKey('ethereum', CONTENT.addresses[0].address),
+    to: `ethereum|${OTHER}`,
+    evidence_ref: 'e1',
+    tx_hash: '',
+    amount_text: '',
+    occurred_on: '',
+    note: ''
+  });
+  assert.deepEqual(blankFlow([], []), { ...blank, from: '', to: '', evidence_ref: '' });
+  assert.deepEqual(blankContent().flows, []);
+});
+
+test('a trail read from the platform fills the form and goes back as it came', () => {
+  const form = toForm(TRAIL);
+  assert.deepEqual(form.flows, [
+    {
+      from: flowKey('ethereum', CONTENT.addresses[0].address),
+      to: `ethereum|${OTHER}`,
+      evidence_ref: 'e1',
+      tx_hash: TX,
+      amount_text: 'about 4,500 ETH',
+      occurred_on: '2026-01-15',
+      note: ''
+    }
+  ]);
+  assert.deepEqual(toBody(form).flows, [MOVEMENT]);
+  assert.deepEqual(toForm({ ...CONTENT, flows: undefined }).flows, []); // content from before the trail
+  assert.deepEqual(toBody({ ...toForm(CONTENT), flows: undefined }).flows, []);
+});
+
+test('what is typed into a movement is sent without the spaces, and what is empty is not sent', () => {
+  const form = toForm(TRAIL);
+  Object.assign(form.flows[0], { tx_hash: '  ', amount_text: '', occurred_on: ' ', note: ' a note ', evidence_ref: ' e1 ' });
+
+  assert.deepEqual(toBody(form).flows[0], { ...MOVEMENT, tx_hash: null, amount_text: null, occurred_on: null, note: 'a note' });
+});
+
+test('a movement is checked against the addresses named, the documents and the limits, before anything is sent', () => {
+  assert.deepEqual(missingFor(toForm(TRAIL)), []);
+  const wrong = (change) => {
+    const form = toForm(TRAIL);
+    Object.assign(form.flows[0], change);
+    return missingFor(form);
+  };
+
+  assert.deepEqual(wrong({ from: '' }), ['Movement 1: choose the sending address from the addresses named above.']);
+  assert.deepEqual(wrong({ to: 'ethereum|0xnot-named' }), ['Movement 1: choose the receiving address from the addresses named above.']);
+  assert.deepEqual(wrong({ to: toForm(TRAIL).flows[0].from }), ['Movement 1: the sending and the receiving address are the same.']);
+  assert.deepEqual(wrong({ evidence_ref: 'e9' }), ['Movement 1: choose the document that reports it.']);
+  assert.deepEqual(wrong({ evidence_ref: '' }), ['Movement 1: choose the document that reports it.']);
+  assert.deepEqual(wrong({ tx_hash: 'not a hash' }), ['Movement 1: that is not a transaction hash.']);
+  assert.deepEqual(wrong({ tx_hash: '0x12' }), ['Movement 1: that is not a transaction hash.']);
+  // a hash is 16 to 100 letters and digits, as the platform takes it
+  assert.deepEqual(wrong({ tx_hash: 'a'.repeat(15) }), ['Movement 1: that is not a transaction hash.']);
+  assert.deepEqual(wrong({ tx_hash: 'a'.repeat(16) }), []);
+  assert.deepEqual(wrong({ tx_hash: 'a'.repeat(100) }), []);
+  assert.deepEqual(wrong({ tx_hash: 'a'.repeat(101) }), ['Movement 1: that is not a transaction hash.']);
+  assert.deepEqual(wrong({ amount_text: 'x'.repeat(81) }), ["Movement 1: the amount is at most 80 characters, in the document's own words."]);
+  assert.deepEqual(wrong({ amount_text: 'x'.repeat(80) }), []);
+  assert.deepEqual(wrong({ note: 'x'.repeat(301) }), ['Movement 1: the note is at most 300 characters.']);
+  assert.deepEqual(wrong({ note: 'x'.repeat(300) }), []);
+  assert.deepEqual(wrong({ occurred_on: '15 January' }), ['Movement 1: say the day as a date, or leave it empty.']);
+  assert.deepEqual(wrong({ tx_hash: '', occurred_on: '' }), []);
+});
+
+test('a movement whose address has been taken out of the list above is flagged, and a changed spelling is not', () => {
+  const form = toForm(TRAIL);
+  form.addresses[1].address = OTHER.toUpperCase().replace('0X', '0x'); // the same address, typed in capitals
+  assert.deepEqual(missingFor(form), []);
+
+  form.addresses.splice(1, 1);
+  assert.deepEqual(missingFor(form), ['Movement 1: choose the receiving address from the addresses named above.']);
+});
+
+test('an address is drawn in the colour of its part only when somebody stands behind the attribution', () => {
+  const row = (role, status) => ({ role, attribution_status: status });
+  assert.equal(trailKind([row('ATTACKER_FUNDS_RECEIVER', 'REPORTED_BY_ANALYST')]), 'attacker');
+  assert.equal(trailKind([row('INTERMEDIARY', 'CORROBORATED')]), 'passthrough');
+  assert.equal(trailKind([row('VICTIM_WALLET', 'OFFICIALLY_CONFIRMED')]), 'victim');
+  for (const role of ['EXCHANGE', 'BRIDGE', 'MIXER']) {
+    assert.equal(trailKind([row(role, 'REPORTED_BY_ANALYST')]), 'service', role);
+  }
+  for (const role of ['FREEZING_ADDRESS', 'RECOVERY_ADDRESS']) {
+    assert.equal(trailKind([row(role, 'REPORTED_BY_ANALYST')]), 'recovery', role);
+  }
+  // a community report, a pattern or a contested attribution says nothing the picture may colour
+  for (const status of ['COMMUNITY_REPORTED', 'INFERRED', 'DISPUTED']) {
+    assert.equal(trailKind([row('ATTACKER_FUNDS_RECEIVER', status)]), 'unsourced', status);
+  }
+  assert.equal(trailKind([]), 'unsourced');
+  assert.equal(trailKind(null), 'unsourced');
+  // several parts: the first of the ones somebody stands behind decides, and a part nobody stands behind does not count
+  assert.equal(trailKind([row('INTERMEDIARY', 'REPORTED_BY_ANALYST'), row('ATTACKER_FUNDS_RECEIVER', 'REPORTED_BY_ANALYST')]), 'attacker');
+  assert.equal(trailKind([row('ATTACKER_FUNDS_RECEIVER', 'DISPUTED'), row('INTERMEDIARY', 'REPORTED_BY_ANALYST')]), 'passthrough');
+  for (const kind of Object.keys(TRAIL_KINDS)) {
+    assert.ok(TRAIL_KINDS[kind].length > 8, kind);
+  }
+});
+
+const PUBLIC = {
+  addresses: [
+    { chain: 'ethereum', address: CONTENT.addresses[0].address, role: 'ATTACKER_FUNDS_RECEIVER', role_words: 'Received funds reported as taken', attribution_status: 'REPORTED_BY_ANALYST' },
+    { chain: 'ethereum', address: OTHER, role: 'INTERMEDIARY', role_words: 'Passed funds on', attribution_status: 'COMMUNITY_REPORTED' },
+    { chain: 'tron', address: 'TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy', role: 'EXCHANGE', role_words: 'Exchange', attribution_status: 'REPORTED_BY_ANALYST' },
+    { chain: 'bitcoin', address: 'untouched', role: 'VICTIM_WALLET', role_words: 'Wallet the funds were taken from', attribution_status: 'OFFICIALLY_CONFIRMED' }
+  ],
+  flows: [
+    { from: { chain: 'ethereum', address: CONTENT.addresses[0].address }, to: { chain: 'ethereum', address: OTHER }, amount_text: 'about 4,500 ETH', occurred_on: '2026-01-15', tx_hash: TX, note: null, source: null },
+    { from: { chain: 'ethereum', address: OTHER }, to: { chain: 'tron', address: 'TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy' }, amount_text: null, occurred_on: null, tx_hash: null, note: null, source: null },
+    { from: { chain: 'ethereum', address: OTHER }, to: { chain: 'ethereum', address: CONTENT.addresses[0].address }, amount_text: '1,000 ETH', occurred_on: null, tx_hash: null, note: null, source: null }
+  ]
+};
+
+test('the trail is a graph of the addresses the movements touch, in the order they are met', () => {
+  const graph = trailGraph(PUBLIC);
+
+  assert.equal(graph.root, null);
+  assert.deepEqual(
+    graph.nodes.map((node) => [node.id, node.trail, node.label]),
+    [
+      [`ethereum:${CONTENT.addresses[0].address}`, 'attacker', '0x5aae..eaed'],
+      [`ethereum:${OTHER}`, 'unsourced', '0xcdcd..cdcd'],
+      ['tron:TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy', 'service', 'TLsV52..hUzy']
+    ]
+  ); // the victim's wallet is named but no movement touches it, so it is not on the trail
+  assert.deepEqual(
+    graph.edges.map((edge) => [edge.id, edge.number, edge.source, edge.target, edge.amount, edge.timestamp]),
+    [
+      ['m1', 1, `ethereum:${CONTENT.addresses[0].address}`, `ethereum:${OTHER}`, 'about 4,500 ETH', '2026-01-15'],
+      ['m2', 2, `ethereum:${OTHER}`, 'tron:TLsV52sRDL79HXGGm9yzwKibb6BeruhUzy', '', null],
+      ['m3', 3, `ethereum:${OTHER}`, `ethereum:${CONTENT.addresses[0].address}`, '1,000 ETH', null]
+    ]
+  );
+  assert.ok(graph.nodes.every((node) => node.expanded && node.depth === 0 && node.labels.length === 0 && node.bridge === null));
+  assert.ok(graph.edges.every((edge) => edge.asset === '' && edge.transfers === 1));
+});
+
+test('a movement that touches an address nobody listed still draws, as an address no source stands behind', () => {
+  const graph = trailGraph({
+    addresses: [],
+    flows: [{ from: { chain: 'ethereum', address: 'a' }, to: { chain: 'ethereum', address: 'b' }, amount_text: null, occurred_on: null, tx_hash: null, note: null, source: null }]
+  });
+  assert.deepEqual(graph.nodes.map((node) => node.trail), ['unsourced', 'unsourced']);
+  assert.deepEqual(trailGraph({ addresses: [], flows: [] }), { root: null, nodes: [], edges: [] });
+  assert.deepEqual(trailGraph(null), { root: null, nodes: [], edges: [] });
+  assert.deepEqual(trailGraph({}), { root: null, nodes: [], edges: [] });
+});
+
+test('the parts an address plays are read from the incident in the platform\'s own words', () => {
+  assert.deepEqual(partsOf(PUBLIC, { chain: 'ethereum', address: OTHER }), ['Passed funds on']);
+  assert.deepEqual(partsOf(PUBLIC, { chain: 'bsc', address: OTHER }), []); // another chain, another address
+  assert.deepEqual(partsOf(null, { chain: 'ethereum', address: OTHER }), []);
+  const twice = { addresses: [...PUBLIC.addresses, { ...PUBLIC.addresses[1], role: 'EXCHANGE', role_words: 'Exchange' }] };
+  assert.deepEqual(partsOf(twice, { chain: 'ethereum', address: OTHER }), ['Passed funds on', 'Exchange']);
 });
