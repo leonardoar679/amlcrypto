@@ -1,12 +1,14 @@
-# Editorial policy: the public incidents and wallet profiles
+# Editorial policy: the public incidents, wallet profiles, news and hot addresses
 
 What may be published on the incident pages and on the wallet profile pages, on what evidence, in whose
-words, how it is corrected and withdrawn, and the small part of it that screening acts on. Rules marked **(enforced)** are checked by the
+words, how it is corrected and withdrawn, the small part of it that screening acts on, and what the news
+and the ranking of hot addresses make of it. Rules marked **(enforced)** are checked by the
 platform and cannot be skipped; each has a test. The rest are the judgement of the editor, which is why they
 are written down.
 
-Written with the first slice of the incident tracker (M15) and extended with the wallet profiles (M16):
-sections 1 to 6 are about incidents, section 7 is what differs for a wallet profile. **No lawyer has read
+Written with the first slice of the incident tracker (M15) and extended with the wallet profiles (M16) and
+with the news and the hot addresses (M17): sections 1 to 6 are about incidents, section 7 is what differs
+for a wallet profile, and section 8 is what is announced and ranked from both. **No lawyer has read
 it.** Publishing what a
 page says about an address can be wrong or defamatory, and that risk is the real one in this feature, not a
 technical one. Item 9 of "Before production" in [data-licensing-and-regulatory-review.md](data-licensing-and-regulatory-review.md)
@@ -153,6 +155,11 @@ rebuilds the labels from what is published, if one was ever changed by hand.
 * **The pages keep what they read for a minute**, so a withdrawn incident can still be served for up to sixty
   seconds, and longer if a caching proxy is put in front of the site (the API marks its answers as cacheable
   for a minute). For something that must go at once, say so to the operator, who can restart the site.
+* **What a reader of the Atom feed has already received cannot be taken back.** Taking an incident back to
+  review removes its items from the news and from the feed within a minute, but a feed reader that has
+  fetched them keeps them, and nothing tells it that they were withdrawn. A correction reaches such readers
+  (it is an item of its own); a withdrawal does not. For a dispute that is a reason to act on the first day,
+  and to correct what was wrong in the open where that is the right answer, and not only to withdraw.
 
 ## 6. Before publishing
 
@@ -242,11 +249,88 @@ tested)**
    backups.
 7. Has someone other than the author read it in review? With one editor today that is the author a day later.
 
-## 8. What this does not cover yet
+## 8. The news and the hot addresses: what is announced and what is ranked
+
+The news page, its Atom feed and the page of hot addresses are made of what the editors have published, and of
+nothing else: no visitor is counted, nothing from any organization's screenings, monitors or reports is used,
+and nothing comes from the stored chain data. An editor is therefore the only person who can put something in
+the news or move an address in the ranking, and every item and every rank leads back to a published page.
+
+**The news**
+
+* **An item is one of three things:** the first publication of an incident; an entry on the timeline of a
+  published incident that is dated at or after that first publication (a development, funds that moved, funds
+  frozen or recovered, a statement or a correction); and the first publication of a wallet profile.
+  **(enforced)**
+* **Only what is published has items.** A draft, something in review and something archived have none. Taking an
+  incident back to review removes its items at once, and publishing it again puts them back **without
+  announcing it a second time**: the first publication is the one that counts. **(enforced, and tested)**
+* **An entry dated before the incident was first published is not news.** It belongs to the first story, which
+  the incident page tells. The rule uses the date of the event, not the day it was typed in, so an entry added
+  later with an earlier date is on the incident page and not in the news. Date an entry when the thing
+  happened: an entry dated in the future is shown at once, with that time.
+* **A correction is an item of its own**, labelled as one and set apart on the page, so that somebody who
+  follows the news does not miss that something was wrong. Add it the day the error is known (section 5): that
+  is what puts it in the news, and nothing else will.
+* **An item says what its page says.** Its title, a summary cut at 280 characters, the kind of news it is and,
+  for funds that moved, the chain and the transaction hash (already public on the incident page). No note to
+  editors and no editor's name is ever in it. **(enforced: every field is written one by one, and a test holds
+  the exact set)** Its notice says that the items are published from the sources the editors cite and that the
+  platform has not verified them. The news is as reliable as those sources; a reader who needs more reads the
+  incident and its documents.
+* **The Atom feed carries the latest 50 items** in the same words, as text and never as markup, each with an
+  address of its own. Its links and those addresses follow the address of the site: set it (`NEXT_PUBLIC_SITE_URL`)
+  before anybody subscribes, because changing it afterwards makes every reader see the whole feed again as new.
+
+**The hot addresses**
+
+* **"Hot" means recently and firmly reported.** It does not mean that attention is drawn (nobody counts who looks),
+  and it is not a measure of risk or a finding about whoever controls the address. The page says so, in the same
+  words, with every answer.
+* **Who is ranked.** An address that a published incident names as the receiver of what was taken, or as having
+  passed it on, at a status that somebody stands behind and with its document: "confirmed by the affected party
+  or an authority", "reported by more than one independent source" or "reported by an analyst". These are
+  exactly the statuses screening acts on (section 4), and a test holds the two lists together. A victim, an
+  exchange, a bridge, a mixing service, an address that froze funds and one that received them back are never
+  ranked, nor is any address that rests on an unverified community report, a pattern or a contested
+  attribution. **(enforced, and tested for every role and every status)**
+* **Recency is the event, not the publication.** An incident counts for the days since its last event: the later
+  of the day it happened and its latest timeline entry. Publishing an old incident today does not make its
+  addresses hot, and a new development on an old one does bring them back. **(enforced)** The reader chooses
+  the last 7, 30 (the default) or 90 days: an incident whose last event is older is out, and inside the period
+  its weight halves every third of it.
+* **How it adds up.** Receiving what was taken counts for more than passing it on, a firmer status for more than
+  a weaker one, and an address named by several incidents adds them up; named twice in one incident (in two
+  roles) it counts once, at the better. The weights are in one table in the code (`app/feed/model.py`).
+* **No number is shown**, because a score would claim a precision that the weights do not have. The order is the
+  answer, with its rank, the incidents that name the address (up to five) in their fixed words, and "Known
+  as ..." when a published profile names it. Ties are broken by the latest event, then by chain and address, so
+  the order is the same every time. At most the 500 most recently published incidents inside the period are
+  looked at, so that one request stays bounded.
+* **What it means for the editor.** Publishing an incident that names an address as a receiver at one of those
+  three statuses puts that address on a public ranking until the period runs out, so sections 2 and 4 weigh more
+  than they did: choose the weakest status the documents support, name only addresses that the incident's own
+  documents name, and do not name as a receiver an address that you would not want to see at the top of a
+  list. Taking the incident back to review takes its addresses off the ranking within a minute.
+* **The ranking acts on nothing.** It only reads: it writes no label and changes no screening. What screening
+  takes from an incident is section 4 and nothing more. **(enforced)**
+
+**Before publishing, with the news and the ranking in mind**
+
+1. Is the date of every timeline entry the date of the event, and is a correction written as one, so that it
+   reaches those who follow the news?
+2. For every address that is a receiver or an intermediary at a firm status: would you be content to see it at
+   the top of a public ranking tomorrow, with the sentence the page puts beside it?
+3. Does the title say what the documents say, in words that can be read without the page? The news and the feed
+   show the title and the first 280 characters of the summary on their own.
+
+## 9. What this does not cover yet
 
 Submissions from the public, reviewers other than editors, translation, takedown requests through a form,
 retention of the incident and profile data beyond "never deleted once shown", a profile's change history shown
-to readers (an address taken off a profile leaves no trace on the page; the audit log has it), and a legal
-read of any of it. The incident tracker and the wallet profiles are the first two slices of a larger product;
-the later slices (trending and large transfers, submissions) need their own policy, and the first of them
-needs this one reviewed.
+to readers (an address taken off a profile leaves no trace on the page; the audit log has it), a way to recall an
+item from the readers of the Atom feed, and a legal read of any of it. The incident tracker, the wallet profiles
+and the news and ranking made from them are the first three slices of a larger product; the later ones
+(large transfers, which need prices; submissions) need their own policy, and the first of them needs this one
+reviewed. Nothing in the ranking counts what visitors look at, and nothing in it uses chain data: a ranking by
+views or by on-chain activity would need a policy of its own, and a licence for the data.

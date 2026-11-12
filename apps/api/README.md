@@ -1277,7 +1277,7 @@ same (D14 in the limitations register).
 
 ### Not done
 
-Trending addresses, large transfers, public wallet profiles (M16, below), community submissions, news, USD prices, a dollar value or a
+Trending addresses (M17, below, from editorial data only), large transfers, public wallet profiles (M16, below), community submissions, news (M17, below), USD prices, a dollar value or a
 total for the funds trail, any paid feed (Whale Alert, Chainabuse, a commercial attribution) and DeFiLlama's hacks
 list; a licence for Elliptic's list; a legal read of the editorial policy; a brand and a domain (the pages are
 `noindex`).
@@ -1384,9 +1384,98 @@ unchanged through both moves.
 
 ### Not done
 
-Trending addresses, large transfers, community submissions, news, USD prices, a paid feed, wallet clustering, balances
+Trending addresses and news (M17, below), large transfers, community submissions, USD prices, a paid feed, wallet clustering, balances
 or activity on a profile, a profile's change history shown to readers, a legal read of the editorial policy (**above all
 for the profiles of public figures**), and a brand and a domain (the pages are `noindex`).
+
+## The news feed and the hot addresses (milestone M17)
+
+M17 is the third slice of "public blockchain intelligence": a **news feed** of what the editors published and a **ranking
+of the addresses that sources report most firmly and most recently**, both worked out on each request from the published
+incidents and wallet profiles. It was decided with the owner that this is **editorial data only**: nobody's visit is
+counted, no stored chain data is shown and nothing of any organization's is used, so "most viewed" (counting visits is a
+write path, a defence against inflating it and a privacy statement), "most active" (chain data on a public page: L4) and
+"largest movements" (a whale feed: it needs dollar prices) are **not built**. **No migration, no table, no permission and
+no setting of the API.** The rules for what is announced and what is ranked are section 8 of
+[shared/documentation/editorial-policy.md](../../shared/documentation/editorial-policy.md) (**no lawyer has read them**);
+the operator's side is in [operations.md](../../shared/documentation/operations.md); what it costs and does not do is in
+[limitations.md](../../shared/documentation/limitations.md) (D26 to D30, O20, and changes to O14, O16 and O17).
+
+### The news
+
+* **What an item is.** `GET /public/feed` (filter `kind`: `incident`, `update` or `profile`; `limit` 1 to 50, default 20;
+  `offset` 0 to 1,000): an incident's **first publication**; a **timeline entry** of a published incident **dated at or
+  after that first publication** (a development, funds moved, frozen or recovered, a statement or a **correction**, which
+  is an item of its own and labelled as one); and a wallet profile's **first publication**. Taking an incident back to
+  review removes its items at once, and publishing it again puts them back **without announcing it a second time**: the
+  first publication is the one that counts. An entry dated before the first publication is the first story, not news. The
+  rule uses the event's own date because replacing an incident's content writes its timeline rows again with new creation
+  times.
+* **Fields**, written one by one in `app/feed/public.py` (a test holds the exact set): `kind`, `at`, `key` (stable, and
+  not a row number: for a timeline entry the incident, the second, the kind and a digest of the text), `label` ("New
+  incident", "Funds moved", "Correction", "New wallet profile", ...), `title`, `summary` (cut at 280 characters), `link`
+  (`type` and `slug`) and, for a development, `update_kind`, `chain` (a slug) and `tx_hash` (public on the incident page
+  already). Never a note to editors, an editor's name or anything an organization owns. Newest first; at one moment an
+  incident comes before a development, which comes before a profile, then by id. Three bounded sub-selects are merged, so
+  a request reads at most `offset + limit` rows of each kind.
+* A success carries `Cache-Control: public, max-age=60` and a `notice`: the items are published from the sources the
+  editors cite, and the platform has not verified them.
+
+### The hot addresses
+
+* `GET /public/hot` (`window` 7, 30 (the default) or 90 days, else 422 `invalid_window`; `chain` a slug, else 422
+  `unknown_chain`; `limit` 1 to 50; `offset` 0 to 200).
+* **Who is ranked.** Only an address that a **published** incident names as `ATTACKER_FUNDS_RECEIVER` (weight 1.0) or
+  `INTERMEDIARY` (0.6), at `OFFICIALLY_CONFIRMED` (1.0), `CORROBORATED` (0.85) or `REPORTED_BY_ANALYST` (0.7) **with its
+  document**: exactly the statuses screening acts on (`SOURCED_STATUSES`, and a test holds the two together). A victim, an
+  exchange, a bridge, a mixer, a freezing or a recovery address, and every community, inferred or disputed attribution, is
+  never ranked.
+* **When.** An incident counts for the days since its **last event**, the later of its own date and its latest timeline
+  entry, so publishing an old incident today does not make it hot and news on an old one does. A window keeps the
+  incidents whose last event is inside it, and inside it a weight halves every `window / 3` days. An address's standing is
+  the sum, over the incidents that name it, of its role x its status x the fade (one contribution for each incident: its
+  better role and status there). The order is that sum (rounded to nine places), then the latest event, then chain and
+  address, so it is the same every time. **No score is shown.** At most the 500 most recently published incidents inside
+  the window are read.
+* **Fields**: `rank`, `chain`, `address`, `reported_in`, `latest_event_on`, `strongest` (the status and its fixed words),
+  `incidents` (up to five: slug, title, kind, date, role words, status words) and `known_as` (a published wallet profile
+  that names it). The same cache header, and a `notice`: not attention, and not a finding about the owners.
+
+### The pages
+
+`/news`, `/hot` and the Atom feed `/feed.xml` are made by the web app on the server (see
+[apps/web/README.md](../web/README.md)); the browser never calls these endpoints. The feed answers 503 with
+`Retry-After: 60` when this API is away.
+
+### Checked against
+
+* 3,520 backend tests and 1 skipped on SQLite (3,457 before M17, plus the news and the
+  ranking, the shared structural tests every new public route must satisfy, and a test that the web image can take the
+  site's address), ruff clean, `alembic check` clean (there is no migration); 209 frontend unit tests
+  (183 before). The MySQL test layout was rehearsed on SQLite: 3,444 passed, and the two tests that fail
+  in it for reasons of the emulation alone failed as before. MySQL and Docker themselves run only in CI, which has not
+  run on M17 yet (there is no new table: what MySQL has not seen is the two queries).
+* 169 mutations of the backend code (the item builders and what is shown, the paging and the order of the
+  news, the window, the eligibility of an address, the weights and the fade, the order and the page of the ranking, the
+  vocabulary and the two routes): 51 were not caught the first time, 2 of them
+  equivalent and 49 pointing at gaps, which 11 new tests (17 more cases once parametrized) and stronger assertions in the old ones closed. 66 mutations of the
+  frontend helpers (the Atom writer and the filters) left 4, all of them `null` for `undefined` where
+  both are false.
+* A headless-Edge run (118 checks) on a production build against this API, on a scratch database with
+  **synthetic** incidents and profiles only: the exact field set and the cache header, the feed in order with every kind,
+  a development dated before the first publication left out, a correction set apart, a title with markup shown as text and
+  written correctly into the Atom feed (parsed by the browser's own parser: no error, one entry for each item, ids unique,
+  links on the address the feed was asked on), filters, pages and hostile queries, the ranking with a victim, an exchange
+  and a community-reported address absent and with "Known as ...", the ranking's order worked out again outside the
+  platform, the periods and the chain, a withdrawal that leaves the news, the ranking and the feed within a minute and a
+  republication that announces nothing twice, forged proxy headers (a feed that is private), the platform away and back,
+  390 px and the dark theme.
+
+### Not done
+
+Visitor-based trending ("most viewed") and any ranking from chain data ("most active"), large transfers (a whale feed: it
+needs dollar prices), notifications other than the Atom feed, a way to recall an item from the readers of the feed, a
+sitemap, a legal read of the editorial policy, and a brand and a domain (the pages are `noindex`).
 
 ## Testing against MySQL
 
@@ -1416,6 +1505,7 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 | `GET/POST /editor/incidents`, `GET/DELETE /editor/incidents/{id}`, `PUT /editor/incidents/{id}/content`, `POST /editor/incidents/{id}/transition`, `POST /editor/incidents/{id}/updates` | `incidents:curate` | the incident editor: held by no role, only by a person made a platform editor from the command line, never by an API key |
 | `GET /public/wallets`, `GET /public/wallets/{slug}`, `GET /public/addresses/{chain}/{address}/wallets` | none | the published wallet profiles, for anybody: read only, only what was published, no balance or activity (see "Public wallet profiles, and what screening takes from them") |
 | `GET/POST /editor/wallets`, `GET/DELETE /editor/wallets/{id}`, `PUT /editor/wallets/{id}/content`, `POST /editor/wallets/{id}/transition` | `incidents:curate` | the wallet profile editor: the same permission and the same people as the incident editor |
+| `GET /public/feed`, `GET /public/hot` | none | the news and the ranking of hot addresses, for anybody: read only, only what editors published, nothing of any organization's and no chain data (see "The news feed and the hot addresses") |
 | `POST/GET /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST /monitoring/addresses/{id}/check` | `monitoring:write` / `monitoring:read` | monitored addresses |
 | `GET /alerts`, `GET /alerts/summary`, `GET /alerts/{id}`, `PATCH /alerts/{id}` | `alerts:read` / `alerts:manage` | alerts and the analyst's workflow on them |
 | `POST/GET /cases`, `GET /cases/summary`, `GET/PATCH /cases/{id}`, `POST /cases/{id}/notes`, `POST /cases/{id}/links`, `DELETE /cases/{id}/links/{link}`, `GET /cases/{id}/export` | `cases:write` / `cases:read` | cases |
@@ -1465,6 +1555,7 @@ upper bounds, and a path id past them is a 422, not a 404.
 | `app/intel/` | address intelligence: the claim model and confidence (`model`), what a label source is and how its row is made (`sources`), the readers of OFAC's list (`ofac`) and Elliptic's blocklist (`elliptic`), the importer and downloader (`importer`, with the reader of each source in `READERS`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`), the worker's schedule that keeps named sources current (`schedule`), the mechanics an editorial source shares (`projection`) and what the CLI and API share (`service`) |
 | `app/incidents/` | the incident tracker: the vocabulary (`model`), writing an incident as a whole and moving it between states (`service`), what an editor sees (`views`) and what anybody sees (`public`), and the narrow part that screening acts on (`projection`) |
 | `app/wallets/` | the wallet profiles, written the same way: the vocabulary (`model`), `service`, `views`, `public`, and what screening takes from them as context (`projection`) |
+| `app/feed/` | the news feed and the hot addresses: the vocabulary, the weights and the notices (`model`) and what anybody sees (`public`); nothing is stored for them |
 | `app/editorial.py` | what every page an editor writes shares: the errors an editor is shown and the checks of text, web addresses, dates, addresses and documents |
 | `app/graph/` | the transaction graph: movements from stored records (`flows`), where histories come from and how complete they are (`reader`), the bounded expansion (`builder`), exposure paths (`exposure`), fan-in and fan-out (`patterns`), bridges (`bridges`), the text output (`render`), what the CLI, API and job share (`service`) and the job (`jobs`) |
 | `app/risk/` | the risk engine: the records of a report (`model`), the fifteen rules and their registry (`rules/`), scoring and confidence (`scoring`), screening a graph (`engine`) or a transaction (`transactions`), the text output (`render`), what the CLI, API and job share (`service`) and the screening jobs (`jobs`) |

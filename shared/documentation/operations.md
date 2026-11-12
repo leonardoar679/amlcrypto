@@ -10,7 +10,7 @@ Contents: [what runs where](#what-runs-where) · [first deployment](#first-deplo
 [backups and restores](#backups-and-restores) · [upgrading](#upgrading) ·
 [SQLite to MySQL](#moving-from-sqlite-to-mysql) · [rotating secrets](#rotating-secrets) ·
 [label sources](#label-sources-and-keeping-them-current) ·
-[the public incidents and their editors](#the-public-incidents-and-their-editors) ·
+[the public incidents, news and their editors](#the-public-incidents-wallet-profiles-news-and-hot-addresses-and-their-editors) ·
 [when something goes wrong](#when-something-goes-wrong) · [what is kept, and for how long](#what-is-kept-and-for-how-long) ·
 [hardening checklist](#hardening-checklist)
 
@@ -27,9 +27,9 @@ Contents: [what runs where](#what-runs-where) · [first deployment](#first-deplo
 
 The browser only ever talks to `web`. The API is reachable by programs that hold an API key, and by
 the data provider that calls the webhook, through the second host name of the nginx example. The one
-part of `web` that needs no sign-in is the published incidents (`/incidents`): the web server reads
-them from the API's public endpoints itself, so its cache and the nginx limits on the web host stand
-in front of the API (see [the public incidents](#the-public-incidents-and-their-editors)).
+part of `web` that needs no sign-in is what the editors published (`/incidents`, `/wallets`, `/news`, `/hot`
+and the Atom feed `/feed.xml`): the web server reads it from the API's public endpoints itself, so its cache
+and the nginx limits on the web host stand in front of the API (see [the public pages](#the-public-incidents-wallet-profiles-news-and-hot-addresses-and-their-editors)).
 
 With SQLite there must be **one** worker process and one API process writing to the file (the limits
 the worker enforces live in its process, and SQLite has one writer at a time). MySQL has no such
@@ -78,6 +78,7 @@ All settings are environment variables; `apps/api/.env.example` lists every one 
 | `ACCESS_TOKEN_TTL_MINUTES` | 60 | There are no refresh tokens: when it passes, the person signs in again |
 | `ALCHEMY_WEBHOOK_SIGNING_KEY` | unset, or the webhook's key | Unset, the webhook answers 404 |
 | `HISTORY_REQUEST_BUDGET`, `GRAPH_REQUEST_BUDGET`, `HISTORY_MAX_ITEMS` | defaults | Cap what one screening may spend of the providers' quotas, which every organization shares |
+| `NEXT_PUBLIC_SITE_URL` (a build argument of the web image) | the public address of the site, `https://example.org`, no path | The links and the ids of the Atom feed are made from it: set it before anybody subscribes, and build the web image again when it changes (see [the news](#the-public-incidents-wallet-profiles-news-and-hot-addresses-and-their-editors)) |
 | `LABEL_REFRESH_SOURCES`, `LABEL_REFRESH_TICK_SECONDS` | the sources to keep current by themselves (`ofac_sdn` at least), 3600 | Nothing refreshes a label source otherwise; a stale one lowers every screening's confidence ([label sources](#label-sources-and-keeping-them-current)) |
 
 ## Every day
@@ -245,7 +246,7 @@ python -m app.cli incidents project                    # rebuild the labels the 
   bridge (monitors alert from MEDIUM up unless set otherwise, so by default nothing happens: see D23), and a
   wrongly named exchange hides a finding (D22).
 
-## The public incidents, the wallet profiles and their editors
+## The public incidents, wallet profiles, news and hot addresses, and their editors
 
 **Who writes.** Only a platform editor, made so from the command line (it is not a role, and an
 organization's administrator cannot do it):
@@ -281,20 +282,43 @@ that name its addresses. "Watch this address" on a profile opens the signed-in m
 address and name filled in (a signed-out visitor goes through sign-in first and comes back); nothing is added
 until the person presses the button.
 
+**The news and the hot addresses** are read at `/news` (what was published, newest first, filtered by kind),
+`/hot` (the addresses reported most firmly and recently, by period and chain) and `/feed.xml` (the news as an
+Atom feed, the latest 50 items), and through `GET /api/v1/public/feed` and `GET /api/v1/public/hot`, which answer
+on the same terms as the others. **Nothing is stored for them**: both are worked out from the published
+incidents and profiles on each request, so there is nothing to schedule, no migration and no setting of the
+API. Nothing counts who looks, and no chain data or organization's data is used (the editorial policy,
+section 8, says what is announced and what is ranked).
+
 * **The web server reads them, the browser does not.** The pages are made on the server and ask the API for the
   data, which the web server keeps for **one minute** (in its memory, with a time limit, so that what is gone
   from the API is gone from the pages when the minute is up; a failed read is remembered for five seconds so
   that a crowd does not queue at an API that is down). The browser never calls the API's public endpoints, and
   the proxy would refuse it.
-* **With the API away** the incident pages say "not available right now" as pages, and the home page, which makes
-  no request, is unaffected. The container image is checked for this in CI (`/incidents` answers 200 with the
-  notice, a link that is not an incident answers 404).
+* **With the API away** the incident, profile, news and ranking pages say "not available right now" as pages, and
+  the home page, which makes no request, is unaffected. The Atom feed answers **503 with `Retry-After: 60`**
+  and is never served empty, because a reader that was given an empty feed would take it for "nothing
+  happened". The container image is checked for all of this in CI (`/incidents` answers 200 with the notice, a
+  link that is not an incident answers 404, `/news` and `/hot` answer 200 with theirs, `/feed.xml` answers 503
+  with the time to try again).
+* **The Atom feed's address.** The feed's links, and the id of each item, follow the address of the site. Set
+  `NEXT_PUBLIC_SITE_URL` in `deployment/.env` **before anybody subscribes**: the framework reads it when the app
+  is built, so the compose file passes it to the web image's build and changing it means building the image
+  again, and a feed reader identifies an item by its id, so changing the address later makes every subscriber
+  see the whole feed again as new. Without it the feed is made on the address it was asked on (the proxy's
+  `X-Forwarded-Proto` and `X-Forwarded-Host` where it sends them, then the `Host`, which the example proxy passes
+  on); such a feed is marked `private`, so
+  that no cache serving other people keeps one that a visitor shaped, and a host that is not plainly a host
+  makes it answer 400. Check it through the proxy before sharing it: `curl -si https://<site>/feed.xml`
+  shows the site's own address in its links and `Cache-Control: public, max-age=60` once it is set.
 * **Taking something down.** Move it back to review: it leaves screening at once and the public pages within a
-  minute (longer if a proxy caches them; do not cache `/incidents` or `/wallets` for long). A correction is a
+  minute (longer if a proxy caches them; do not cache `/incidents`, `/wallets`, `/news`, `/hot` or `/feed.xml`
+  for long), but a feed reader that has already fetched an item keeps it (D28). A correction is a
 timeline entry on an incident; a profile has none, so it is taken back to review, changed and published again.
   The routine for a complaint is in the editorial policy.
 * **Limits at the proxy.** The example nginx file gives the API host a zone for `/api/v1/public/` (10 requests a
-  second per address, GET only) and the web host its general zone (20 a second) for the pages. The web host takes
+  second per address, GET only, which covers the feed and the ranking too) and the web host its general zone
+  (20 a second) for the pages and the Atom feed, which feed readers poll. The web host takes
   bodies of 128 KB, except one location of its own (640 KB) for an editor saving the whole content of an incident
   or of a wallet profile: the web app forwards 64 KB of anything and 512 KB of that one request, which an incident
   that names a couple of hundred addresses needs (about 90 KB; one filled to every limit the platform has, with
@@ -354,6 +378,7 @@ Everything is kept until someone removes it by hand; **nothing expires automatic
 | Reports, findings, alerts, cases, monitored addresses | per organization | Reports are kept verbatim |
 | Label sources, their entities, claims and import log | global | A claim a newer copy no longer holds is kept inactive with the time it left; imports are logged (`label_imports`) |
 | Incidents, their documents, amounts, addresses, funds trail and timeline | global, written only by platform editors | A published incident is archived, never deleted; only a draft that was never published can be; the editors' private note is in the database and in backups |
+| The news and the hot addresses | nothing is stored: worked out from the published incidents and profiles on each request | Nothing to back up or erase; an item already fetched by a feed reader stays in that reader (D28) |
 | The audit log | per organization, append-only (the application never updates or deletes a row; the database does not forbid it) | An organization with a history cannot be deleted from under it (foreign key `RESTRICT`) |
 | Backups | `DATA_DIR/backups` by default | Keep with `--keep`; encrypt and copy off the machine |
 
@@ -371,7 +396,8 @@ manual operation on the database for now, and is listed in the limitations regis
 - [ ] Watchman, if used, has no `ports:` entry; `INCLUDED_LISTS` names only lists whose terms you accept (never OpenSanctions without a license).
 - [ ] Provider keys only in the environment of `api` and `worker`; none in `web`.
 - [ ] `LABEL_REFRESH_SOURCES` names every label source the deployment relies on, and none whose terms are not settled (Elliptic's list); `doctor` shows the sources fresh.
-- [ ] Only the people who should be editors are (`user list`); nobody outside the team can reach `/incidents` until counsel has read the editorial policy; `/incidents` is not cached for long in front of the web host.
+- [ ] Only the people who should be editors are (`user list`); nobody outside the team can reach the public pages (`/incidents`, `/wallets`, `/news`, `/hot`, `/feed.xml`) until counsel has read the editorial policy; none of them is cached for long in front of the web host.
+- [ ] `NEXT_PUBLIC_SITE_URL` is set and `/feed.xml`, asked through the proxy, carries the site's own address in its links, before anybody subscribes.
 - [ ] Backups scheduled, copied off the machine, and a restore rehearsed.
 - [ ] Administrators are few; analysts and viewers are the default for everyone else; API keys have the lowest role that works and an expiry.
 - [ ] The data-licensing review's *before production* list has been worked through.

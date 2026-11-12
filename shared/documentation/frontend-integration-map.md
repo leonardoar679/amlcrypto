@@ -47,9 +47,9 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   job is polled every two seconds until it finishes, and a failed poll is retried instead of dropped.
 * **The frontend never reads a data provider.** Anything that needs fresh chain data queues a job
   (`POST /screen/address`, `POST /graph/update`) and follows it; the worker does the reading.
-* **The incidents and the wallet profiles anybody may read are read by the web server, not by the browser (M15,
-  M16).** `/incidents`, `/incidents/[slug]`, `/wallets` and `/wallets/[slug]` are server components that need
-  no session, so they cannot use the proxy (which wants the
+* **What anybody may read is read by the web server, not by the browser (M15, M16, M17).** `/incidents`,
+  `/incidents/[slug]`, `/wallets`, `/wallets/[slug]`, `/news` and `/hot` are server components, and `/feed.xml`
+  a route handler, that need no session, so they cannot use the proxy (which wants the
   cookie) and do not: `src/server/publicApi.js` reads the API's `/public/` endpoints with
   `src/lib/publicRead.js`, which only builds paths from a safe set of characters, never follows a redirect,
   gives up after 8 seconds, never throws (the answer is `{ ok, status, data }`, status 0 when the API cannot be
@@ -60,7 +60,12 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   was tried first and **rejected after a browser run found that it keeps serving an answer that has run out
   while the refresh returns a refusal**, so an incident taken off the public pages would have stayed on them.
   The page and its title share one read per request (`React.cache`). The proxy lists none of these
-  endpoints, so the browser cannot ask for them through it (a test pins this).
+  endpoints, so the browser cannot ask for them through it (a test pins this). **The Atom feed is made on the
+  server from the same read** (`feed?limit=50`, kept for the same minute): the pure `src/lib/atom.js` writes it
+  (every text escaped, characters XML forbids dropped, RFC 3339 times, ids that are permanent addresses), the
+  handler answers **503 with `Retry-After: 60` and no body to keep** when the platform is away (an empty feed
+  would read as "nothing happened"), and its links come from `NEXT_PUBLIC_SITE_URL` or, without it, from the
+  request, in which case the answer is `private` so that no shared cache keeps an address a visitor wrote.
 * **The editor is the one place the proxy forwards a `PUT`** (`PUT /editor/incidents/{id}/content` and
   `PUT /editor/wallets/{id}/content`, which replace the whole content of a draft or of a page in review).
 
@@ -73,6 +78,9 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 | `/incidents/[slug]` | server page, public | one published incident: the story, **each source's amount on its own line (never a total)**, the addresses with the part each plays and how firmly, in the platform's fixed words, **the funds trail** (one card for each movement the sources report, with its document, the amount in the source's own words and a link to the transaction, and a drawing of the same movements that colours an address by its part only when its status is one somebody stands behind), the timeline and the sources; a draft, an incident in review, an archived one and one that does not exist are the same 404 | `GET /public/incidents/{slug}` |
 | `/wallets` | server page, public | the published wallet profiles for anybody ("known entities"): filters by kind and chain and a search by name (links and a form that sends its answer in the address bar), pages of 20, and a lookup of one address (which profiles name it), all without a script; "not available right now" when the API cannot be reached | `GET /public/wallets`, `GET /public/addresses/{chain}/{address}/wallets`, read by the web server, never through the proxy |
 | `/wallets/[slug]` | server page, public | one published profile: who it is, as its documents say it, the addresses it names with what each is and how firmly, in the platform's fixed words (and "Watch this address", a link to the monitoring form), the documents it rests on and the published incidents that name its addresses; no balance and no activity; a draft, a profile in review, an archived one and one that does not exist are the same 404 | `GET /public/wallets/{slug}` |
+| `/news` | server page, public | what was published, newest first: new incidents, what happened next on them, corrections (set apart by colour) and new wallet profiles; filters by kind and pages of 20 (links, no script); an item leads to its incident or profile and, for funds that moved, to the transaction in a block explorer; the page announces the Atom feed in its head; "not available right now" when the API cannot be reached | `GET /public/feed`, read by the web server, never through the proxy |
+| `/hot` | server page, public | the addresses sources report most firmly and most recently, for the last 7, 30 (the default) or 90 days and for all chains or one (links), twenty to a page down to 200: rank, chain, the address, how firmly in the fixed words, "Known as ..." from a published profile, the incidents that name it, a link to a block explorer and "Watch this address"; **no score is shown**; "not available right now" when the API cannot be reached | `GET /public/hot`, on the same terms |
+| `/feed.xml` | route handler, public | the news as an Atom 1.0 feed, the latest 50 items, as text; links and ids on the address of the site; 503 with `Retry-After: 60` when the platform is away | `GET /public/feed`, on the same terms |
 | `/auth` | server page + client form | email and password sign-in, back to the page asked for (`?next=`, same-site paths only); a signed-in visitor is sent on | `POST /api/session/login` |
 | `/check` | `(app)` | screen an address or a transaction; chain detection (an EVM address offers Ethereum or BNB); options (hops, look-back, read the providers first, refresh); the last five checks | `POST /address/validate`, `POST /screen/address`, `POST /screen/transaction`, `GET /screenings` |
 | `/check/[id]` | `(app)` | the screening: waiting, failed (with a retry) or the report | `GET /screen/{id}`, `GET /screen/{id}/export` |
@@ -188,6 +196,15 @@ gained the six editor routes and **deliberately lists none of the public ones**.
 incident gained `profile` (name, kind, page) on each address that a published profile names, which is what
 "Known as ..." shows; the signed-in address page links a claim from the profiles to its page, as it does for
 an incident.
+
+### Added for M17 (the news and the hot addresses)
+
+Two endpoints, described in the API README ("The news feed and the hot addresses"): `GET /public/feed` (what was
+published: new incidents, what happened next on them, corrections, new wallet profiles; filter by kind) and
+`GET /public/hot` (the ranking; filters by period and chain). Both anonymous, with `Cache-Control: public,
+max-age=60`, from published editorial data only, with **no migration and no table**: they are worked out on each
+request. The proxy's allow-list lists neither (a test pins that); the pages and the Atom handler read them on
+the server. Nothing is added to what an editor does, and nothing changes for screening.
 
 ## 5. Decisions
 
@@ -355,6 +372,45 @@ an incident.
   of its card at 390 px. Over plain http the one console error it excused is the browser upgrading the redirect
   of a signed-out visitor's link to https (the policy's `upgrade-insecure-requests`): the router falls back to an
   ordinary navigation, which works, and over https the redirect is followed as it is.
+
+* **The news and hot-address browser run** (the same harness, 118 checks, all passing; **synthetic** incidents and one
+  profile made through the editor API on a scratch database that also holds the seeded incidents, no real incident,
+  amount or address anywhere). *Anonymous, before anything is added:* the feed holds the 24 published incidents and nothing
+  else (a draft and an archived one have no item), each item has exactly the fields meant to be public, the seeded notes to
+  editors are in neither the feed nor the ranking, the ranking holds the two addresses the seeded incidents report firmly,
+  the answers may be kept for a minute and the browser cannot ask the platform for them through the proxy; an empty filter
+  says that nothing of that kind has been published; the head of `/news` announces the Atom feed, the header and the footer
+  have News and Hot addresses, and the home page asks the platform for nothing. *The Atom feed* is served as Atom in UTF-8
+  and parsed by the browser's own `DOMParser`: no error, the Atom namespace, one entry for each item, ids unique, every
+  link absolute and on the address the feed was asked on, every time in RFC 3339, `self` and `alternate` links, and the
+  one author that RFC 4287 wants (the platform's name). *An editor
+  publishes* three incidents (one titled with markup and quotes), a profile and then, last, a development with a
+  transaction, a correction and an entry dated a day before the first publication: the feed holds exactly the 30 items,
+  newest first and in the order of kinds at equal moments, the backdated entry is not an item, the correction is an item of
+  its own, labelled and drawn in the warning colour, the funds that moved carry their chain, their transaction and a link
+  that opens safely, filters and pages (20, then 10) work and hostile queries are read as no filter, the title with markup
+  is shown as text and no script is made of it, and the Atom feed shows the same 30 with the hostile title surviving the
+  parser unchanged. *The ranking* holds five addresses, the confirmed receiver first, and never a victim, an exchange, a
+  community-reported receiver or an address from forty days ago (which 90 days bring in); the answer says what it is and
+  is not and has no score; its order is **worked out again in the run, outside the platform**, from the answer's own words
+  (receiving over passing on, firmer over weaker, recent over old); the profile that names the first address is its "Known
+  as"; the period and chain filters work and a period that is not one is refused with the reason; a card shows the rank,
+  the chain, how firmly, the address, "Known as", the incident, the part played in the platform's words, links to the
+  profile and the incident, a block explorer link that opens safely and "Watch this address" filled in with the profile's
+  name. *Withdrawal:* taking the incident back to review empties its items and its addresses from the platform's answers at
+  once and from the pages and the feed within the minute they keep what they read; *publishing it again* brings them back in
+  the same order with the time of the first publication, so nothing is announced twice. *The platform away:* the news and the
+  ranking say so as pages, the home page is unaffected, the feed answers 503 with `Retry-After: 60` and no entry, and all of
+  it works again when the platform returns. *Forged headers:* a visitor who writes `X-Forwarded-Host` and
+  `X-Forwarded-Proto` gets a feed on that address, marked `private`, and a host that is not plainly a host gets a 400 that
+  is not kept. No console error or failed request on any page, no sideways scroll at 390 px, the dark theme, and no provider
+  key in anything the browser received. The run found nothing wrong in the pages. Preparing it found two things elsewhere,
+  both fixed: the feed was marked `public` even when its links came from the request's own headers, which a visitor writes
+  (a cache that serves other people could have served one visitor's address to everybody; it is `private` unless
+  `NEXT_PUBLIC_SITE_URL` is set), and the web image had no way to take that address (it is a build argument now). One run
+  stopped at its first browser request after a minute and a half of waiting, which was not answered in 20 seconds and is not
+  in the platform's log (that logs a request when it has been answered); the same step passed in the next two runs and in a
+  separate experiment that left a page idle twice for 100 seconds and then made requests, and the cause was not found.
 
 ## 7. What the audit found, and what became of it
 

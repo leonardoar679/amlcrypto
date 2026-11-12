@@ -5,7 +5,8 @@ The platform's web app: Next.js 16 (App Router, plain JavaScript) with React 19.
 settings with people, API keys and the audit log, and the editor of incidents and wallet profiles for platform
 editors) show data from the API in `apps/api`; the public pages are the marketing pages (`/`, `/faq`,
 `/products/*`), the **published incidents** (`/incidents`, `/incidents/<name>`) and the **published wallet
-profiles** (`/wallets`, `/wallets/<name>`) anybody can read. None of them is static: every page carries a
+profiles** (`/wallets`, `/wallets/<name>`), the **news** (`/news`), the **hot addresses** (`/hot`) and the news as an
+**Atom feed** (`/feed.xml`) anybody can read. None of them is static: every page carries a
 Content-Security-Policy with a nonce of its own, so every page is made on the server for each request. How the two
 halves fit together, route by route, is in
 [shared/documentation/frontend-integration-map.md](../../shared/documentation/frontend-integration-map.md).
@@ -82,6 +83,19 @@ Screenings and "read from the providers" run in the API's background worker, so 
   button**. A signed-out visitor is sent through sign-in first and returns to the filled form. An incident page
   says "Known as ..." beside an address that a published profile names, and the signed-in address page links a
   claim that comes from a profile to it.
+* **The news, the hot addresses and the Atom feed** (`app/news/`, `app/hot/`, `app/feed.xml/`, `src/components/news/`,
+  `src/components/hot/`, `src/lib/feed.js`, `src/lib/atom.js`) are read the same way, with the same minute of
+  memory, and nothing runs in the browser: the kind of news, the period and the chain, and the pages, are links. An
+  item leads to its incident or profile through `itemHref` (a name is used only if it is a valid one) and a
+  correction is set apart by its colour; a ranked address shows how firmly it is reported in the platform's fixed
+  words, the incidents that name it, "Known as ..." from a profile, a link to a block explorer and "Watch this
+  address" (as on a profile page). **No score is shown.** **The Atom feed is a route handler** that reads the same
+  `feed?limit=50` and writes Atom 1.0 with the pure `src/lib/atom.js` (every text escaped, the characters XML forbids
+  dropped, RFC 3339 times, an item whose name is not a valid one left out, ids that are permanent addresses). Its links
+  are made on `NEXT_PUBLIC_SITE_URL` or, without it, on the address of the request, and then the answer is `private`
+  so that no cache serving other people keeps an address a visitor wrote; with the platform away it answers **503
+  with `Retry-After: 60`**, never an empty feed. `<link rel="alternate" type="application/atom+xml">` in the head of
+  `/news` announces it.
 * **The editor** (`app/(app)/editor/`, `src/components/editor/`) is for a platform editor: no role has its
   permission (`incidents:curate`), the sidebar shows it to nobody else, every view is mounted only behind
   `EditorGate`, and the API refuses anybody else whatever the page shows. It has two tabs, **Incidents** and
@@ -101,7 +115,7 @@ Screenings and "read from the providers" run in the API's background worker, so 
   unit formatting. These modules use **relative imports** so that `node --test` can load them; the `@/*`
   alias (`./src/*`) is for the pages and the server code.
 * `src/components/` is organised by screen: `check/`, `risk/` (the report), `address/`, `graph/`,
-  `monitoring/`, `alerts/`, `cases/`, `settings/`, `incidents/` and `wallets/` (the public pages), `editor/` (the
+  `monitoring/`, `alerts/`, `cases/`, `settings/`, `incidents/`, `wallets/`, `news/` and `hot/` (the public pages), `editor/` (the
   incident and wallet profile editors), `ui/` (small shared pieces), `layout/`.
 * What a person sees follows what their role may do. `GET /auth/me` lists the permissions; the sidebar
   (`src/data/appNav.js`), the forms and the buttons show only what the person can use. That is a courtesy:
@@ -111,6 +125,9 @@ Screenings and "read from the providers" run in the API's background worker, so 
 
 `Dockerfile` builds the app in two stages and runs the self-contained server Next makes with
 `NEXT_OUTPUT=standalone`: no source, no dev tools, the user `node`, port 3000, `BACKEND_URL` read when it starts.
+`NEXT_PUBLIC_SITE_URL` is the exception: the framework reads it when the app is built, so it is a build argument
+(the compose file passes it from `deployment/.env`) and changing it means building the image again; it is what the
+Atom feed's links are made on, and a test pins that the image can take it.
 `deployment/docker-compose.yml` has the service (its port on the loopback address only, no secret in it). CI builds
 the image and calls it (it passed for `b38a1aa`: the pages, the policy, a broken link, the redirect of a protected page
 and a user that is not root); it has never been built on a development machine (no Docker), but the standalone server
