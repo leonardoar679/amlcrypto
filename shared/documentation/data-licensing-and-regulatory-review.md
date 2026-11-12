@@ -83,8 +83,8 @@ what to do before production. "Stored" is what the database keeps (it is kept un
   terms link. The pricing documentation lists a free tier of 30,000,000 compute units and 300 CU/s and
   says nothing about commercial use or storage. **Unverified.**
 * **Before production:** find and read Alchemy's current terms of service; confirm storage and
-  customer-facing use. Enable the networks in the Alchemy app (BNB and Bitcoin were not enabled when
-  tested).
+  customer-facing use. BNB Smart Chain and Bitcoin were switched on in the Alchemy app and tried live on
+  2026-11-12 (BNB works; Bitcoin's address API is the paid add-on).
 
 ### TronGrid (TRON)
 

@@ -118,9 +118,13 @@ Verified against the live services on 2026-11-05, with a real key for each:
   reproduced **all 924 rows** of Helius's own `getTransfersByAddress` for the same wallet, and also
   showed what that list omits: rent deposits and refunds, closed accounts, and the 14 transactions
   where a program paid SOL by editing lamports.
-* **BNB Smart Chain: not verified live.** Alchemy answered that the network is not enabled for the
-  app. Switch on "BNB Smart Chain Mainnet" in the app's Networks tab in the Alchemy dashboard (free) and
-  run `history bsc` once.
+* **BNB Smart Chain, Alchemy: verified live on 2026-11-12**, after the network was switched on in the app's
+  Networks tab. `history bsc` read a busy contract and stopped at the item cap, saying so, with its resume cursor, and
+  read a small wallet **complete** (27 transfers, 24 token events and 3 native, through the chain's head), with
+  internal transfers reported unavailable as documented. `tx bsc` decoded a native and a token transaction from
+  their receipts, and the token transfer's log index and raw amount are the ones the history lists for the same
+  event. Alchemy lists only transactions that carried value, which is why that wallet shows 3 transactions beside
+  its 27 transfers. Not tried: Etherscan on BNB Smart Chain (a paid plan) and the Address Activity webhook.
 
 What comes back is the same on every account-model chain and from every provider
 (`app/chains/models.py`); Bitcoin is different and has its own section below:
@@ -209,9 +213,10 @@ satoshis, and what the address did in each (`received`, `sent`, `net`).
   allowed for by asking once more). Unconfirmed transactions are noted, not included.
 * Esplora lists an input together with the output it spends. If it ever leaves that out, the
   transaction is kept, the amount sent from the address may be short, and the page says so.
-* Not done here: Alchemy's Bitcoin address API (the blueprint's first choice) answers 403 "BITCOIN_MAINNET
-  is not enabled for this app" for the current key, and is sold as a separate add-on; the adapter takes a
-  list of sources, so it can be added once the network is switched on and the plan covers it. Public
+* Not done here: Alchemy's Bitcoin address API (the blueprint's first choice). With the network switched on
+  (2026-11-12) the JSON-RPC answers (`getblockcount`), but the address API answers 401 "UTXO requests are not
+  allowed" for the development key, so it needs the separate add-on; the adapter takes a list of sources, so
+  it can be added once the plan covers it. Public
   Esplora publishes no limits, so the default is one request a second; a history of 5,000
   transactions costs about 200 requests, which is the default `HISTORY_REQUEST_BUDGET`.
 
@@ -1613,8 +1618,9 @@ upper bounds, and a path id past them is a 422, not a 404.
   worker on a job that needs no network, and checks that `deployment/docker-compose.yml` parses.
   Nothing has been run with Docker on the development machine, and the compose file's worker service
   has only been syntax-checked.
-* **BNB Smart Chain:** verified against Alchemy's documentation, real transactions from public nodes
-  (for the receipt decoder) and an in-memory copy of the provider, not against the live service
-  (Alchemy's BNB network is not switched on for the key). See "Reading address histories" for the first thing to try.
+* **BNB Smart Chain:** verified live through Alchemy on 2026-11-12 (a wallet read complete, a busy contract read
+  to its cap, a native and a token transaction decoded and cross-checked against the history), besides
+  Alchemy's documentation, real transactions from public nodes and an in-memory copy of the provider. Not tried:
+  Etherscan on BNB Smart Chain (a paid plan) and the Address Activity webhook.
 * Bitcoin is read through Esplora (decided in M6): public, with no published limits. Alchemy's Bitcoin
   address API is sold as a separate add-on and is not used.

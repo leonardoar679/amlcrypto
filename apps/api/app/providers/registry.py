@@ -93,9 +93,10 @@ ALCHEMY = ProviderSpec(
     notes=(
         "The key is part of the URL path. Bitcoin's REST address API "
         "(/api/v2/address/{address}, up to 1000 transactions a page) is enabled by purchasing a "
-        "separate UTXO add-on; Alchemy's docs do not say whether the free plan includes it, so it "
-        "is listed as paid here. Whether BNB Smart Chain and Solana are on the free plan was not "
-        "checked."
+        "separate UTXO add-on: on the development key (checked 2026-11-12) the network answers "
+        "JSON-RPC but that API answers 401 'UTXO requests are not allowed', so it is listed as "
+        "paid here. BNB Smart Chain works on that key once switched on in the dashboard's Networks "
+        "tab (checked 2026-11-12); Solana was not checked."
     ),
 )
 
