@@ -101,6 +101,8 @@ SHARED = {
     ("GET", "/providers"),
     ("GET", "/public/addresses/{chain}/{address}/incidents"),
     ("GET", "/public/addresses/{chain}/{address}/wallets"),
+    ("GET", "/public/feed"),
+    ("GET", "/public/hot"),
     ("GET", "/public/incidents"),
     ("GET", "/public/incidents/{slug}"),
     ("GET", "/public/wallets"),

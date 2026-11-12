@@ -19,6 +19,7 @@ from app.api.v1 import (
     jobs,
     monitoring,
     providers,
+    public_feed,
     public_incidents,
     public_wallets,
     screening,
@@ -50,3 +51,4 @@ api_router.include_router(editor_incidents.router)
 api_router.include_router(public_incidents.router)
 api_router.include_router(editor_wallets.router)
 api_router.include_router(public_wallets.router)
+api_router.include_router(public_feed.router)

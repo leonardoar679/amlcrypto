@@ -326,6 +326,10 @@ add(
 )
 add("DELETE", "/editor/wallets/{profile_id}", path=lambda s: f"/editor/wallets/{s.wallet()}")
 
+# --- the news feed and the hot addresses, for anybody (published only) ------------------------
+add("GET", "/public/feed")
+add("GET", "/public/hot")
+
 # --- wallet profiles, for anybody (published only) ---------------------------------------------
 add("GET", "/public/wallets")
 add("GET", "/public/wallets/{slug}", path=lambda s: f"/public/wallets/{s.published_wallet_slug()}")

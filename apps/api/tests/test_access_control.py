@@ -31,6 +31,9 @@ PUBLIC = {
     ("GET", "/api/v1/public/wallets"),
     ("GET", "/api/v1/public/wallets/{slug}"),
     ("GET", "/api/v1/public/addresses/{chain}/{address}/wallets"),
+    # what editors have published, as a feed and as a ranking
+    ("GET", "/api/v1/public/feed"),
+    ("GET", "/api/v1/public/hot"),
 }
 # Open to anyone who is signed in, whatever their role: nothing here is more than reading what is
 # public to the whole platform (the chains) or about the caller themselves.
