@@ -326,7 +326,7 @@ def test_a_published_incident_says_which_profile_names_the_address_it_names(clie
 
 def test_a_published_profile_lists_the_published_incidents_that_name_its_addresses(client, editor):
     publish(client, editor, create(client, editor)["id"])
-    incident_naming(client, editor, EVM)
+    incident = incident_naming(client, editor, EVM)
 
     profile = client.get(f"{PUBLIC_ROUTES}/example-exchange").json()["wallet"]
 
@@ -338,7 +338,7 @@ def test_a_published_profile_lists_the_published_incidents_that_name_its_address
     assert named["address"] == EVM and named["role_words"] == "Received funds reported as taken"
 
     # an incident that is not published is not listed
-    incident_helpers.move(client, editor, 1, "in_review")
+    incident_helpers.move(client, editor, incident["id"], "in_review")
     assert client.get(f"{PUBLIC_ROUTES}/example-exchange").json()["wallet"]["incidents"] == []
 
 
