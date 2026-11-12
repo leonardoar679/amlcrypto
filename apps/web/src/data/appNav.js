@@ -12,7 +12,7 @@ export const appNavItems = [
   { key: 'monitoring', href: '/monitoring', short: 'Watch', long: 'Monitoring', icon: 'eye', needs: PERMISSIONS.monitoringRead },
   { key: 'alerts', href: '/alerts', short: 'Alerts', long: 'Alerts', icon: 'bell', needs: PERMISSIONS.alertsRead, badge: 'alerts' },
   { key: 'cases', href: '/cases', short: 'Cases', long: 'Cases', icon: 'folder', needs: PERMISSIONS.casesRead },
-  { key: 'editor', href: '/editor/incidents', short: 'Editor', long: 'Incident editor', icon: 'document', needs: PERMISSIONS.incidentsCurate },
+  { key: 'editor', href: '/editor/incidents', short: 'Editor', long: 'Editor', icon: 'document', needs: PERMISSIONS.incidentsCurate },
   { key: 'settings', href: '/settings', short: 'Settings', long: 'Settings', icon: 'settings', needs: null }
 ];
 

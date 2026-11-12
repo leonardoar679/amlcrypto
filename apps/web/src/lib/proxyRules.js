@@ -33,7 +33,9 @@ const ALLOWED = {
     /^api-keys$/,
     /^audit$/,
     /^editor\/incidents$/,
-    /^editor\/incidents\/\d{1,18}$/
+    /^editor\/incidents\/\d{1,18}$/,
+    /^editor\/wallets$/,
+    /^editor\/wallets\/\d{1,18}$/
   ],
   POST: [
     /^address\/validate$/,
@@ -49,9 +51,11 @@ const ALLOWED = {
     /^users\/\d{1,18}\/password$/,
     /^api-keys$/,
     /^editor\/incidents$/,
-    /^editor\/incidents\/\d{1,18}\/(transition|updates)$/
+    /^editor\/incidents\/\d{1,18}\/(transition|updates)$/,
+    /^editor\/wallets$/,
+    /^editor\/wallets\/\d{1,18}\/transition$/
   ],
-  PUT: [/^editor\/incidents\/\d{1,18}\/content$/],
+  PUT: [/^editor\/(incidents|wallets)\/\d{1,18}\/content$/],
   PATCH: [
     /^users\/\d{1,18}$/,
     /^monitoring\/addresses\/\d{1,18}$/,
@@ -62,7 +66,8 @@ const ALLOWED = {
     /^api-keys\/\d{1,18}$/,
     /^monitoring\/addresses\/\d{1,18}$/,
     /^cases\/\d{1,18}\/links\/\d{1,18}$/,
-    /^editor\/incidents\/\d{1,18}$/
+    /^editor\/incidents\/\d{1,18}$/,
+    /^editor\/wallets\/\d{1,18}$/
   ]
 };
 
@@ -172,11 +177,12 @@ export function returnedHeaders(headers) {
 
 export const MAX_BODY_BYTES = 64 * 1024;
 
-// The one request that may be larger than a form: an editor saving the whole content of an incident, which
-// can name up to 200 addresses with notes, ten or more documents and a timeline (about 64 KB at 150
-// addresses). The platform takes up to 1 MiB of anything; this site's own cap is lower for everything else.
+// The one request that may be larger than a form: an editor saving the whole content of an incident or of a
+// wallet profile, which can name up to 200 (or 300) addresses with notes, ten or more documents and a timeline
+// (about 64 KB at 150 addresses). The platform takes up to 1 MiB of anything; this site's own cap is lower for
+// everything else.
 export const MAX_CONTENT_BYTES = 512 * 1024;
-const CONTENT_ROUTE = /^editor\/incidents\/\d{1,18}\/content$/;
+const CONTENT_ROUTE = /^editor\/(incidents|wallets)\/\d{1,18}\/content$/;
 
 // How large a body this site forwards for a request: the cap of the route, never more.
 export function bodyLimit(method, path) {

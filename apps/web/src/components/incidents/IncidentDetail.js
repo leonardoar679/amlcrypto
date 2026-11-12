@@ -113,6 +113,12 @@ function Addresses({ addresses }) {
               <p>
                 <strong>{item.role_words}</strong>
               </p>
+              {item.profile ? (
+                <p className="small">
+                  Known as <Link href={`/wallets/${item.profile.slug}`}>{item.profile.name}</Link>{' '}
+                  <span className="muted">({item.profile.kind_words})</span>
+                </p>
+              ) : null}
               <p>
                 <span className={`chip ${attributionTone(item.attribution_status)}`}>{item.status_words}</span>{' '}
                 <span className="muted">confidence {item.confidence}%</span>

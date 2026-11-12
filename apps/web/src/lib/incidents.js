@@ -25,6 +25,17 @@ export const ATTRIBUTION_STATUSES = [
   'INFERRED',
   'DISPUTED'
 ];
+// The words the platform uses for each attribution status (it is the same table the public pages
+// use), and what each is worth when an editor does not say: the figure a status gives by default.
+export const DEFAULT_CONFIDENCE = {
+  OFFICIALLY_CONFIRMED: 95,
+  CORROBORATED: 85,
+  REPORTED_BY_ANALYST: 80,
+  COMMUNITY_REPORTED: 50,
+  INFERRED: 30,
+  DISPUTED: 0
+};
+
 export const UPDATE_KINDS = ['event', 'funds_moved', 'frozen', 'recovered', 'statement', 'correction'];
 
 const KIND_LABELS = { hack: 'Hack', exploit: 'Exploit', theft: 'Theft', scam: 'Scam', other: 'Other' };
@@ -371,6 +382,56 @@ export function fromLocalInput(value) {
   return found ? `${found[1]}T${found[2]}:00Z` : null;
 }
 
+// The fields of a document as the form holds them (every one a string), and back into what the
+// platform takes. Shared by the incident form and the wallet profile form.
+export const evidenceToForm = (item) => ({
+  ref: text(item.ref),
+  publisher: text(item.publisher),
+  title: text(item.title),
+  url: text(item.url),
+  kind: text(item.kind),
+  published_on: text(item.published_on),
+  retrieved_on: text(item.retrieved_on),
+  excerpt: text(item.excerpt)
+});
+
+export const evidenceToBody = (item) => ({
+  ref: String(item.ref).trim(),
+  publisher: String(item.publisher).trim(),
+  title: String(item.title).trim(),
+  url: String(item.url).trim(),
+  kind: item.kind,
+  retrieved_on: String(item.retrieved_on).trim(),
+  published_on: orNull(item.published_on),
+  excerpt: orNull(item.excerpt)
+});
+
+// What is wrong with the documents of a page, in plain words, and the names they give (which the rest
+// of the page cites).
+export function evidenceProblems(evidence) {
+  const problems = [];
+  const refs = new Set();
+  evidence.forEach((item, index) => {
+    const name = `Document ${index + 1}`;
+    if (!/^[A-Za-z0-9_-]{1,24}$/.test(String(item.ref).trim())) {
+      problems.push(`${name}: its name is letters, digits, - and _, up to 24.`);
+    } else if (refs.has(String(item.ref).trim())) {
+      problems.push(`${name}: another document has the same name.`);
+    }
+    refs.add(String(item.ref).trim());
+    if (!String(item.publisher).trim() || !String(item.title).trim()) {
+      problems.push(`${name}: say who published it and what it is called.`);
+    }
+    if (!/^https?:\/\/\S+$/i.test(String(item.url).trim())) {
+      problems.push(`${name}: the link must be a web address (http or https).`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(item.retrieved_on).trim())) {
+      problems.push(`${name}: say the day it was read.`);
+    }
+  });
+  return { problems, refs };
+}
+
 // The content an editor reads from the platform, as the fields of the form (every field a string).
 export function toForm(content) {
   const source = content || {};
@@ -381,16 +442,7 @@ export function toForm(content) {
     occurred_on: text(source.occurred_on),
     attribution_note: text(source.attribution_note),
     internal_note: text(source.internal_note),
-    evidence: (source.evidence || []).map((item) => ({
-      ref: text(item.ref),
-      publisher: text(item.publisher),
-      title: text(item.title),
-      url: text(item.url),
-      kind: text(item.kind),
-      published_on: text(item.published_on),
-      retrieved_on: text(item.retrieved_on),
-      excerpt: text(item.excerpt)
-    })),
+    evidence: (source.evidence || []).map(evidenceToForm),
     amounts: (source.amounts || []).map((item) => ({
       evidence_ref: text(item.evidence_ref),
       amount_usd_low: text(item.amount_usd_low),
@@ -448,7 +500,7 @@ export function wholePercent(value) {
   return number <= 100 ? number : null;
 }
 
-const orNull = (value) => {
+export const orNull = (value) => {
   const cleaned = String(value ?? '').trim();
   return cleaned === '' ? null : cleaned;
 };
@@ -463,16 +515,7 @@ export function toBody(form) {
     occurred_on: orNull(form.occurred_on),
     attribution_note: orNull(form.attribution_note),
     internal_note: orNull(form.internal_note),
-    evidence: form.evidence.map((item) => ({
-      ref: String(item.ref).trim(),
-      publisher: String(item.publisher).trim(),
-      title: String(item.title).trim(),
-      url: String(item.url).trim(),
-      kind: item.kind,
-      retrieved_on: String(item.retrieved_on).trim(),
-      published_on: orNull(item.published_on),
-      excerpt: orNull(item.excerpt)
-    })),
+    evidence: form.evidence.map(evidenceToBody),
     amounts: form.amounts.map((item) => ({
       evidence_ref: String(item.evidence_ref).trim(),
       amount_usd_low: wholeDollars(item.amount_usd_low),
@@ -527,25 +570,9 @@ export function missingFor(form) {
   if (!String(form.summary).trim()) {
     problems.push('Write a summary.');
   }
-  const refs = new Set();
-  form.evidence.forEach((item, index) => {
-    const name = `Document ${index + 1}`;
-    if (!/^[A-Za-z0-9_-]{1,24}$/.test(String(item.ref).trim())) {
-      problems.push(`${name}: its name is letters, digits, - and _, up to 24.`);
-    } else if (refs.has(String(item.ref).trim())) {
-      problems.push(`${name}: another document has the same name.`);
-    }
-    refs.add(String(item.ref).trim());
-    if (!String(item.publisher).trim() || !String(item.title).trim()) {
-      problems.push(`${name}: say who published it and what it is called.`);
-    }
-    if (!/^https?:\/\/\S+$/i.test(String(item.url).trim())) {
-      problems.push(`${name}: the link must be a web address (http or https).`);
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(item.retrieved_on).trim())) {
-      problems.push(`${name}: say the day it was read.`);
-    }
-  });
+  const documents = evidenceProblems(form.evidence);
+  problems.push(...documents.problems);
+  const { refs } = documents;
   form.amounts.forEach((item, index) => {
     const name = `Amount ${index + 1}`;
     if (!refs.has(String(item.evidence_ref).trim())) {

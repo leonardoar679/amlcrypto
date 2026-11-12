@@ -156,6 +156,23 @@ export default function HomePage() {
           </div>
         </section>
 
+        <section className="section">
+          <div className="container">
+            <div className="section-heading center">
+              <h2>
+                Who <strong>known addresses</strong> belong to
+              </h2>
+              <p>
+                Exchanges, bridges, protocols, funds and institutions, and the wallets a public figure has disclosed, each address
+                with the source that attributes it and how firmly. Open to everyone; no account needed.
+              </p>
+              <Link className="btn btn-dark" href="/wallets">
+                Browse known wallets
+              </Link>
+            </div>
+          </div>
+        </section>
+
         <section className="home-screening-strip">
           <div className="container home-screening-strip-grid">
             <div>

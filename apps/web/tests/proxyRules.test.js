@@ -69,7 +69,14 @@ test('only the endpoints the interface needs can be reached, by the method it ne
     ['PUT', 'editor/incidents/7/content'],
     ['POST', 'editor/incidents/7/transition'],
     ['POST', 'editor/incidents/7/updates'],
-    ['DELETE', 'editor/incidents/7']
+    ['DELETE', 'editor/incidents/7'],
+    // ... and of the wallet profiles
+    ['GET', 'editor/wallets'],
+    ['POST', 'editor/wallets'],
+    ['GET', 'editor/wallets/7'],
+    ['PUT', 'editor/wallets/7/content'],
+    ['POST', 'editor/wallets/7/transition'],
+    ['DELETE', 'editor/wallets/7']
   ];
   for (const [method, path] of reachable) {
     assert.equal(isAllowed(method, path), true, `${method} ${path}`);
@@ -174,6 +181,22 @@ test('what the interface does not need is refused, and so is the wrong method', 
     ['DELETE', 'editor/incidents/7/updates'],
     ['GET', 'editor'],
     ['GET', 'editor/incidents/7/evidence'],
+    // the wallet editor: the same near misses (there is no timeline to add to)
+    ['PATCH', 'editor/wallets/7'],
+    ['PUT', 'editor/wallets/7'],
+    ['PUT', 'editor/wallets'],
+    ['POST', 'editor/wallets/7'],
+    ['DELETE', 'editor/wallets'],
+    ['DELETE', 'editor/wallets/abc'],
+    ['GET', 'editor/wallets/abc'],
+    ['POST', 'editor/wallets/7/content'],
+    ['GET', 'editor/wallets/7/content'],
+    ['PUT', 'editor/wallets/abc/content'],
+    ['PUT', 'editor/wallets/7/transition'],
+    ['POST', 'editor/wallets/7/updates'],
+    ['POST', 'editor/wallets/abc/transition'],
+    ['GET', 'editor/walletsX'],
+    ['GET', 'public/wallets'],
     // the incidents anybody may read are read by this site's server, never by the browser through here
     ['GET', 'public/incidents'],
     ['GET', 'public/incidents/a-theft'],
@@ -371,6 +394,17 @@ test('the whole content of an incident may be larger than a form, and nothing el
   assert.equal(MAX_CONTENT_BYTES, 512 * 1024);
   assert.ok(MAX_CONTENT_BYTES > MAX_BODY_BYTES && MAX_CONTENT_BYTES < 1024 * 1024); // below what the platform takes
   assert.equal(bodyLimit('PUT', 'editor/incidents/7/content'), MAX_CONTENT_BYTES);
+  assert.equal(bodyLimit('PUT', 'editor/wallets/7/content'), MAX_CONTENT_BYTES);
+  assert.equal(bodyLimit('PUT', `editor/wallets/${'1'.repeat(18)}/content`), MAX_CONTENT_BYTES);
+  for (const [method, path] of [
+    ['POST', 'editor/wallets'],
+    ['POST', 'editor/wallets/7/content'],
+    ['PUT', 'editor/wallets/7/transition'],
+    ['PUT', 'editor/walletsX/7/content'],
+    ['PUT', 'editor/wallets/abc/content']
+  ]) {
+    assert.equal(bodyLimit(method, path), MAX_BODY_BYTES, `${method} ${path}`);
+  }
   assert.equal(bodyLimit('PUT', `editor/incidents/${'1'.repeat(18)}/content`), MAX_CONTENT_BYTES);
   for (const [method, path] of [
     ['POST', 'editor/incidents'],

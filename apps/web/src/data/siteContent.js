@@ -4,6 +4,7 @@ export const navItems = [
   { label: 'Products', href: '/#products' },
   { label: 'Screening', href: '/products/screening' },
   { label: 'Incidents', href: '/incidents' },
+  { label: 'Wallets', href: '/wallets' },
   { label: 'FAQ', href: '/faq' },
   { label: 'Contact', href: supportMailto }
 ];
@@ -77,6 +78,7 @@ export const footerLinks = {
   ],
   resources: [
     { label: 'Incidents', href: '/incidents' },
+    { label: 'Known wallets', href: '/wallets' },
     { label: 'FAQ', href: '/faq' },
     { label: 'Try a screening', href: '/check' },
     { label: 'Sign in', href: '/auth' }

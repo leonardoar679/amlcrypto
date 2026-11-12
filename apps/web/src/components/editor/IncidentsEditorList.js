@@ -9,6 +9,7 @@ import { useApi } from '../../lib/useApi';
 import { ErrorNotice, Loading, Notice } from '../ui/Notice';
 import Pager from '../ui/Pager';
 import EditorGate from './EditorGate';
+import EditorTabs from './EditorTabs';
 
 const PAGE = 25;
 
@@ -25,6 +26,7 @@ function ListContent() {
           New incident
         </Link>
       </div>
+      <EditorTabs active="incidents" />
       <p className="lead">
         Everything here is written by you and shown to everybody once it is published. Nothing is public while it is a draft or in
         review.

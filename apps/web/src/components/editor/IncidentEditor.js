@@ -14,92 +14,23 @@ import {
   fromLocalInput,
   kindLabel,
   missingFor,
-  needsConfirmation,
   roleLabel,
   statusLabel,
   statusTone,
   toBody,
   toForm,
-  transitionLabel,
   updateLabel,
   usdRange,
   UPDATE_KINDS
 } from '../../lib/incidents';
-import { safeHref } from '../../lib/links';
 import { ago, formatWhen, shortAddress } from '../../lib/risk';
 import { useApi } from '../../lib/useApi';
 import { ErrorNotice, Loading, Notice } from '../ui/Notice';
 import ContentForm from './ContentForm';
+import { Delete, Move, Outside } from './EditorControls';
 import EditorGate from './EditorGate';
 
 const nowUtc = () => new Date().toISOString().slice(0, 16);
-
-// One button that moves the incident. Publishing and archiving change what everybody sees, so they
-// ask a second time; the others do not.
-function Move({ to, from, disabled, why, busy, onMove }) {
-  const [sure, setSure] = useState(false);
-  const label = transitionLabel(from, to);
-  const tone = to === 'published' ? 'btn-primary' : 'btn-secondary';
-
-  if (needsConfirmation(to) && sure) {
-    return (
-      <span className="confirm">
-        {to === 'published' ? 'Show this to everybody?' : 'Take this off the public pages?'}{' '}
-        <button className="btn btn-primary btn-small" type="button" disabled={busy} onClick={() => onMove(to)}>
-          Yes, {label.toLowerCase()}
-        </button>{' '}
-        <button className="btn btn-secondary btn-small" type="button" onClick={() => setSure(false)}>
-          No
-        </button>
-      </span>
-    );
-  }
-  return (
-    <button
-      className={`btn ${tone} btn-small`}
-      type="button"
-      disabled={disabled || busy}
-      title={disabled ? why : undefined}
-      onClick={() => (needsConfirmation(to) ? setSure(true) : onMove(to))}
-    >
-      {label}
-    </button>
-  );
-}
-
-function Delete({ onDelete, busy }) {
-  const [sure, setSure] = useState(false);
-  if (!sure) {
-    return (
-      <button className="btn btn-secondary btn-small" type="button" onClick={() => setSure(true)}>
-        Delete this draft
-      </button>
-    );
-  }
-  return (
-    <span className="confirm">
-      Delete it for good?{' '}
-      <button className="btn btn-primary btn-small" type="button" disabled={busy} onClick={onDelete}>
-        Yes, delete
-      </button>{' '}
-      <button className="btn btn-secondary btn-small" type="button" onClick={() => setSure(false)}>
-        No
-      </button>
-    </span>
-  );
-}
-
-function Outside({ url, children }) {
-  const href = safeHref(url);
-  return href ? (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-      <span className="sr-only"> (opens another site)</span>
-    </a>
-  ) : (
-    <span>{children}</span>
-  );
-}
 
 // What a published or archived incident holds, to read. It only grows from here: a timeline entry
 // is added below, and to change anything else it is taken back to review first.

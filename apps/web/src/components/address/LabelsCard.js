@@ -3,13 +3,15 @@ import { validSlug } from '../../lib/incidents';
 import { safeHref } from '../../lib/links';
 import { ago, formatWhen, humanize, percent } from '../../lib/risk';
 
-// The label source that is written by this platform's editors, whose claims each name the incident
-// they come from (the page of an incident is /incidents/<its name>).
+// The label sources that are written by this platform's editors, whose claims each name the page they
+// come from: the page of an incident is /incidents/<its name>, that of a profile /wallets/<its name>.
 const INCIDENT_SOURCE = 'incident_tracker';
+const PROFILE_SOURCE = 'wallet_profiles';
 
 function Claim({ label }) {
   const href = safeHref(label.source_url);
   const incident = label.source?.slug === INCIDENT_SOURCE && validSlug(label.source_ref) ? label.source_ref : null;
+  const profile = label.source?.slug === PROFILE_SOURCE && validSlug(label.source_ref) ? label.source_ref : null;
   return (
     <li className="claim">
       <div className="claim-head">
@@ -60,6 +62,14 @@ function Claim({ label }) {
             <dt>Incident</dt>
             <dd>
               <Link href={`/incidents/${incident}`}>Read what was reported</Link>
+            </dd>
+          </div>
+        ) : null}
+        {profile ? (
+          <div>
+            <dt>Profile</dt>
+            <dd>
+              <Link href={`/wallets/${profile}`}>Read the profile</Link>
             </dd>
           </div>
         ) : null}

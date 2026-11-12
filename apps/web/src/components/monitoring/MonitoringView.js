@@ -57,11 +57,12 @@ function Threshold({ value, onChange }) {
 // Starting to watch an address. As in a screening, the address is checked with the platform first (an
 // EVM address is valid on several chains, so the person picks one) so that a mistyped address never
 // becomes a watch that fails.
-function WatchForm({ onAdded }) {
-  const [value, setValue] = useState('');
+function WatchForm({ onAdded, initial }) {
+  const [value, setValue] = useState(initial?.address || '');
   const [hint, setHint] = useState(null);
   const [chosen, setChosen] = useState('');
-  const [name, setName] = useState('');
+  const [wanted] = useState(initial?.chain || ''); // the chain a link asked for, when the address is valid on several
+  const [name, setName] = useState(initial?.name || '');
   const [interval, setInterval] = useState(String(DEFAULT_INTERVAL));
   const [hops, setHops] = useState('1');
   const [threshold, setThreshold] = useState('MEDIUM');
@@ -91,7 +92,8 @@ function WatchForm({ onAdded }) {
   }, [value]);
 
   const candidates = hint?.valid && !hint.chain ? hint.candidates || [] : [];
-  const selected = candidates.some((c) => c.chain === chosen) ? chosen : candidates[0]?.chain;
+  const pick = (options) => (options.some((c) => c.chain === chosen) ? chosen : options.some((c) => c.chain === wanted) ? wanted : options[0]?.chain);
+  const selected = pick(candidates);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -114,7 +116,7 @@ function WatchForm({ onAdded }) {
         return;
       }
       const options = found.candidates || [];
-      const chain = found.chain || (options.some((c) => c.chain === chosen) ? chosen : options[0]?.chain);
+      const chain = found.chain || pick(options);
       const address = found.normalized || options.find((c) => c.chain === chain)?.normalized || text;
       const made = await api.post('monitoring/addresses', {
         chain,
@@ -136,6 +138,7 @@ function WatchForm({ onAdded }) {
   return (
     <form className="card inline-form" onSubmit={submit} noValidate>
       <h2>Watch an address</h2>
+      {initial ? <p className="muted small">Filled in from a link: check it, then press the button. Nothing is watched until you do.</p> : null}
       <label className="field">
         <span>Address</span>
         <input
@@ -423,7 +426,7 @@ function Row({ monitor, canWrite, onChanged, onError, onMessage }) {
   );
 }
 
-export default function MonitoringView() {
+export default function MonitoringView({ initial = null }) {
   const { permissions } = useSession();
   const canWrite = can(permissions, PERMISSIONS.monitoringWrite);
   const [status, setStatus] = useState('');
@@ -461,6 +464,7 @@ export default function MonitoringView() {
 
       {canWrite ? (
         <WatchForm
+          initial={initial}
           onAdded={(added) => {
             setMessage(`${added.name || shortAddress(added.display || added.address)} is being watched. Its first check is queued.`);
             setActionError(null);

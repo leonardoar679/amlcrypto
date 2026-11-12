@@ -2,7 +2,24 @@
 // (what is an alert, what state an address is in); this only turns its words into sentences.
 
 import { actorName } from './actors.js';
+import { CHAINS } from './chains.js';
 import { levelLabel } from './risk.js';
+
+// What a link to the monitoring page may ask its form to hold (a profile's "watch this address"): an
+// address of letters and digits, a name without control characters, a chain the platform reads. A link
+// with anything else in it is read as if that part were not there; nothing is added until the person
+// presses the button.
+export function prefillFrom(params) {
+  const one = (value) => (Array.isArray(value) ? value[0] : value);
+  const address = typeof one(params?.address) === 'string' ? one(params.address).trim() : '';
+  if (!/^[A-Za-z0-9]{10,200}$/.test(address)) {
+    return null;
+  }
+  const rawName = typeof one(params?.name) === 'string' ? one(params.name) : '';
+  const name = rawName.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const chain = CHAINS.some((known) => known.slug === one(params?.chain)) ? one(params.chain) : '';
+  return { address, name, chain };
+}
 
 export const ALERT_STATUS_LABELS = { open: 'Open', acknowledged: 'Acknowledged', closed: 'Closed' };
 

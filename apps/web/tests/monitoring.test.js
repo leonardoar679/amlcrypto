@@ -15,6 +15,7 @@ import {
   kindLabel,
   monitorState,
   movement,
+  prefillFrom,
   reasonLabel,
   resolutionLabel,
   unresolvedBadge,
@@ -270,6 +271,81 @@ test('the incident editor is in the menu of a platform editor and of nobody else
   const entry = appNavItems.find((item) => item.key === 'editor');
   assert.equal(entry.href, '/editor/incidents');
   assert.equal(entry.needs, PERMISSIONS.incidentsCurate);
+});
+
+test('the editor entry is one for the incidents and the wallet profiles, and opens on the incidents', () => {
+  const entry = appNavItems.find((item) => item.key === 'editor');
+  assert.equal(entry.long, 'Editor');
+  assert.equal(entry.href, '/editor/incidents');
+});
+
+// --- a link from a wallet profile: "watch this address" ---------------------------------------------------
+
+const ADDRESS = '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed';
+
+test('a link to the monitoring page can fill in the address, its name and its chain, and nothing else', () => {
+  assert.deepEqual(prefillFrom({ address: ADDRESS, name: 'Example exchange: hot wallet', chain: 'ethereum' }), {
+    address: ADDRESS,
+    name: 'Example exchange: hot wallet',
+    chain: 'ethereum'
+  });
+  // the name and the chain are optional
+  assert.deepEqual(prefillFrom({ address: ADDRESS }), { address: ADDRESS, name: '', chain: '' });
+  // a parameter given twice is read by its first value, as one value is all a field can hold
+  assert.deepEqual(prefillFrom({ address: [ADDRESS, 'x'.repeat(40)], name: ['One', 'Two'], chain: ['bsc', 'tron'] }), {
+    address: ADDRESS,
+    name: 'One',
+    chain: 'bsc'
+  });
+  // spaces around the address are not part of it
+  assert.equal(prefillFrom({ address: `  ${ADDRESS}\n` }).address, ADDRESS);
+});
+
+test('a link with no usable address fills nothing in, so the form is as if nobody had followed it', () => {
+  assert.equal(prefillFrom(undefined), null);
+  assert.equal(prefillFrom(null), null);
+  assert.equal(prefillFrom({}), null);
+  assert.equal(prefillFrom({ name: 'only a name', chain: 'ethereum' }), null);
+  assert.equal(prefillFrom({ address: '' }), null);
+  assert.equal(prefillFrom({ address: [] }), null);
+  assert.equal(prefillFrom({ address: 12345678901234 }), null);
+  assert.equal(prefillFrom({ address: { 0: ADDRESS } }), null);
+  // the same bounds the platform has for an address it reads: letters and digits, 10 to 200
+  assert.equal(prefillFrom({ address: 'a'.repeat(9) }), null);
+  assert.notEqual(prefillFrom({ address: 'a'.repeat(10) }), null);
+  assert.notEqual(prefillFrom({ address: 'a'.repeat(200) }), null);
+  assert.equal(prefillFrom({ address: 'a'.repeat(201) }), null);
+  for (const hostile of [
+    `${ADDRESS}<script>alert(1)</script>`,
+    `${ADDRESS}/../../admin`,
+    `${ADDRESS}?next=//elsewhere`,
+    `${ADDRESS}\u0000`,
+    `${ADDRESS} ${ADDRESS}`,
+    `0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaé`,
+    `javascript:${'a'.repeat(20)}`
+  ]) {
+    assert.equal(prefillFrom({ address: hostile }), null, hostile);
+  }
+});
+
+test('the name from a link is one short line of text, and the chain is one the platform reads', () => {
+  const name = (value) => prefillFrom({ address: ADDRESS, name: value }).name;
+  assert.equal(name('  two   words  '), 'two words');
+  assert.equal(name('line\nbreak\tand\u0007bell'), 'line break and bell');
+  assert.equal(name('x'.repeat(500)).length, 120);
+  assert.equal(name(undefined), '');
+  assert.equal(name(42), '');
+  assert.equal(name(['a', 'b']), 'a');
+  // it is data: whatever markup it has is shown as the letters it is, so it is not taken out here
+  assert.equal(name('<b>bold</b>'), '<b>bold</b>');
+
+  const chain = (value) => prefillFrom({ address: ADDRESS, chain: value }).chain;
+  for (const known of ['ethereum', 'bsc', 'tron', 'bitcoin', 'solana']) {
+    assert.equal(chain(known), known);
+  }
+  for (const unknown of ['', 'Ethereum', 'eip155:1', 'dogecoin', ' ethereum', 'ethereum\n', 7, null, {}]) {
+    assert.equal(chain(unknown), '', String(unknown));
+  }
 });
 
 test('only the alerts entry carries the count, and every entry has what the sidebar needs', () => {

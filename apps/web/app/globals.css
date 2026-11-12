@@ -1883,6 +1883,13 @@ img {
   letter-spacing: 0.03em;
 }
 
+/* a hint is a sentence, not a label: the rule above (more specific than .field-hint) must not capitalise it */
+.field > .field-hint {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .field input,
 .field select,
 .field textarea,
@@ -3177,6 +3184,14 @@ img {
   margin: 0 0 0.4rem;
 }
 
+/* the words of a status are a sentence: on a narrow screen they wrap inside the card instead of running out of it */
+.incident-detail .chip,
+.incident-hits .chip {
+  max-width: 100%;
+  border-radius: 0.9rem;
+  white-space: normal;
+}
+
 .incident-timeline {
   margin-bottom: 0;
 }
@@ -3361,4 +3376,12 @@ img {
   position: sticky;
   bottom: 0.8rem;
   z-index: 2;
+}
+
+.editor-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
 }

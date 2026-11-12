@@ -147,6 +147,10 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/incidents)" = "200"
           curl -fsS http://127.0.0.1:3000/incidents | grep -q "The list is not available right now"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/incidents/Not_A_Slug)" = "404"
+          # So do the wallet profiles, on the same terms.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/wallets)" = "200"
+          curl -fsS http://127.0.0.1:3000/wallets | grep -q "The list is not available right now"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/wallets/Not_A_Slug)" = "404"
           test "$(docker exec aml-web id -u)" != "0"
       - name: Web container logs on failure
         if: failure()
