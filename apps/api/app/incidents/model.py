@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+# Shared with the wallet profiles; kept importable from here.
+from app.editorial import MAX_EVIDENCE, MAX_EXCERPT, SLUG_PATTERN, EvidenceKind  # noqa: F401
+
 
 class IncidentKind(StrEnum):
     HACK = "hack"
@@ -23,14 +26,6 @@ class IncidentStatus(StrEnum):
     IN_REVIEW = "in_review"  # complete enough to read through; still nobody else sees it
     PUBLISHED = "published"  # everyone sees it
     ARCHIVED = "archived"  # withdrawn from view, kept
-
-
-class EvidenceKind(StrEnum):
-    OFFICIAL = "official"  # the affected party or an authority
-    ANALYTICS = "analytics"  # a blockchain analytics firm
-    NEWS = "news"  # a news organization
-    ON_CHAIN = "on_chain"  # a transaction anybody can look up
-    COMMUNITY = "community"  # a community report, not checked
 
 
 class AddressRole(StrEnum):
@@ -117,12 +112,9 @@ TRANSITIONS: dict[IncidentStatus, frozenset[IncidentStatus]] = {
 # grows: an update is appended, and a correction is one.
 EDITABLE = frozenset({IncidentStatus.DRAFT, IncidentStatus.IN_REVIEW})
 
-SLUG_PATTERN = r"^[a-z0-9]+(-[a-z0-9]+)*$"
-
 MAX_TITLE = 200
 MAX_SUMMARY = 5000
 MAX_NOTE = 2000
-MAX_EVIDENCE = 50
 MAX_AMOUNTS = 30
 MAX_ADDRESSES = 200
 MAX_UPDATES = 200
@@ -130,7 +122,6 @@ MAX_UPDATE_BODY = 2000
 MAX_FLOWS = 150
 MAX_AMOUNT_TEXT = 80
 MAX_FLOW_NOTE = 300
-MAX_EXCERPT = 500
 MAX_USD = 10**13  # ten trillion dollars: more than every crypto asset is worth
 
 # What every public answer says about itself.

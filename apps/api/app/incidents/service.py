@@ -14,17 +14,15 @@ rest on is not published.
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
-from urllib.parse import urlsplit
+from datetime import UTC, date, datetime
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.chains.registry import get_chain
-from app.chains.support import SUPPORTED, find_chain
+from app import editorial
+from app.chains.support import find_chain
 from app.database.models import (
     Incident,
     IncidentAddress,
@@ -33,6 +31,7 @@ from app.database.models import (
     IncidentFlow,
     IncidentUpdate,
 )
+from app.editorial import EditorialConflict, EditorialError, EvidenceInput, check_evidence
 from app.incidents import projection
 from app.incidents.model import (
     DEFAULT_CONFIDENCE,
@@ -40,8 +39,6 @@ from app.incidents.model import (
     MAX_ADDRESSES,
     MAX_AMOUNT_TEXT,
     MAX_AMOUNTS,
-    MAX_EVIDENCE,
-    MAX_EXCERPT,
     MAX_FLOW_NOTE,
     MAX_FLOWS,
     MAX_NOTE,
@@ -50,43 +47,30 @@ from app.incidents.model import (
     MAX_UPDATE_BODY,
     MAX_UPDATES,
     MAX_USD,
-    SLUG_PATTERN,
     SOURCED_STATUSES,
     TRANSITIONS,
     AddressRole,
     AttributionStatus,
-    EvidenceKind,
     IncidentKind,
     IncidentStatus,
     UpdateKind,
 )
 
+# The checks that incidents and wallet profiles share (app.editorial), under the names used here.
+_address, _aware, _choice, _clean = (
+    editorial.address,
+    editorial.aware,
+    editorial.choice,
+    editorial.clean,
+)
+_limit, _not_future, _SLUG = editorial.latest_day, editorial.not_future, editorial.SLUG
 
-class IncidentError(ValueError):
-    """The request is not acceptable (shown to the editor who made it)."""
-
-    def __init__(self, message: str, *, problems: list[str] | None = None) -> None:
-        super().__init__(message)
-        self.problems = problems or []
-
-
-class IncidentConflict(IncidentError):
-    """The request does not fit what exists: the incident's state, or a slug that is taken."""
+# The errors an editor is shown are shared with the wallet profiles (app.editorial).
+IncidentError = EditorialError
+IncidentConflict = EditorialConflict
 
 
 # --- what an editor sends -----------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class EvidenceInput:
-    ref: str  # the editor's name for the document within this incident ("e1")
-    publisher: str
-    title: str
-    url: str
-    kind: str
-    retrieved_on: date
-    published_on: date | None = None
-    excerpt: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,67 +136,7 @@ class Content:
 
 # --- checking text ------------------------------------------------------------------------------
 
-_SLUG = re.compile(SLUG_PATTERN)
-_REF = re.compile(r"^[A-Za-z0-9_-]{1,24}$")
 _TX_HASH = re.compile(r"^[A-Za-z0-9]{16,100}$")
-# Characters that make text look like something it is not: zero-width and direction-changing marks.
-_SPOOFING = re.compile("[​-‏‪-‮⁠-⁤⁦-⁩﻿]")
-
-
-def _clean(
-    value: str | None, name: str, *, maximum: int, required: bool = False, lines: bool = False
-):
-    """The text, trimmed. Control characters and look-alike marks are refused, not dropped."""
-    if value is None:
-        if required:
-            raise IncidentError(f"{name} is needed.")
-        return None
-    text = value.strip()
-    if not text:
-        if required:
-            raise IncidentError(f"{name} is needed.")
-        return None
-    if len(text) > maximum:
-        raise IncidentError(f"{name} is at most {maximum} characters.")
-    allowed = "\n\t" if lines else ""
-    for character in text:
-        if unicodedata.category(character) == "Cc" and character not in allowed:
-            raise IncidentError(f"{name} holds a control character.")
-    if _SPOOFING.search(text):
-        raise IncidentError(f"{name} holds an invisible or direction-changing character.")
-    return text
-
-
-def _url(value: str, name: str) -> str:
-    text = _clean(value, name, maximum=500, required=True)
-    assert text is not None
-    if any(character.isspace() for character in text):
-        raise IncidentError(f"{name} cannot hold spaces.")
-    parts = urlsplit(text)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise IncidentError(f"{name} must be a web address (http or https).")
-    if parts.username is not None or parts.password is not None:
-        raise IncidentError(f"{name} cannot carry a user name or password.")
-    return text
-
-
-def _choice(value: str, choices: type, name: str) -> str:
-    try:
-        return choices(value).value
-    except ValueError:
-        words = ", ".join(item.value for item in choices)
-        raise IncidentError(f"{name} is one of: {words}.") from None
-
-
-def _limit(now: datetime) -> date:
-    """The latest date a document may carry: today, and a day's slack for time zones."""
-    return now.date() + timedelta(days=1)
-
-
-def _not_future(value: date | None, name: str, limit: date) -> date | None:
-    if value is not None and value > limit:
-        raise IncidentError(f"{name} is in the future.")
-    return value
 
 
 def _usd(value: int | None, name: str) -> int | None:
@@ -221,19 +145,6 @@ def _usd(value: int | None, name: str) -> int | None:
     if not 0 <= value <= MAX_USD:
         raise IncidentError(f"{name} is between 0 and {MAX_USD:,} dollars.")
     return value
-
-
-def _address(chain_name: str, address: str, name: str) -> tuple[str, str]:
-    """(the chain's id, the address in its storage form), refusing what is not readable here."""
-    chain = find_chain(chain_name)
-    if chain is None:
-        raise IncidentError(
-            f"{name}: {chain_name!r} is not a chain this platform reads ({', '.join(SUPPORTED)})."
-        )
-    check = get_chain(chain.chain_id).validator.check(address)
-    if not check.valid or check.normalized is None:
-        raise IncidentError(f"{name}: not a valid {chain.slug} address ({check.message}).")
-    return chain.chain_id, check.normalized
 
 
 # --- checking a whole document ------------------------------------------------------------------
@@ -261,36 +172,7 @@ class _Resolved:
 
 
 def _check_evidence(items: tuple[EvidenceInput, ...], limit: date) -> tuple[EvidenceInput, ...]:
-    if len(items) > MAX_EVIDENCE:
-        raise IncidentError(f"An incident has at most {MAX_EVIDENCE} documents.")
-    seen: set[str] = set()
-    checked = []
-    for number, item in enumerate(items, 1):
-        label = f"Document {number}"
-        if not _REF.match(item.ref):
-            raise IncidentError(f"{label}: the reference is 1 to 24 letters, digits, - or _.")
-        if item.ref in seen:
-            raise IncidentError(f"{label}: the reference {item.ref!r} is used twice.")
-        seen.add(item.ref)
-        checked.append(
-            EvidenceInput(
-                ref=item.ref,
-                publisher=_clean(
-                    item.publisher, f"{label}: the publisher", maximum=100, required=True
-                ),
-                title=_clean(item.title, f"{label}: the title", maximum=255, required=True),
-                url=_url(item.url, f"{label}: the address"),
-                kind=_choice(item.kind, EvidenceKind, f"{label}: the kind"),
-                retrieved_on=_not_future(
-                    item.retrieved_on, f"{label}: the date it was read", limit
-                ),
-                published_on=_not_future(
-                    item.published_on, f"{label}: the publication date", limit
-                ),
-                excerpt=_clean(item.excerpt, f"{label}: the excerpt", maximum=MAX_EXCERPT),
-            )
-        )
-    return tuple(checked)
+    return check_evidence(items, limit, what="An incident")
 
 
 def _check_amounts(
@@ -365,12 +247,6 @@ def _check_addresses(
             )
         )
     return tuple(checked)
-
-
-def _aware(value: datetime | None, name: str) -> datetime | None:
-    if value is not None and value.tzinfo is None:
-        raise IncidentError(f"{name} must say its time zone.")
-    return value
 
 
 def _check_flows(

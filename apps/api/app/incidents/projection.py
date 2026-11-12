@@ -27,26 +27,25 @@ the repair command (`python -m app.cli incidents project`) are the same operatio
 
 from __future__ import annotations
 
-import hashlib
-import json
-from collections import Counter
-from datetime import UTC, datetime
+from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database.models import AddressLabel, Incident, IncidentAddress, LabelSource
+from app.database.models import Incident, IncidentAddress
 from app.incidents.model import AddressRole, AttributionStatus, IncidentStatus
-from app.intel.importer import ImportReport, apply_claims, mark_unchanged
+from app.intel import projection as shared
+from app.intel.importer import ImportReport
 from app.intel.model import Category, SourceKind
-from app.intel.sources import Claim, EntityRecord, Parsed, SourceSpec
+from app.intel.sources import Claim, EntityRecord, SourceSpec
 
 SLUG = "incident_tracker"
+fingerprint = shared.fingerprint  # tested here: what a projection says, as one hash
 
 # An editorial source does not age like a feed: nothing is downloaded, so there is nothing to go
 # stale. Every projection confirms it current, and until the first label exists neither does the
 # source (a source that nobody has fetched would count against the confidence of every screening).
-TEN_YEARS = 10 * 365 * 86_400
+TEN_YEARS = shared.TEN_YEARS
 
 SPEC = SourceSpec(
     slug=SLUG,
@@ -103,58 +102,15 @@ def wanted_claims(session: Session) -> list[Claim]:
     return claims
 
 
-def fingerprint(claims: list[Claim]) -> str:
-    """A hash of everything the claims say, so that a projection that would change nothing is
-    recognised as that and only marks the source confirmed."""
-    body = sorted(
-        (c.source_ref, c.entity.name, c.chain_id, c.address, c.confidence) for c in claims
-    )
-    return hashlib.sha256(json.dumps(body, separators=(",", ":")).encode("utf-8")).hexdigest()
-
-
 def project(
     session: Session, *, now: datetime | None = None, force: bool = False
 ) -> ImportReport | None:
     """Make the labels of the incident tracker match the published incidents. Use the session of
     the change that calls for it, and commit with it. Returns what happened, or None when there is
     nothing to project and nothing was ever projected (so that no source is made for nothing)."""
-    moment = now or datetime.now(UTC)
-    claims = wanted_claims(session)
-    source = session.scalar(select(LabelSource).where(LabelSource.slug == SLUG))
-    if source is None and not claims:
-        return None
-    digest = fingerprint(claims)
-    if source is not None and source.content_sha256 == digest and not force:
-        return mark_unchanged(session, SLUG, sha256=digest, started=moment, now=moment)
-    parsed = Parsed(
-        publish_date=moment.date(),
-        sha256=digest,
-        entries=len({claim.source_ref for claim in claims}),
-        build=lambda: (claims, Counter()),
-    )
-    return apply_claims(
-        session,
-        SPEC,
-        claims,
-        parsed=parsed,
-        unsupported=Counter(),
-        started=moment,
-        now=moment,
-    )
+    return shared.project_claims(session, SPEC, wanted_claims(session), now=now, force=force)
 
 
 def labels_in_force(session: Session, incident: Incident) -> int:
     """How many screening labels this incident has in force right now."""
-    return (
-        session.scalar(
-            select(func.count())
-            .select_from(AddressLabel)
-            .join(LabelSource, LabelSource.id == AddressLabel.source_id)
-            .where(
-                LabelSource.slug == SLUG,
-                AddressLabel.source_ref == incident.slug,
-                AddressLabel.active.is_(True),
-            )
-        )
-        or 0
-    )
+    return shared.labels_in_force(session, SLUG, incident.slug)
