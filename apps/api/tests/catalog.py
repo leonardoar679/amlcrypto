@@ -237,6 +237,37 @@ add(
     json=lambda s: {"new_password": "A fresh password 1!"},
 )
 add("GET", "/api-keys")
+
+
+def wallet_document(source: Any) -> dict[str, Any]:
+    """The content of a wallet profile, as the editor sends it."""
+    return {
+        "name": "An example exchange",
+        "kind": "exchange",
+        "summary": "A centralized exchange.",
+        "website": "https://example.org",
+        "evidence": [
+            {
+                "ref": "e1",
+                "publisher": "The exchange",
+                "title": "Our addresses",
+                "url": "https://example.org/addresses",
+                "kind": "official",
+                "retrieved_on": "2026-01-16",
+            }
+        ],
+        "addresses": [
+            {
+                "chain": "ethereum",
+                "address": source.address(),
+                "label": "Hot wallet",
+                "attribution_status": "OFFICIALLY_CONFIRMED",
+                "evidence_ref": "e1",
+            }
+        ],
+    }
+
+
 add("POST", "/api-keys", json=lambda s: {"name": "ci", "role": "viewer", "expires_in_days": 30})
 add("DELETE", "/api-keys/{key_id}", path=lambda s: f"/api-keys/{s.key()}")
 add("GET", "/audit")
@@ -272,6 +303,37 @@ add(
     json=lambda s: {"occurred_at": "2026-01-16T10:00:00Z", "kind": "statement", "body": "Said."},
 )
 add("DELETE", "/editor/incidents/{incident_id}", path=lambda s: f"/editor/incidents/{s.incident()}")
+
+# --- the platform editor's wallet profiles (global; the same editor) ---------------------------
+add("GET", "/editor/wallets")
+add(
+    "POST",
+    "/editor/wallets",
+    json=lambda s: {"slug": f"wallet-{s.address()[-8:]}", **wallet_document(s)},
+)
+add("GET", "/editor/wallets/{profile_id}", path=lambda s: f"/editor/wallets/{s.wallet()}")
+add(
+    "PUT",
+    "/editor/wallets/{profile_id}/content",
+    path=lambda s: f"/editor/wallets/{s.wallet()}/content",
+    json=wallet_document,
+)
+add(
+    "POST",
+    "/editor/wallets/{profile_id}/transition",
+    path=lambda s: f"/editor/wallets/{s.wallet()}/transition",
+    json=lambda s: {"to": "in_review"},
+)
+add("DELETE", "/editor/wallets/{profile_id}", path=lambda s: f"/editor/wallets/{s.wallet()}")
+
+# --- wallet profiles, for anybody (published only) ---------------------------------------------
+add("GET", "/public/wallets")
+add("GET", "/public/wallets/{slug}", path=lambda s: f"/public/wallets/{s.published_wallet_slug()}")
+add(
+    "GET",
+    "/public/addresses/{chain}/{address}/wallets",
+    path=lambda s: f"/public/addresses/ethereum/{s.address()}/wallets",
+)
 
 # --- incidents, for anybody (published only) ----------------------------------------------------
 add("GET", "/public/incidents")

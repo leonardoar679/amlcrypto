@@ -104,8 +104,8 @@ def test_the_example_proxy_does_what_the_api_and_the_web_app_count_on():
     # location of its own, with a limit a little above what the web app allows it, and nowhere else
     assert "client_max_body_size 128k;" in code
     assert re.search(
-        r"location ~ \^/api/v1/editor/incidents/\[0-9\]\+/content\$ \{\s*client_max_body_size 640k;"
-        r"\s*limit_req zone=aml_web",
+        r"location ~ \^/api/v1/editor/\(incidents\|wallets\)/\[0-9\]\+/content\$ \{"
+        r"\s*client_max_body_size 640k;\s*limit_req zone=aml_web",
         code,
     )
     assert code.count("client_max_body_size 640k;") == 1
@@ -222,4 +222,56 @@ def test_a_fully_loaded_incident_still_fits_what_the_web_app_lets_an_editor_save
     limit = int(cap.group(1)) * 1024
     # larger than the 64 KB every other request gets (that is why the route has a limit of its own),
     # and not within a sixth of the limit
+    assert 64 * 1024 < size < limit * 0.85, f"{size} bytes against a limit of {limit}"
+
+
+def test_a_fully_loaded_wallet_profile_still_fits_what_the_web_app_lets_an_editor_save():
+    """A wallet profile is saved the same way, as one request, through the same limit: an exchange
+    can name hundreds of addresses. Fill it as heavily as the platform allows."""
+
+    import json
+
+    from app.editorial import MAX_EVIDENCE
+    from app.wallets.model import MAX_ADDRESSES
+
+    body = {
+        "name": "N" * 120,
+        "kind": "exchange",
+        "summary": "S" * 5000,
+        "website": "https://example.org/" + "w" * 80,
+        "attribution_note": "A" * 2000,
+        "internal_note": "I" * 2000,
+        "evidence": [
+            {
+                "ref": f"e{n}",
+                "publisher": "P" * 40,
+                "title": "T" * 100,
+                "url": "https://example.org/" + "u" * 80,
+                "kind": "official",
+                "retrieved_on": "2026-01-02",
+                "published_on": "2026-01-01",
+                "excerpt": "E" * 300,
+            }
+            for n in range(MAX_EVIDENCE)
+        ],
+        "addresses": [
+            {
+                "chain": "ethereum",
+                "address": "0x" + "a" * 40,
+                "label": "L" * 60,
+                "attribution_status": "OFFICIALLY_CONFIRMED",
+                "confidence": 95,
+                "evidence_ref": "e1",
+                "note": "N" * 500,
+                "last_verified_at": "2026-01-02T10:00:00Z",
+            }
+            for _ in range(MAX_ADDRESSES)
+        ],
+    }
+    size = len(json.dumps(body, separators=(",", ":")).encode())
+
+    rules = (WEB / "src" / "lib" / "proxyRules.js").read_text(encoding="utf-8")
+    cap = re.search(r"MAX_CONTENT_BYTES = (\d+) \* 1024;", rules)
+    assert cap, "the web app's limit for saving a profile was not found"
+    limit = int(cap.group(1)) * 1024
     assert 64 * 1024 < size < limit * 0.85, f"{size} bytes against a limit of {limit}"

@@ -148,7 +148,9 @@ def test_an_incident_is_read_without_signing_in(client, editor):
         "source",
         "note",
         "last_verified_at",
+        "profile",
     }
+    assert address["profile"] is None  # no profile names it
     assert address["address"] == EVM and address["status_words"].startswith(
         "Reported by an analyst"
     )

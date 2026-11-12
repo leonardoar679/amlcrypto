@@ -12,6 +12,7 @@ from app.api.v1 import (
     cases,
     chains,
     editor_incidents,
+    editor_wallets,
     graph,
     health,
     intel,
@@ -19,6 +20,7 @@ from app.api.v1 import (
     monitoring,
     providers,
     public_incidents,
+    public_wallets,
     screening,
     users,
     version,
@@ -46,3 +48,5 @@ api_router.include_router(api_keys.router)
 api_router.include_router(audit.router)
 api_router.include_router(editor_incidents.router)
 api_router.include_router(public_incidents.router)
+api_router.include_router(editor_wallets.router)
+api_router.include_router(public_wallets.router)

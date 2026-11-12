@@ -61,6 +61,9 @@ from app.database.models import (
     StoredTransfer,
     StoredUnattributed,
     User,
+    WalletProfile,
+    WalletProfileAddress,
+    WalletProfileEvidence,
 )
 from app.intel.importer import OFAC_SLUG
 from app.main import create_app
@@ -101,6 +104,9 @@ WRITTEN_BY_TESTS = (
     IncidentAmount,
     IncidentEvidence,
     Incident,
+    WalletProfileAddress,
+    WalletProfileEvidence,
+    WalletProfile,
     User,
     Organization,
 )

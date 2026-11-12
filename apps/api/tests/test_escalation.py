@@ -119,6 +119,13 @@ def test_a_key_of_any_role_is_refused_what_only_people_may_do(world):
         ("POST", "/editor/incidents/1/transition"),
         ("POST", "/editor/incidents/1/updates"),
         ("DELETE", "/editor/incidents/1"),
+        # ... and never writes wallet profiles
+        ("GET", "/editor/wallets"),
+        ("POST", "/editor/wallets"),
+        ("GET", "/editor/wallets/1"),
+        ("PUT", "/editor/wallets/1/content"),
+        ("POST", "/editor/wallets/1/transition"),
+        ("DELETE", "/editor/wallets/1"),
     ):
         status = world.client.request(method, V1 + path, json={}, headers=key).status_code
         if status != 403:

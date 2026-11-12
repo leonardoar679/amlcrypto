@@ -62,6 +62,7 @@ class World:
         # another team is sent
         self.marks: dict[str, list[str]] = {}
         self.slugs: dict[int, str] = {}  # the address of each incident's page, by its id
+        self.wallet_slugs: dict[int, str] = {}  # ... and of each wallet profile's page
         self.acme = self._team("Acme")
         self.rival = self._team("Rival")
         # The platform editor is Acme's administrator (the catalog's working requests are sent as
@@ -236,6 +237,45 @@ class World:
                 self._made_by(editor, "POST", path, {"to": state}, 200)
         return made["id"]
 
+    def wallet(self, *, publish: bool = False) -> int:
+        """A draft wallet profile (or a published one) written by the platform editor. Global, like
+        the incidents: its words name nobody's organization."""
+        number = next(self._made)
+        body = {
+            "slug": f"example-wallet-{number}",
+            "name": f"{CANARY_FREE} exchange {number}",
+            "kind": "exchange",
+            "summary": "A centralized exchange.",
+            "website": "https://example.org",
+            "evidence": [
+                {
+                    "ref": "e1",
+                    "publisher": "The exchange",
+                    "title": "Our addresses",
+                    "url": "https://example.org/addresses",
+                    "kind": "official",
+                    "retrieved_on": "2026-01-16",
+                }
+            ],
+            "addresses": [
+                {
+                    "chain": "ethereum",
+                    "address": self.address(),
+                    "label": "Hot wallet",
+                    "attribution_status": "OFFICIALLY_CONFIRMED",
+                    "evidence_ref": "e1",
+                }
+            ],
+        }
+        editor = self.acme.admin
+        made = self._made_by(editor, "POST", "/api/v1/editor/wallets", body, 201)["wallet"]
+        self.wallet_slugs[made["id"]] = made["slug"]
+        if publish:
+            for state in ("in_review", "published"):
+                path = f"/api/v1/editor/wallets/{made['id']}/transition"
+                self._made_by(editor, "POST", path, {"to": state}, 200)
+        return made["id"]
+
     def user(self, team: Team) -> int:
         body = {
             "email": f"{CANARY}{next(self._made)}@{team.name.lower()}.example.com",
@@ -312,6 +352,13 @@ class Fresh:
         """The address of the page of a new published incident."""
         return self.world.slugs[self.world.incident(publish=True)]
 
+    def wallet(self) -> int:
+        return self.world.wallet()
+
+    def published_wallet_slug(self) -> str:
+        """The address of the page of a new published wallet profile."""
+        return self.world.wallet_slugs[self.world.wallet(publish=True)]
+
     def credentials(self) -> dict[str, str]:
         return {"email": self.team.admin_email, "password": PASSWORD}
 
@@ -357,6 +404,12 @@ class Ghost:
 
     def published_slug(self) -> str:
         return "no-such-incident"
+
+    def wallet(self) -> int:
+        return GHOST
+
+    def published_wallet_slug(self) -> str:
+        return "no-such-wallet"
 
     def credentials(self) -> dict[str, str]:
         return {"email": "nobody@example.com", "password": PASSWORD}

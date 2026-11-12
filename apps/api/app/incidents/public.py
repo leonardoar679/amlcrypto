@@ -30,6 +30,7 @@ from app.incidents.model import (
     AttributionStatus,
     IncidentStatus,
 )
+from app.wallets.public import known_as
 
 EXCERPT_LENGTH = 280
 
@@ -156,6 +157,7 @@ def detail(session: Session, incident: Incident) -> dict[str, Any]:
         .where(IncidentAddress.incident_id == incident.id)
         .order_by(IncidentAddress.id)
     ).all()
+    profiles = known_as(session, [(row.chain_id, row.address) for row in addresses])
     flows = session.scalars(
         select(IncidentFlow)
         .where(IncidentFlow.incident_id == incident.id)
@@ -219,6 +221,8 @@ def detail(session: Session, incident: Incident) -> dict[str, Any]:
                 "source": source(row.evidence_id),
                 "note": row.note,
                 "last_verified_at": iso(row.last_verified_at),
+                # The published wallet profile that names this address, if one does.
+                "profile": profiles.get((row.chain_id, row.address)),
             }
             for row in addresses
         ],

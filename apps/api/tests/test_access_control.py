@@ -28,6 +28,9 @@ PUBLIC = {
     ("GET", "/api/v1/public/incidents"),
     ("GET", "/api/v1/public/incidents/{slug}"),
     ("GET", "/api/v1/public/addresses/{chain}/{address}/incidents"),
+    ("GET", "/api/v1/public/wallets"),
+    ("GET", "/api/v1/public/wallets/{slug}"),
+    ("GET", "/api/v1/public/addresses/{chain}/{address}/wallets"),
 }
 # Open to anyone who is signed in, whatever their role: nothing here is more than reading what is
 # public to the whole platform (the chains) or about the caller themselves.
@@ -51,6 +54,7 @@ PATH_VALUES = {
     "case_id": "1",
     "link_id": "1",
     "incident_id": "1",
+    "profile_id": "1",
 }
 
 

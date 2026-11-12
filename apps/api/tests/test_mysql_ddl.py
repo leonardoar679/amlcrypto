@@ -136,6 +136,19 @@ def test_mysql_incident_flows_keep_addresses_and_hashes_case_sensitive():
     )
 
 
+def test_mysql_wallet_profiles_keep_addresses_case_sensitive():
+    addresses = ddl("wallet_profile_addresses", mysql.dialect())
+    assert "chain_id VARCHAR(64) COLLATE utf8mb4_bin NOT NULL" in addresses
+    assert "address VARCHAR(128) COLLATE utf8mb4_bin NOT NULL" in addresses
+    # the slug is the permanent address of a page and is compared as text, in lower case
+    assert "slug VARCHAR(80) NOT NULL" in ddl("wallet_profiles", mysql.dialect())
+    # one row for each address of a profile, whatever the spelling of the chain
+    assert (
+        "CONSTRAINT uq_wallet_profile_addresses_profile_id_chain_id_address UNIQUE "
+        "(profile_id, chain_id, address)" in addresses
+    )
+
+
 def test_the_offline_mysql_migration_adds_the_editor_flag_with_a_default():
     config = migrations.alembic_config(MYSQL_URL)
     config.output_buffer = io.StringIO()

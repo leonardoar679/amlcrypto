@@ -28,6 +28,7 @@ from app.database.models.monitoring import Alert, MonitoredAddress
 from app.database.models.risk import RiskAssessment, RiskFinding, RiskRule
 from app.database.models.tenancy import Organization, User
 from app.database.models.usage import ApiUsage
+from app.database.models.wallets import WalletProfile, WalletProfileAddress, WalletProfileEvidence
 
 __all__ = [
     "AddressLabel",
@@ -68,4 +69,7 @@ __all__ = [
     "StoredTransfer",
     "StoredUnattributed",
     "User",
+    "WalletProfile",
+    "WalletProfileAddress",
+    "WalletProfileEvidence",
 ]

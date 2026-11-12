@@ -87,6 +87,7 @@ from app.risk.service import (
 )
 from app.services import users as accounts
 from app.services.users import UserError, create_user
+from app.wallets import projection as wallet_projection
 
 T = TypeVar("T")
 
@@ -648,6 +649,48 @@ def _cmd_incidents_project(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_wallets_project(args: argparse.Namespace) -> int:
+    """Make the labels that screening takes from the wallet profiles match the published ones. A
+    status change does this by itself; the command is for repair (a label that was changed by
+    hand, a restored backup) and applies the whole of it again, whether or not anything seems to
+    have changed."""
+    engine = create_db_engine(get_settings().resolved_database_url)
+    try:
+        with create_session_factory(engine, write=True)() as session:
+            report = wallet_projection.project(session, force=True)
+            if report is not None:
+                record(
+                    session,
+                    actor=CLI,
+                    action="wallet.project",
+                    target_type="label_source",
+                    target_id=wallet_projection.SLUG,
+                    details={
+                        "labels": report.claims,
+                        "added": report.added,
+                        "updated": report.updated,
+                        "removed": report.removed,
+                    },
+                )
+            session.commit()
+    finally:
+        engine.dispose()
+    if args.json:
+        print(json.dumps(None if report is None else report.to_dict()))
+    elif report is None:
+        print(
+            "Nothing to project: no published wallet profile names an address that screening may "
+            "take context from, and none ever did."
+        )
+    else:
+        print(
+            f"{report.source}: {report.claims} address(es) from {report.entries} published "
+            f"profile(s) are in force: {report.added} added, {report.updated} changed, "
+            f"{report.unchanged} confirmed, {report.removed} switched off."
+        )
+    return 0
+
+
 def _cmd_labels_lookup(args: argparse.Namespace) -> int:
     """What is known about an address, who says so, how sure and how current. Exit 0 when it is
     clean as far as the sources go, 2 when it carries a label in force. Reads only stored data (and
@@ -1104,6 +1147,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     project.add_argument("--json", action="store_true", help="print JSON instead of a sentence")
     project.set_defaults(run=_cmd_incidents_project)
+
+    wallets = commands.add_parser(
+        "wallets", help="the public wallet profiles, and what screening takes from them"
+    ).add_subparsers(dest="wallets_command", required=True)
+    wallet_project = wallets.add_parser(
+        "project",
+        help="make the labels screening takes from the profiles match the published ones (a status "
+        "change does this by itself; this is the repair)",
+    )
+    wallet_project.add_argument(
+        "--json", action="store_true", help="print JSON instead of a sentence"
+    )
+    wallet_project.set_defaults(run=_cmd_wallets_project)
 
     graph = commands.add_parser(
         "graph",

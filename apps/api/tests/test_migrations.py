@@ -151,6 +151,45 @@ def test_the_flows_revision_comes_and_goes_on_a_database_that_holds_data(sqlite_
         engine.dispose()
 
 
+def test_the_wallet_profile_tables_come_and_go_with_their_revision(migration_url):
+    tables = {"wallet_profiles", "wallet_profile_evidence", "wallet_profile_addresses"}
+    try:
+        migrations.upgrade(migration_url)
+        migrations.downgrade(migration_url, "0012")
+        assert not tables & _tables(migration_url)
+        assert "incident_flows" in _tables(migration_url)  # the revision before it is untouched
+        migrations.upgrade(migration_url)
+        assert tables <= _tables(migration_url)
+    finally:
+        migrations.upgrade(migration_url)  # leave the shared database at head
+
+
+def test_the_profiles_revision_comes_and_goes_on_a_database_that_holds_data(sqlite_url):
+    """The three tables are the only data the downgrade gives up; every other table is as it was."""
+    from sqlalchemy import text
+
+    from tests.fill import fill
+
+    engine = create_db_engine(sqlite_url)
+    try:
+        fill(engine)
+        with engine.connect() as connection:
+            profiles = connection.execute(text("SELECT COUNT(*) FROM wallet_profiles")).scalar()
+            incidents = connection.execute(text("SELECT COUNT(*) FROM incidents")).scalar()
+        assert profiles and incidents
+
+        migrations.downgrade(sqlite_url, "0012")
+        assert "wallet_profiles" not in _tables(sqlite_url)
+        migrations.upgrade(sqlite_url)
+
+        with engine.connect() as connection:
+            kept = connection.execute(text("SELECT COUNT(*) FROM incidents")).scalar()
+            back = connection.execute(text("SELECT COUNT(*) FROM wallet_profiles")).scalar()
+        assert (kept, back) == (incidents, 0)
+    finally:
+        engine.dispose()
+
+
 def test_people_who_exist_before_editors_are_not_editors(migration_url):
     from sqlalchemy import text
 
