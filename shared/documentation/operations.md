@@ -235,24 +235,36 @@ python -m app.cli incidents project                    # rebuild the labels the 
   publishing, not by a download: it appears after the first published incident that names an address screening
   may act on, is never stale (it is confirmed at every change), and can be rebuilt from what is published with
   `incidents project` (audited as the system).
+* **So are the wallet profiles** (source `wallet_profiles`), the same way: it appears after the first published
+  profile of an exchange, a bridge or a protocol that names an address at a status screening may act on, is
+  never stale, and is rebuilt from what is published with `wallets project` (`--json` for a machine; audited as
+  the system). Its labels are context (`EXCHANGE`, `BRIDGE`, `DEFI`), never a warning, but **they change what
+  two rules do**: AML-013 notes a flow to an address named as a bridge (LOW), and AML-014 no longer reports a
+  concentration at an address named as an exchange, a protocol or a bridge. Publishing the first profiles is therefore an
+  event too: a monitor set to alert on LOW findings raises `new_finding` alerts for flows to a newly named
+  bridge (monitors alert from MEDIUM up unless set otherwise, so by default nothing happens: see D23), and a
+  wrongly named exchange hides a finding (D22).
 
-## The public incidents and their editors
+## The public incidents, the wallet profiles and their editors
 
 **Who writes.** Only a platform editor, made so from the command line (it is not a role, and an
 organization's administrator cannot do it):
 
 ```powershell
-python -m app.cli user set-editor editor@example.com          # may write the public incidents
+python -m app.cli user set-editor editor@example.com          # may write the public incidents and profiles
 python -m app.cli user set-editor editor@example.com --off    # may not
 python -m app.cli user list                                   # the "editor" column says who is one
 ```
 
-The editor is **Incident editor** in the sidebar of such a person (and nobody else's), where an incident is
-written, sent to review, published, taken back, archived and, once published, added to. Everything they do is
-in the audit log (`incident.create`, `.content`, `.status` with how many labels it put in force, `.update`,
-`.delete`, `.project`), as that person, with no organization. Read
-[the editorial policy](editorial-policy.md) before the first publication, and see its item 9 of "Before
-production": counsel has not read it.
+The editor is **Editor** in the sidebar of such a person (and nobody else's), with two tabs: **Incidents**,
+where an incident is written, sent to review, published, taken back, archived and, once published, added to,
+and **Wallet profiles**, where who a known address belongs to is written the same way (a published profile is
+not added to: it is taken back to review to be changed). Everything they do is in the audit log
+(`incident.create`, `.content`, `.status` with how many labels it put in force, `.update`, `.delete`,
+`.project`, and `wallet.create`, `.content`, `.status`, `.delete`, `.project` for the profiles), as that
+person, with no organization. Read [the editorial policy](editorial-policy.md) before the first publication,
+and see its item 9 of "Before production": counsel has not read it, and it is **a profile of a public figure
+above all** that should wait for that (L8 in the limitations register).
 
 **Who reads.** Anybody, at `/incidents` (the list, with filters by kind and chain, and a lookup of an address)
 and `/incidents/<name>`; the API's own public endpoints are `GET /api/v1/public/incidents`,
@@ -260,6 +272,14 @@ and `/incidents/<name>`; the API's own public endpoints are `GET /api/v1/public/
 published (a draft, an incident in review and an archived one are "no such incident"), nothing from an
 organization and nothing from the shared chain data, and carry `Cache-Control: public, max-age=60` on a success.
 The pages are `noindex` and have no sitemap until a brand and a domain exist.
+
+The wallet profiles are read at `/wallets` (the list, with filters by kind and chain, a search by name, and a
+lookup of an address) and `/wallets/<name>`, and through `GET /api/v1/public/wallets`, `/public/wallets/{name}`
+and `/public/addresses/{chain}/{address}/wallets`, which answer on the same terms. An incident page shows
+"Known as ..." beside an address a published profile names, and a profile page lists the published incidents
+that name its addresses. "Watch this address" on a profile opens the signed-in monitoring form with the chain,
+address and name filled in (a signed-out visitor goes through sign-in first and comes back); nothing is added
+until the person presses the button.
 
 * **The web server reads them, the browser does not.** The pages are made on the server and ask the API for the
   data, which the web server keeps for **one minute** (in its memory, with a time limit, so that what is gone
@@ -270,16 +290,17 @@ The pages are `noindex` and have no sitemap until a brand and a domain exist.
   no request, is unaffected. The container image is checked for this in CI (`/incidents` answers 200 with the
   notice, a link that is not an incident answers 404).
 * **Taking something down.** Move it back to review: it leaves screening at once and the public pages within a
-  minute (longer if a proxy caches them; do not cache `/incidents` for long). A correction is a timeline entry.
+  minute (longer if a proxy caches them; do not cache `/incidents` or `/wallets` for long). A correction is a
+timeline entry on an incident; a profile has none, so it is taken back to review, changed and published again.
   The routine for a complaint is in the editorial policy.
 * **Limits at the proxy.** The example nginx file gives the API host a zone for `/api/v1/public/` (10 requests a
   second per address, GET only) and the web host its general zone (20 a second) for the pages. The web host takes
-  bodies of 128 KB, except one location of its own (640 KB) for an editor saving the whole content of an incident:
-  the web app forwards 64 KB of anything and 512 KB of that one request, which an incident that names a couple of
-  hundred addresses needs (about 90 KB; one filled to every limit the platform has, with the funds trail and the timeline,
-  is about 380 KB, and a test holds it under 85% of the cap). Keep the two in step if you change either, and if you
-  raise a limit of the incident content. None of it has been through
-  `nginx -t` (see O10 in the limitations register).
+  bodies of 128 KB, except one location of its own (640 KB) for an editor saving the whole content of an incident
+  or of a wallet profile: the web app forwards 64 KB of anything and 512 KB of that one request, which an incident
+  that names a couple of hundred addresses needs (about 90 KB; one filled to every limit the platform has, with
+  the funds trail and the timeline, is about 380 KB, and a profile filled to every limit, with 300 addresses, is
+  about 277 KB; a test holds each under 85% of the cap). Keep the two in step if you change either, and if you
+  raise a limit of the content. None of it has been through `nginx -t` (see O10 in the limitations register).
 * **If the pages are not meant to be open yet**, do not put the web host on the internet, or add authentication
   in front of `/incidents` at the proxy; the application has no switch that turns the public pages off.
 

@@ -1277,10 +1277,113 @@ same (D14 in the limitations register).
 
 ### Not done
 
-Trending addresses, large transfers, public wallet profiles, community submissions, news, USD prices, a dollar value or a
+Trending addresses, large transfers, public wallet profiles (M16, below), community submissions, news, USD prices, a dollar value or a
 total for the funds trail, any paid feed (Whale Alert, Chainabuse, a commercial attribution) and DeFiLlama's hacks
 list; a licence for Elliptic's list; a legal read of the editorial policy; a brand and a domain (the pages are
 `noindex`).
+
+## Public wallet profiles, and what screening takes from them (milestone M16)
+
+M16 is the second slice of "public blockchain intelligence": **public wallet profiles** ("known entities"), who an
+address belongs to as a cited document says so, written with the same discipline as the incident tracker and linked
+to screening as narrowly. The rules for what may be published are section 7 of
+[shared/documentation/editorial-policy.md](../../shared/documentation/editorial-policy.md) (**no lawyer has read
+them**); the operator's side is in [operations.md](../../shared/documentation/operations.md); what it costs and does not
+do is in [limitations.md](../../shared/documentation/limitations.md) (D21 to D25, O19 and L8, and changes to D2, D7,
+O14 to O17 and L7).
+
+### The profiles
+
+* **What it is.** A profile names an organization, a protocol, a fund, an institution, a government body or a
+  public figure (only a wallet the person disclosed), **never a private individual**: a name, a kind, a summary, a
+  website, the documents it rests on (at most 50, as for an incident) and the addresses it names (at most 300), each
+  saying what it is in at most 60 characters ("hot wallet"), how firmly that is established (the six statuses and
+  their fixed words, shared with the incidents), a confidence, **the document that says so (required, which is
+  stricter than for an incident)**, an optional public note of at most 500 characters and the day it was last
+  checked. Three global tables (`wallet_profiles`, `wallet_profile_evidence`, `wallet_profile_addresses`, migration
+  `0013_wallet_profiles`, reversible). Nothing comes from the shared chain data or from an organization, and a profile
+  shows no balance and no activity.
+* **Who writes: the same platform editor, the same permission** (`incidents:curate`, held by no role, never by an API
+  key). Six routes under `/editor/wallets`: list with a state filter, create, read, `PUT .../content`,
+  `POST .../transition`, `DELETE` (a profile has no timeline, so no `updates`). Every change is audited as the person
+  with no organization: `wallet.create`, `.content`, `.status` (with how many labels it put in force), `.delete`,
+  and `.project`.
+* **States and publication** as for incidents: draft, in review, published, archived; the whole content is replaced
+  and checked as a whole while a draft or in review; a published profile is taken back to review to be changed (which
+  removes it from the pages and from screening); only a draft that was never published is deleted. Publishing needs
+  a summary, a document, an address and a document for every address, and **a profile of a public figure is
+  published only when every one of its addresses is `OFFICIALLY_CONFIRMED` and cites a document of the kind
+  `official`**.
+* **Who reads.** Three anonymous `GET`s: `/public/wallets` (filters `kind` and `chain`, a name search `q` whose `%`
+  and `_` are letters, 20 to a page, at most 100), `/public/wallets/{slug}` (the profile and the published incidents
+  that name its addresses) and `/public/addresses/{chain}/{address}/wallets` (which published profiles name an
+  address). They are written field by field in `app/wallets/public.py`; a draft, a profile in review and an archived
+  one are **404 in the same words as one that does not exist**; a success carries `Cache-Control: public,
+  max-age=60`. The public answer for an incident gained `profile` (slug, name, kind, kind words) on each address that
+  a published profile names.
+
+### What was shared with the incidents
+
+`app/editorial.py` (new) holds what every page an editor writes has in common: the errors an editor is shown and the
+checks of plain text, web addresses, dates, addresses and documents (`incidents/service.py` imports them under their
+old names). `app/intel/projection.py` (new) holds the mechanics of an editorial label source: a fingerprint of the
+claims (a projection that would change nothing only confirms the source), a source that does not exist until it has
+something to say, and the count of labels in force; `incidents/projection.py` uses it too. The incident suites passed
+unchanged through both moves.
+
+### What screening takes from a profile: context, never a warning
+
+(`app/wallets/projection.py`, source `wallet_profiles`)
+
+* Only the kinds **exchange, bridge and protocol** give screening anything, as `EXCHANGE`, `BRIDGE` and `DEFI`
+  (context categories, not risk ones). A fund, an institution, a government body, a public figure and "other" are
+  shown and never acted on.
+* Only at a status someone stands behind (confirmed, corroborated, reported by an analyst) with its document, only
+  while the profile is **published**, on the chain the editor named, with the address's own confidence. Taking the
+  profile out of publication switches its labels off **in the same transaction**, and a label that is off is kept, with
+  the time it was.
+* Under one label source (kind analytics, a refresh interval of ten years, confirmed at every projection, made by its
+  first label), independent of the incident tracker's. `python -m app.cli wallets project [--json]` rebuilds it
+  (audited as the system).
+* **What it changes in the rules, tested against the engine:** AML-013 (LOW) notes a flow to an address named as a
+  bridge, and a published bridge makes the rule evaluated; AML-014 does not report a concentration at an address
+  named as an exchange, a protocol or a bridge; withdrawing the profile undoes both; and none of the three categories adds a
+  finding by itself. **A wrong "exchange" label hides a finding** (D22), which is why the policy asks for the
+  exchange's own word.
+
+```powershell
+.\.venv\Scripts\python.exe -m app.cli wallets project [--json]     # rebuild what published profiles give screening
+```
+
+### Checked against
+
+* 3,457 backend tests and 1 skipped on SQLite (3,291 before M16, plus the wallet service, the
+  projection and its effect on the rules, the command, both APIs, the shared moves and the structural tests every new
+  route must satisfy), ruff clean, `alembic check` clean on a migrated database, migration `0013` up, down and up again
+  over a populated database; 183 frontend unit tests (161 before). The MySQL test layout was
+  rehearsed on SQLite: 3,381 passed, and the two tests that fail in it for reasons of the emulation alone failed
+  as before. MySQL and Docker themselves run only in CI, where **the new tables and the tuple lookups are the
+  unverified part**.
+* 241 mutations of the backend code (the service and its publication rules, the public-figure rule, the
+  public serializers and filters, the editor's views, the projection's kind, status, state and evidence rules, the shared
+  projection and checks, both routes and the command): **86 were not caught the first time**, 12 of them equivalent (a
+  second layer refuses the same input, a rollback has nothing to undo, SQLite's `LIKE` is case-insensitive anyway, the
+  database's cascade makes an explicit delete redundant) and 74 pointing at gaps: the public and editor views had barely
+  an assertion on what they return, the shared checks had no test of their own limits, and a few rules had only one
+  of their two sides tested. 42 new tests closed the 74 (`tests/test_editorial.py` is new; the rest extend the wallet
+  tests), and a second pass over every survivor caught them all. 82 mutations of the frontend helpers left 3
+  survivors: one closed by pinning a limit to the platform's, two equivalent.
+* A headless-Edge run (156 checks) on a production build against this API, on a scratch database with
+  **synthetic** profiles only: the list and the lookup, a profile written through the form and published with its
+  second click, the public answer's exact field set, the cross-links, "Watch this address" with the form filled in
+  and nothing added, the public-figure rule, filters and search, a deleted draft, a withdrawal that is felt at once by
+  the API and screening and within the minute by the pages, 390 px and the dark theme.
+
+### Not done
+
+Trending addresses, large transfers, community submissions, news, USD prices, a paid feed, wallet clustering, balances
+or activity on a profile, a profile's change history shown to readers, a legal read of the editorial policy (**above all
+for the profiles of public figures**), and a brand and a domain (the pages are `noindex`).
 
 ## Testing against MySQL
 
@@ -1308,6 +1411,8 @@ with a `mysql:8.0` service (`.github/workflows/ci.yml`).
 | `GET /audit` | `audit:read` | the audit log |
 | `GET /public/incidents`, `GET /public/incidents/{slug}`, `GET /public/addresses/{chain}/{address}/incidents` | none | the published incidents, for anybody: read only, only what was published, nothing of any organization's (see "Public incidents, a second label source and the platform editor") |
 | `GET/POST /editor/incidents`, `GET/DELETE /editor/incidents/{id}`, `PUT /editor/incidents/{id}/content`, `POST /editor/incidents/{id}/transition`, `POST /editor/incidents/{id}/updates` | `incidents:curate` | the incident editor: held by no role, only by a person made a platform editor from the command line, never by an API key |
+| `GET /public/wallets`, `GET /public/wallets/{slug}`, `GET /public/addresses/{chain}/{address}/wallets` | none | the published wallet profiles, for anybody: read only, only what was published, no balance or activity (see "Public wallet profiles, and what screening takes from them") |
+| `GET/POST /editor/wallets`, `GET/DELETE /editor/wallets/{id}`, `PUT /editor/wallets/{id}/content`, `POST /editor/wallets/{id}/transition` | `incidents:curate` | the wallet profile editor: the same permission and the same people as the incident editor |
 | `POST/GET /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST /monitoring/addresses/{id}/check` | `monitoring:write` / `monitoring:read` | monitored addresses |
 | `GET /alerts`, `GET /alerts/summary`, `GET /alerts/{id}`, `PATCH /alerts/{id}` | `alerts:read` / `alerts:manage` | alerts and the analyst's workflow on them |
 | `POST/GET /cases`, `GET /cases/summary`, `GET/PATCH /cases/{id}`, `POST /cases/{id}/notes`, `POST /cases/{id}/links`, `DELETE /cases/{id}/links/{link}`, `GET /cases/{id}/export` | `cases:write` / `cases:read` | cases |
@@ -1354,8 +1459,10 @@ upper bounds, and a path id past them is a 422, not a 404.
 | `app/chains/models.py`, `app/chains/adapter.py`, `app/chains/support.py` | the normalized records, the adapter base (`SourceAdapter`) and the account-model adapter on top of it, and the lookup from a chain name to its adapter |
 | `app/chains/evm/`, `app/chains/tron/`, `app/chains/bitcoin/`, `app/chains/solana/` | per chain family: the chains, normalizers (provider rows to records), cursors and the adapter; Bitcoin also has its own records (inputs and outputs) and the proven-versus-inferred analysis; Solana its own transaction record, the instruction decoder checked against balance changes, and a wallet's per-transaction activity |
 | `app/ingestion/` | reading a whole history (`fetcher`, `utxo`, `solana`, `read`), storing and reusing it (`sync`, with `families` for what differs per chain family, `raw` for the kept provider answers, `detail` for single transactions), the history job, the text views for the CLI |
-| `app/intel/` | address intelligence: the claim model and confidence (`model`), what a label source is and how its row is made (`sources`), the readers of OFAC's list (`ofac`) and Elliptic's blocklist (`elliptic`), the importer and downloader (`importer`, with the reader of each source in `READERS`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`), the worker's schedule that keeps named sources current (`schedule`) and what the CLI and API share (`service`) |
+| `app/intel/` | address intelligence: the claim model and confidence (`model`), what a label source is and how its row is made (`sources`), the readers of OFAC's list (`ofac`) and Elliptic's blocklist (`elliptic`), the importer and downloader (`importer`, with the reader of each source in `READERS`), lookups (`lookup`), the Watchman client (`watchman`), the refresh job (`jobs`), the worker's schedule that keeps named sources current (`schedule`), the mechanics an editorial source shares (`projection`) and what the CLI and API share (`service`) |
 | `app/incidents/` | the incident tracker: the vocabulary (`model`), writing an incident as a whole and moving it between states (`service`), what an editor sees (`views`) and what anybody sees (`public`), and the narrow part that screening acts on (`projection`) |
+| `app/wallets/` | the wallet profiles, written the same way: the vocabulary (`model`), `service`, `views`, `public`, and what screening takes from them as context (`projection`) |
+| `app/editorial.py` | what every page an editor writes shares: the errors an editor is shown and the checks of text, web addresses, dates, addresses and documents |
 | `app/graph/` | the transaction graph: movements from stored records (`flows`), where histories come from and how complete they are (`reader`), the bounded expansion (`builder`), exposure paths (`exposure`), fan-in and fan-out (`patterns`), bridges (`bridges`), the text output (`render`), what the CLI, API and job share (`service`) and the job (`jobs`) |
 | `app/risk/` | the risk engine: the records of a report (`model`), the fifteen rules and their registry (`rules/`), scoring and confidence (`scoring`), screening a graph (`engine`) or a transaction (`transactions`), the text output (`render`), what the CLI, API and job share (`service`) and the screening jobs (`jobs`) |
 | `app/worker/` | the job runner (`python -m app.worker`), its handlers and its scheduled tasks |
@@ -1393,9 +1500,10 @@ upper bounds, and a path id past them is a 422, not a 404.
 * A parser's public entry point is wrapped in `@refusing_malformed`; do not catch `AttributeError` around one.
 * A label source's row is made by its first successful import, never before and never by a failure: every row in
   `label_sources` is consulted by every screening, and one that has never been fetched lowers all their confidence.
-* What anybody may read is written field by field (`app/incidents/public.py`), and what screening takes from an
-  incident is decided in one place (`app/incidents/projection.py`); a test holds the exact set of both, so a column
-  added later cannot reach the public or the engine by being there.
+* What anybody may read is written field by field (`app/incidents/public.py`, `app/wallets/public.py`), and what
+  screening takes from an incident or a profile is decided in one place (`app/incidents/projection.py`,
+  `app/wallets/projection.py`); a test holds the exact set of both, so a column added later cannot reach the public
+  or the engine by being there.
 * SQLite has two session modes. `create_session_factory(engine)` is read-only (writes fail at once);
   anything that writes uses `create_session_factory(engine, write=True)` and keeps its transaction
   short. Never hold a write transaction across network I/O. See `app/database/connection.py`.

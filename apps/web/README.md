@@ -2,9 +2,10 @@
 
 The platform's web app: Next.js 16 (App Router, plain JavaScript) with React 19. The signed-in screens
 (screening, reports, checks history, addresses, the transaction graph, monitoring, alerts, cases, and
-settings with people, API keys and the audit log, and the incident editor for platform editors) show data from the
-API in `apps/api`; the public pages are the marketing pages (`/`, `/faq`, `/products/*`) and the **published
-incidents** anybody can read (`/incidents`, `/incidents/<name>`). None of them is static: every page carries a
+settings with people, API keys and the audit log, and the editor of incidents and wallet profiles for platform
+editors) show data from the API in `apps/api`; the public pages are the marketing pages (`/`, `/faq`,
+`/products/*`), the **published incidents** (`/incidents`, `/incidents/<name>`) and the **published wallet
+profiles** (`/wallets`, `/wallets/<name>`) anybody can read. None of them is static: every page carries a
 Content-Security-Policy with a nonce of its own, so every page is made on the server for each request. How the two
 halves fit together, route by route, is in
 [shared/documentation/frontend-integration-map.md](../../shared/documentation/frontend-integration-map.md).
@@ -59,7 +60,7 @@ Screenings and "read from the providers" run in the API's background worker, so 
   on) and its user agent, so the audit log records them. With no proxy in front there is no address to pass and
   none is made up. The API believes the header only as far as `TRUSTED_PROXY_HOPS` says.
 * `src/server/` is server-only code (`import 'server-only'`): the API client, the session lookup and `publicApi.js`,
-  how the incident pages read the API's anonymous endpoints (below).
+  how the public pages read the API's anonymous endpoints (below).
 * **The public incident pages** (`app/incidents/`, `src/components/incidents/`) are server components that need no
   session. They read `/api/v1/public/*` themselves through `src/lib/publicRead.js`, never the browser through the
   proxy: it builds a path only from safe characters, never follows a redirect, gives up after 8 seconds and never
@@ -70,12 +71,26 @@ Screenings and "read from the providers" run in the API's background worker, so 
   and the address lookup are links and a GET form, so the pages work without a script. A page asks the API for
   nothing that a visitor typed unless it has checked it first (`src/lib/incidents.js`: names, filters, pages,
   addresses). The home page asks for nothing, so the container can be checked with the API away, which CI does.
-* **The incident editor** (`app/(app)/editor/`, `src/components/editor/`) is for a platform editor: no role has its
+* **The wallet profile pages** (`app/wallets/`, `src/components/wallets/`) are made the same way: server components
+  that read the anonymous endpoints through `publicFetch` and keep what they read for the same minute, with filters
+  by kind and chain, a search by name and a lookup of one address that are links and a GET form, and nothing run in
+  the browser. A profile page shows who it is, the addresses it names with what each is and how firmly (the
+  platform's fixed words) and the published incidents that name them, never a balance or any activity. **"Watch this
+  address"** is a link into the signed-in app (`monitorHref` in `src/lib/wallets.js`); the monitoring form reads it
+  back (`prefillFrom` in `src/lib/monitoring.js`: an address of letters and digits, a name of one line, a chain the
+  platform reads; anything else in the link is ignored) and **nothing is added until the person presses its
+  button**. A signed-out visitor is sent through sign-in first and returns to the filled form. An incident page
+  says "Known as ..." beside an address that a published profile names, and the signed-in address page links a
+  claim that comes from a profile to it.
+* **The editor** (`app/(app)/editor/`, `src/components/editor/`) is for a platform editor: no role has its
   permission (`incidents:curate`), the sidebar shows it to nobody else, every view is mounted only behind
-  `EditorGate`, and the API refuses anybody else whatever the page shows. It edits the whole content of a draft as
-  one form and warns, under an address, when screening will act on it; the funds trail is a list of movements
-  chosen between the addresses the incident names (the form flags one whose address was taken out); a published
-  incident is read-only apart from the timeline.
+  `EditorGate`, and the API refuses anybody else whatever the page shows. It has two tabs, **Incidents** and
+  **Wallet profiles**, which share the gate, the controls (`EditorControls.js`) and the fields and the form for
+  the documents a page rests on (`fields.js`). It edits the whole content of a draft as one form and warns, under
+  an address, when screening will act on it (for a profile, as context: an exchange, a bridge or a protocol); the
+  funds trail is a list of movements chosen between the addresses the incident names (the form flags one whose
+  address was taken out); a published incident is read-only apart from the timeline, and a published profile is
+  read-only until it is taken back to review.
 * **The funds trail on a public incident** is a list of cards made on the server, one for each movement, with the
   drawing added in the browser by the one graph component (`GraphCanvas`, layout `trail`, loaded only on a page that
   has movements). It is a view of the list and never says more: an address is coloured by its part only when its
@@ -86,8 +101,8 @@ Screenings and "read from the providers" run in the API's background worker, so 
   unit formatting. These modules use **relative imports** so that `node --test` can load them; the `@/*`
   alias (`./src/*`) is for the pages and the server code.
 * `src/components/` is organised by screen: `check/`, `risk/` (the report), `address/`, `graph/`,
-  `monitoring/`, `alerts/`, `cases/`, `settings/`, `incidents/` (the public pages), `editor/` (the incident
-  editor), `ui/` (small shared pieces), `layout/`.
+  `monitoring/`, `alerts/`, `cases/`, `settings/`, `incidents/` and `wallets/` (the public pages), `editor/` (the
+  incident and wallet profile editors), `ui/` (small shared pieces), `layout/`.
 * What a person sees follows what their role may do. `GET /auth/me` lists the permissions; the sidebar
   (`src/data/appNav.js`), the forms and the buttons show only what the person can use. That is a courtesy:
   the API refuses the rest whatever the page shows, so never rely on a hidden link for protection.

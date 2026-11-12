@@ -38,10 +38,10 @@ checked the same day in search results only, and their terms pages were not read
    to download and screen against, and says nothing about licence, reuse or redistribution. The platform
    therefore uses it for screening only: a customer meets it as a label on an address they asked about, no
    endpoint lists its addresses, and no public page shows them. Ask Elliptic in writing before production.
-9. **The public incident pages are a publishing decision, not a data licence.** What they say about an
-   address can be wrong or defamatory, and an address can be personal data. The rules the platform
-   enforces and the rules it leaves to an editor are in [the editorial policy](editorial-policy.md),
-   which no lawyer has read.
+9. **The public incident and wallet profile pages are a publishing decision, not a data licence.** What
+   they say about an address can be wrong or defamatory, and an address can be personal data, including
+   the wallet a public figure disclosed. The rules the platform enforces and the rules it leaves to an
+   editor are in [the editorial policy](editorial-policy.md), which no lawyer has read.
 
 ## Data sources
 
@@ -227,6 +227,30 @@ to people who are not customers, so it belongs in this review.
 * **Before production:** counsel's read of the editorial policy and of what the pages say, before they reach
   anyone outside the team.
 
+### The wallet profile pages (editorial content)
+
+The same kind of publication as the incident pages, about organizations and protocols and, only when they
+disclosed it, public figures, so it belongs in this review too.
+
+* **What is published:** who an address belongs to, according to a document that is cited, with how firmly in
+  the same fixed words as an incident; the documents; and the published incidents that name the same
+  addresses. Nothing comes from the shared chain data: no balance, history or counterparty is shown on a
+  profile, for the reason given in "Sharing data between organizations".
+* **The exposure is the same, with one part that is new:** naming an address as an exchange's can be wrong,
+  and screening acts on it as context, not as a warning. An address named as an exchange, a protocol or a
+  bridge is exempt from the concentration rule (AML-014), so a wrong label **hides** a finding for everyone who deals
+  with the address, where a wrong incident label adds one. The policy asks for the weakest status the
+  document supports and for the exchange's own word, or an analytics firm's that says how it knows.
+* **Personal data and public figures:** a profile of a public figure names a wallet that person has disclosed,
+  and the platform publishes it only when a document of the kind "official" (the person's own statement or
+  an authority's) is cited and every address of the profile is confirmed by it. The platform cannot tell
+  whether the document really is the person's own, keeps no record of consent and has no workflow for a
+  person's objection beyond taking the profile back to review; whether publishing is lawful at all, on what
+  basis, and what to keep, is for counsel. **Publish no profile of a public figure before that read.**
+* **Search engines:** every page is `noindex` until a real domain and brand exist, and there is no sitemap.
+* **Before production:** counsel's read of the editorial policy and of what the profile pages say, before
+  they reach anyone outside the team.
+
 ### OpenSanctions (not used)
 
 Its data is licensed CC BY-NC 4.0, and its own page says "Any use inside a for-profit business requires a
@@ -329,7 +353,8 @@ and audit needs differ by customer and jurisdiction.
 6. Other sanctions lists the customers' jurisdictions require (each with its own terms).
 7. A third-party notices file generated from the lock files.
 8. Counsel's review of this document and of the contracts with the five providers.
-9. Counsel's review of the editorial policy and of the incident pages, before they reach anyone outside
-   the team; and the editors' complaint and takedown routine, tried once.
+9. Counsel's review of the editorial policy and of the incident and wallet profile pages (the profiles of
+   public figures above all), before they reach anyone outside the team; and the editors' complaint and
+   takedown routine, tried once.
 10. Elliptic's answer on reuse of its blocklist, or leave it out (`LABEL_REFRESH_SOURCES`, and never run its
     refresh).

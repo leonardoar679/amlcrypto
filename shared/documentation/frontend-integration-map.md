@@ -28,8 +28,10 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   no-store`. A backend endpoint added later is **not** reachable from the browser until it is listed
   there. It refuses `/auth/login` (sign-in has its own route), checks `Origin` / `Sec-Fetch-Site` on
   everything that is not a GET, caps a request body at 64 KB (512 KB for the one request that saves the whole
-  content of an incident, `PUT /editor/incidents/{id}/content`: an incident can name up to 200 addresses with notes,
-  about 90 KB; the example nginx file has a location of its own for it), forwards only a few headers each way, and
+  content of an incident or of a wallet profile, `PUT /editor/incidents/{id}/content` and
+  `PUT /editor/wallets/{id}/content`: an incident can name up to 200 addresses with notes, about 90 KB, and a
+  profile up to 300, about 277 KB when every limit is filled; the example nginx file has a location of its own
+  for both), forwards only a few headers each way, and
   clears the cookie when the API answers 401. Since M14 the headers it forwards include **who is asking**: the
   client's address (the last `X-Forwarded-For` entry, which the proxy in front of this site wrote) and user
   agent, so that the API's audit log records the person and not this server; the sign-in route does the same.
@@ -45,8 +47,9 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   job is polled every two seconds until it finishes, and a failed poll is retried instead of dropped.
 * **The frontend never reads a data provider.** Anything that needs fresh chain data queues a job
   (`POST /screen/address`, `POST /graph/update`) and follows it; the worker does the reading.
-* **The incidents anybody may read are read by the web server, not by the browser (M15).** `/incidents` and
-  `/incidents/[slug]` are server components that need no session, so they cannot use the proxy (which wants the
+* **The incidents and the wallet profiles anybody may read are read by the web server, not by the browser (M15,
+  M16).** `/incidents`, `/incidents/[slug]`, `/wallets` and `/wallets/[slug]` are server components that need
+  no session, so they cannot use the proxy (which wants the
   cookie) and do not: `src/server/publicApi.js` reads the API's `/public/` endpoints with
   `src/lib/publicRead.js`, which only builds paths from a safe set of characters, never follows a redirect,
   gives up after 8 seconds, never throws (the answer is `{ ok, status, data }`, status 0 when the API cannot be
@@ -58,8 +61,8 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
   while the refresh returns a refusal**, so an incident taken off the public pages would have stayed on them.
   The page and its title share one read per request (`React.cache`). The proxy lists none of these
   endpoints, so the browser cannot ask for them through it (a test pins this).
-* **The editor is the one place the proxy forwards a `PUT`** (`PUT /editor/incidents/{id}/content`, which
-  replaces the whole content of a draft or an incident in review).
+* **The editor is the one place the proxy forwards a `PUT`** (`PUT /editor/incidents/{id}/content` and
+  `PUT /editor/wallets/{id}/content`, which replace the whole content of a draft or of a page in review).
 
 ## 2. Routes
 
@@ -68,6 +71,8 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 | `/`, `/faq`, `/products/*` | server pages, made for each request | marketing pages. They are not static: the nonce in every page's policy needs a render per request (the build lists every page as "server-rendered on demand"). Still `noindex` site-wide until a real domain exists. The home page asks the API for nothing, so it works with the API away | none |
 | `/incidents` | server page, public | the published incidents for anybody: filters by kind and chain (links), pages of 20, and a lookup of one address (a form that sends its answer in the address bar), all without a script; "not available right now" when the API cannot be reached | `GET /public/incidents`, `GET /public/addresses/{chain}/{address}/incidents`, read by the web server, never through the proxy |
 | `/incidents/[slug]` | server page, public | one published incident: the story, **each source's amount on its own line (never a total)**, the addresses with the part each plays and how firmly, in the platform's fixed words, **the funds trail** (one card for each movement the sources report, with its document, the amount in the source's own words and a link to the transaction, and a drawing of the same movements that colours an address by its part only when its status is one somebody stands behind), the timeline and the sources; a draft, an incident in review, an archived one and one that does not exist are the same 404 | `GET /public/incidents/{slug}` |
+| `/wallets` | server page, public | the published wallet profiles for anybody ("known entities"): filters by kind and chain and a search by name (links and a form that sends its answer in the address bar), pages of 20, and a lookup of one address (which profiles name it), all without a script; "not available right now" when the API cannot be reached | `GET /public/wallets`, `GET /public/addresses/{chain}/{address}/wallets`, read by the web server, never through the proxy |
+| `/wallets/[slug]` | server page, public | one published profile: who it is, as its documents say it, the addresses it names with what each is and how firmly, in the platform's fixed words (and "Watch this address", a link to the monitoring form), the documents it rests on and the published incidents that name its addresses; no balance and no activity; a draft, a profile in review, an archived one and one that does not exist are the same 404 | `GET /public/wallets/{slug}` |
 | `/auth` | server page + client form | email and password sign-in, back to the page asked for (`?next=`, same-site paths only); a signed-in visitor is sent on | `POST /api/session/login` |
 | `/check` | `(app)` | screen an address or a transaction; chain detection (an EVM address offers Ethereum or BNB); options (hops, look-back, read the providers first, refresh); the last five checks | `POST /address/validate`, `POST /screen/address`, `POST /screen/transaction`, `GET /screenings` |
 | `/check/[id]` | `(app)` | the screening: waiting, failed (with a retry) or the report | `GET /screen/{id}`, `GET /screen/{id}/export` |
@@ -75,7 +80,7 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 | `/addresses` | `(app)` | open any address; the addresses screened so far | `POST /address/validate`, `GET /screenings` |
 | `/addresses/[chain]/[address]` | `(app)` | labels and their sources, latest screening, stored history and its coverage, main counterparties, paged transactions, "read from the providers" | `GET /address/{chain}/{address}` (+ `/transactions`), `GET /graph`, `POST /graph/update`, `GET /jobs/{id}` |
 | `/graph` | `(app)` | the bounded transaction graph (Cytoscape.js, loaded in the browser only), its gaps, exposure paths and patterns, node and link detail, PNG and JSON export, the same data as tables | `GET /graph`, `POST /graph/update`, `GET /jobs/{id}` |
-| `/monitoring` | `(app)` | the addresses the team watches: a form to watch one (chain detection as in a screening, name, how often, how far to look, the lowest severity that raises an alert), a table with each one's state (Waiting, Watching, Paused, Not working), its unresolved alerts, its latest risk and report, when it was last and will next be checked; check now, pause, resume, edit, stop | `POST /address/validate`, `GET/POST /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST /monitoring/addresses/{id}/check` |
+| `/monitoring` | `(app)` | the addresses the team watches: a form to watch one (chain detection as in a screening, name, how often, how far to look, the lowest severity that raises an alert; `?address=&chain=&name=` fills it in, which is what "Watch this address" on a profile does, and nothing is added until the button is pressed), a table with each one's state (Waiting, Watching, Paused, Not working), its unresolved alerts, its latest risk and report, when it was last and will next be checked; check now, pause, resume, edit, stop | `POST /address/validate`, `GET/POST /monitoring/addresses`, `GET/PATCH/DELETE /monitoring/addresses/{id}`, `POST /monitoring/addresses/{id}/check` |
 | `/alerts` | `(app)` | what monitoring found that is new: counts by status and severity, filters (status, severity, kind, assigned to me, one monitored address), paging | `GET /alerts`, `GET /alerts/summary` |
 | `/alerts/[id]` | `(app)` | one alert: why it was raised, the findings behind it, the reports before and after, the cases opened from it, acknowledge / assign / close with how it ended / reopen / add a note, and its activity | `GET /alerts/{id}`, `PATCH /alerts/{id}`, `POST /cases` |
 | `/cases` | `(app)` | investigations: counts, filters (status, priority, assigned to me, title), a form to open one by hand | `GET /cases`, `GET /cases/summary`, `POST /cases`, `POST /address/validate` |
@@ -87,6 +92,9 @@ browser ──► Next.js (apps/web) ──► FastAPI (apps/api) ──► data
 | `/editor/incidents` | `(app)`, platform editors only | every incident in every state, filtered by state, with how much each holds and who changed it last | `GET /editor/incidents` |
 | `/editor/incidents/new` | `(app)`, platform editors only | start a draft: title, the permanent address of its page (suggested from the title), kind, date, summary | `POST /editor/incidents` |
 | `/editor/incidents/[id]` | `(app)`, platform editors only | write an incident: details, documents it rests on, amounts, addresses (with a warning under one that screening will act on), the funds trail (movements chosen between the addresses named) and timeline, saved as a whole; what stops it being published; send to review, publish, take back, archive (two clicks for the two that change what everybody sees), delete a draft that was never published. Once published it is read-only and only the timeline grows (a correction is an entry) | `GET/DELETE /editor/incidents/{id}`, `PUT /editor/incidents/{id}/content`, `POST /editor/incidents/{id}/transition`, `POST /editor/incidents/{id}/updates` |
+| `/editor/wallets` | `(app)`, platform editors only | every wallet profile in every state, filtered by state, with how much each holds and who changed it last; the same two tabs as the incident list | `GET /editor/wallets` |
+| `/editor/wallets/new` | `(app)`, platform editors only | start a draft: name, the permanent address of its page (suggested from the name), kind, summary | `POST /editor/wallets` |
+| `/editor/wallets/[id]` | `(app)`, platform editors only | write a profile: details, documents it rests on, and the addresses named (each says what it is, how firmly, and which document says so; a note under one that screening will act on, and under a public figure's that is not confirmed), saved as a whole; what stops it being published; send to review, publish, take back, archive, delete a draft that was never published. Once published it is read-only: it is taken back to review to be changed | `GET/DELETE /editor/wallets/{id}`, `PUT /editor/wallets/{id}/content`, `POST /editor/wallets/{id}/transition` |
 | `/api/session/{login,logout,expired}` | route handlers | set, clear, and clear-then-redirect for the session cookie | `POST /auth/login` |
 | `/api/v1/[...path]` | route handler | the allow-listed proxy | see `proxyRules.js` |
 
@@ -97,8 +105,9 @@ sit in the group. A link with a broken `%` is answered with a 404 by `proxy.js` 
 fails with a server error); since M14 `proxy.js` runs for every page and route except the framework's static
 files, so that holds for the public pages too.
 
-The sidebar is **Check, Checks history, Addresses, Graph, Monitoring, Alerts, Cases, Incident editor, Settings**
-(the editor only for a platform editor: no role has its permission, `incidents:curate`), filtered by
+The sidebar is **Check, Checks history, Addresses, Graph, Monitoring, Alerts, Cases, Editor, Settings**
+(the editor, which has a tab for the incidents and one for the wallet profiles, only for a platform editor:
+no role has its permission, `incidents:curate`), filtered by
 what the signed-in person's role may do (`GET /auth/me` lists the permissions; `src/data/appNav.js` says what
 each entry needs): a viewer is not offered "Check", because they cannot ask for a screening. This is a
 courtesy, never the protection: the API refuses what a role may not do whatever the page shows, and the
@@ -169,12 +178,27 @@ proxy's allow-list gained the seven editor routes (and the method `PUT`) and **d
 public ones**: the pages that need them read them on the server. Address pages show a claim from the incident
 tracker with a link to the incident it comes from.
 
+### Added for M16 (the wallet profiles)
+
+Nine endpoints, described in the API README ("Public wallet profiles"): three anonymous reads under `/public/`
+(the list, one profile, the profiles that name an address) and six under `/editor/wallets` for a platform
+editor (`GET` list, `POST` create, `GET` one, `PUT .../content`, `POST .../transition`, `DELETE`; a profile has
+no timeline, so no `updates`). The same permission, `incidents:curate`, covers them. The proxy's allow-list
+gained the six editor routes and **deliberately lists none of the public ones**. The public answer for an
+incident gained `profile` (name, kind, page) on each address that a published profile names, which is what
+"Known as ..." shows; the signed-in address page links a claim from the profiles to its page, as it does for
+an incident.
+
 ## 5. Decisions
 
 * **The editor is not a role** (M15). An organization's administrator can make any role, so a role would have
   let an administrator make themselves an editor. `users.is_platform_editor` is set from the command line only.
 * **The public incident pages cache the data and not the page, with a time limit of their own** (M15): see
   section 1 for why the framework's cache was not used.
+* **A profile gives screening context, not a warning** (M16): see section 7 of the
+  [editorial policy](editorial-policy.md). It is a page of the same editors, in the same states and under the
+  same permission; the editor's two tabs share one gate, one set of controls and the document form, so a
+  change to how a document is written is made once.
 * **The consumer screens were removed** (user decision, 2026-11-06): pricing, top-up and fake checkout,
   payment history, social rating, achievements, the per-user local quota, "My account" and its demo risk
   panel. The platform is a B2B tool; a quota, if one is wanted, belongs to the API.

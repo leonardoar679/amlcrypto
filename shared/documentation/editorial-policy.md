@@ -1,11 +1,13 @@
-# Editorial policy: the public incidents
+# Editorial policy: the public incidents and wallet profiles
 
-What may be published on the incident pages, on what evidence, in whose words, how it is corrected and
-withdrawn, and the small part of it that screening acts on. Rules marked **(enforced)** are checked by the
+What may be published on the incident pages and on the wallet profile pages, on what evidence, in whose
+words, how it is corrected and withdrawn, and the small part of it that screening acts on. Rules marked **(enforced)** are checked by the
 platform and cannot be skipped; each has a test. The rest are the judgement of the editor, which is why they
 are written down.
 
-Written with the first slice of the incident tracker (M15). **No lawyer has read it.** Publishing what a
+Written with the first slice of the incident tracker (M15) and extended with the wallet profiles (M16):
+sections 1 to 6 are about incidents, section 7 is what differs for a wallet profile. **No lawyer has read
+it.** Publishing what a
 page says about an address can be wrong or defamatory, and that risk is the real one in this feature, not a
 technical one. Item 9 of "Before production" in [data-licensing-and-regulatory-review.md](data-licensing-and-regulatory-review.md)
 is that review; until it is done the pages should reach nobody outside the team. (They are `noindex` for now,
@@ -61,8 +63,8 @@ and say so to search engines, but a link works for anybody who has it.)
   stored in the form the chain defines, so two spellings of one address are one address. **(enforced)** An
   address on any other chain cannot be entered.
 * **Organizations and protocols, not private individuals.** The incidents name what the sources name: an
-  exchange, a protocol, an address. The platform does not infer who owns an address, and does not publish
-  wallets of public figures in this slice (that needs the person's own statement, and a later slice). A
+  exchange, a protocol, an address. The platform does not infer who owns an address, and an incident never
+  names a public figure's wallet (a wallet profile may, under the stricter rule of section 7). A
   victim's wallet is named only when the victim is an organization or a protocol; a private person who
   was robbed is not made findable by an address on this site, however many reports name it. (An address
   can be personal data: see the data-protection section of the licensing review.)
@@ -167,9 +169,84 @@ rebuilds the labels from what is published, if one was ever changed by hand.
    backups.
 8. Has someone other than the author read it in review? With one editor today that is the author a day later.
 
-## 7. What this does not cover yet
+## 7. Wallet profiles: who a known address belongs to
+
+A wallet profile names an organization or a protocol and the addresses that a cited document says are its.
+It is written by the same editors, passes through the same four states under the same moves (section 1), and
+is corrected, disputed and withdrawn as an incident is (section 5): its content is replaced as a whole while
+it is a draft or in review, a published profile changes only by being taken back to review (there is no
+timeline to add to), and one that was ever shown is archived, never deleted. What follows is what differs.
+
+* **A profile is never a private individual.** Its kind is one of exchange, cross-chain bridge, protocol,
+  fund, institution, government body, public figure or other. The platform does not infer who owns an
+  address: an address is listed under a name only because a document that is cited says so, and the page says
+  how firmly in the same six statuses and the same fixed words (section 3). The page's own voice says only
+  that everything on it is reported by the sources named, that the platform has not verified it, and that an
+  address listed under a name is not proof of who controls it today.
+* **Every address cites a document, which is stricter than an incident** (where only a firm status needs
+  one). A profile cannot be published with no summary, no document, no address, or an address that cites no
+  document. **(enforced)** An address says what it is in at most 60 characters ("hot wallet", "treasury"),
+  may carry a public note of at most 500 characters and the day it was last checked, and is stored in the
+  form its chain defines. A profile holds at most 50 documents and 300 addresses. **(enforced)**
+* **A public figure's wallet is published only when the person, or an authority, has said it is theirs.**
+  Every address of a profile of that kind must be `OFFICIALLY_CONFIRMED` and cite a document of the kind
+  "official" (the person's own statement, or an authority's), or the profile cannot be published.
+  **(enforced)** The platform cannot tell whether a document really is the person's own: that is the editor's
+  judgement, and the reason for the list below. Never a guess, a pattern, an analyst's report or somebody
+  else's wallet, and nothing else about the person (no home, no family, no accounts of an employer) belongs on
+  the page. A person who asks to be removed is obeyed first and the question looked at afterwards: take the
+  profile back to review the day the request comes.
+* **A profile does not show what an address does.** No balance, no activity and no counterparty is shown: they
+  would come from the stored chain data, which the licences of the providers do not let the platform pass on
+  (see the licensing review). "Watch this address" only opens the signed-in monitoring form with the address
+  filled in; nothing is added until the person presses its button.
+* **An address named twice is shown twice.** An incident page shows "Known as ..." beside an address that a
+  published profile names, and a profile page lists the published incidents that name its addresses. The
+  platform does not reconcile them, and their labels are independent: if an incident calls an address the
+  receiver of stolen funds and a profile calls it an exchange's, both stay in force until an editor who sees
+  the clash takes one of them back to review.
+
+**Screening takes context from a profile, and nothing that makes an address look risky.** **(enforced, and
+tested)**
+
+* Only the kinds exchange, bridge and protocol give screening anything. An address of one of them, at a
+  status somebody stands behind (`OFFICIALLY_CONFIRMED`, `CORROBORATED` or `REPORTED_BY_ANALYST`) and with its
+  document, becomes a label `EXCHANGE`, `BRIDGE` or `DEFI` (source `wallet_profiles`, with the address's own
+  confidence), only while the profile is published and on the chain the editor named. Taking the profile back
+  to review or archiving it switches its labels off in the same transaction, and a label that is switched off
+  is kept, with the time it was. A fund, an institution, a government body, a public figure and "other" are
+  shown and never acted on, and so is every community report, pattern or contested attribution.
+* These labels are context, not warnings: none adds a finding by itself. Two rules read them. A route
+  through a **bridge** is noted (AML-013, LOW), and a labelled **exchange**, **protocol** or **bridge** is not
+  mistaken for a concentration of value (AML-014 exempts all three).
+* **A wrong exchange label is not harmless.** Because of that exemption, an address wrongly named as an
+  exchange's (or a protocol's, or a bridge's) hides a concentration finding for everyone who deals with it, as a
+  wrong "stolen funds" label creates one. Name an address as an exchange's only when the exchange itself, or an analytics firm that says
+  how it knows, does, and choose the weakest status the document supports.
+* The editor is told under each address when it will be acted on; the audit entry of a publication records
+  how many labels it put in force; and `python -m app.cli wallets project` rebuilds the labels from what is
+  published, if one was ever changed by hand.
+
+**Before publishing a profile**
+
+1. Does the document say that this address is this entity's, and would a reader following the link find it
+   there?
+2. Is the status the weakest one the document supports, and is the kind right (an exchange's addresses hide a
+   concentration finding; a bridge's add a low finding and hide that one too)?
+3. Is it an organization or a protocol? If it is a public figure: did the person, or an authority, say so
+   themselves, in a document of the kind "official", and is the page limited to that wallet?
+4. Does the summary say who it is as its own documents do, without saying whose an address is in the page's own
+   voice?
+5. Does the address already appear on an incident, and if so do the two agree?
+6. Is the note to editors kept to what editors need? It is never shown, but it is in the database and the
+   backups.
+7. Has someone other than the author read it in review? With one editor today that is the author a day later.
+
+## 8. What this does not cover yet
 
 Submissions from the public, reviewers other than editors, translation, takedown requests through a form,
-retention of the incident data beyond "never deleted once shown", and a legal read of any of it. The incident
-tracker is the first slice of a larger product; the later slices (public wallet profiles, trending and large
-transfers, submissions) need their own policy, and the first of them needs this one reviewed.
+retention of the incident and profile data beyond "never deleted once shown", a profile's change history shown
+to readers (an address taken off a profile leaves no trace on the page; the audit log has it), and a legal
+read of any of it. The incident tracker and the wallet profiles are the first two slices of a larger product;
+the later slices (trending and large transfers, submissions) need their own policy, and the first of them
+needs this one reviewed.
