@@ -1362,8 +1362,11 @@ unchanged through both moves.
   route must satisfy), ruff clean, `alembic check` clean on a migrated database, migration `0013` up, down and up again
   over a populated database; 183 frontend unit tests (161 before). The MySQL test layout was
   rehearsed on SQLite: 3,381 passed, and the two tests that fail in it for reasons of the emulation alone failed
-  as before. MySQL and Docker themselves run only in CI, where **the new tables and the tuple lookups are the
-  unverified part**.
+  as before. MySQL and Docker themselves run only in CI, where all five jobs passed for `cd9a3d8` (run 43163754646:
+  SQLite, MySQL 8.0 and 8.4, the web build and both Docker images), which put migration `0013`, the new tables
+  and the lookups by chain and address through MySQL. The first run, on `5d152c0`, failed both MySQL jobs on one
+  test of mine that moved an incident by the id 1: SQLite reuses ids after a rollback and MySQL does not, so the
+  rehearsal could not show it.
 * 241 mutations of the backend code (the service and its publication rules, the public-figure rule, the
   public serializers and filters, the editor's views, the projection's kind, status, state and evidence rules, the shared
   projection and checks, both routes and the command): **86 were not caught the first time**, 12 of them equivalent (a

@@ -321,6 +321,40 @@ an incident.
   carry none; taking the incident back to review ends the label at once, and the page is gone within the minute the
   pages keep what they read. The run led to one change: the movements were first a seven-column table, which a
   screenshot showed cramped on a desktop and cut off on a phone, so they are cards.
+* **The wallet-profile browser run** (the same harness, 156 checks, all passing; **synthetic** profiles made
+  through the site: an exchange that names a Tron address a seeded incident also names, and a public figure).
+  *Anonymous:* the empty list says that nothing is published and does not call that "nobody is known"; a name
+  that cannot be a profile's (a broken `%`, capitals, too short, too long) is a 404 before anything is asked; the
+  proxy lists none of the public endpoints and the editor's routes answer 401 and send the page to sign in.
+  *A person who is not an editor* is told so, with no form and no sidebar entry, and the platform refuses both a
+  read and a write. *Editor:* the sidebar has one entry with two tabs; an empty form says what is missing, the
+  page address is suggested from the name, choosing "public figure" shows its rule; a document and an address are
+  added, with the note that screening will take the address as an exchange (as context, never a risk) and the note
+  to editors, and saved as a whole; the platform holds what the form held, and the reloaded form too; an empty
+  address is flagged and Save is off; an address the platform cannot read is refused with the reason shown and
+  nothing changes; send to review, then publish with its second question; a published profile is read-only with
+  the reason. *Public:* the answer holds exactly the fields meant to be public and never the note to editors, may
+  be kept for a minute; the list shows how many addresses and where, the profile page the fixed words, the
+  confidence, the note, the source with its quotation, the incident that names the address, links that open
+  safely and "Watch this address"; no console error, no sideways scroll at 390 px, dark theme; the lookup finds
+  the profile, and an address on the wrong chain or that cannot be one is said so. *Cross-links:* the incident
+  carries the four-field profile only on the address a profile names and its page says "Known as" with a link;
+  screening knows the address as `EXCHANGE` from `wallet_profiles` at 95%; the signed-in address page links the
+  claim to the profile. *Follow:* the monitoring form arrives filled in with the address and the name and says
+  that nothing is watched until the button is pressed, and the list of watched addresses stays empty; a link
+  carrying markup, a long name or a chain that is not one is ignored or cut; a signed-out visitor is sent to sign
+  in with the link kept and returns to the filled form. *Public figure:* a draft that rests on an analyst's report
+  in a news article is refused with the reason (and the editor page says so, with Publish off and the rule under
+  the address); with the person's own statement as an official document it publishes, and screening still
+  knows nothing of that wallet. *Filters and search* by kind, chain and name (a `%` or `_` is a letter), a filter
+  the platform does not know is ignored, a script in the search is shown as text. A draft is deleted after a second
+  question and a published profile has no Delete. *Withdrawal:* the platform stops answering for it and screening
+  stops knowing the address at once, and the page, the list and "Known as" on the incident page are gone within
+  the minute the pages keep what they read. The run found two faults in the editors' forms, fixed for both
+  editors: hints were in bold capitals (`.field > span` outweighed `.field-hint`), and a long status chip ran out
+  of its card at 390 px. Over plain http the one console error it excused is the browser upgrading the redirect
+  of a signed-out visitor's link to https (the policy's `upgrade-insecure-requests`): the router falls back to an
+  ordinary navigation, which works, and over https the redirect is followed as it is.
 
 ## 7. What the audit found, and what became of it
 
