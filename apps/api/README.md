@@ -1458,8 +1458,10 @@ the operator's side is in [operations.md](../../shared/documentation/operations.
   ranking, the shared structural tests every new public route must satisfy, and a test that the web image can take the
   site's address), ruff clean, `alembic check` clean (there is no migration); 209 frontend unit tests
   (183 before). The MySQL test layout was rehearsed on SQLite: 3,444 passed, and the two tests that fail
-  in it for reasons of the emulation alone failed as before. MySQL and Docker themselves run only in CI, which has not
-  run on M17 yet (there is no new table: what MySQL has not seen is the two queries).
+  in it for reasons of the emulation alone failed as before. MySQL and Docker themselves run only in CI, where all five
+  jobs passed on the first run for `aec42e5` (run 43183039564: SQLite, MySQL 8.0 and 8.4, the web build and both Docker
+  images): that put the two new queries through MySQL (there is no new table) and the web image through the new
+  `/news`, `/hot` and `/feed.xml` checks and its new build argument.
 * 169 mutations of the backend code (the item builders and what is shown, the paging and the order of the
   news, the window, the eligibility of an address, the weights and the fade, the order and the page of the ranking, the
   vocabulary and the two routes): 51 were not caught the first time, 2 of them
