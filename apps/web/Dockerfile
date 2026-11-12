@@ -11,6 +11,11 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+# The public address of the site (https://example.org, no path), once there is one: the links and the
+# ids of the Atom feed are made from it. The framework reads every NEXT_PUBLIC_ variable when the app is
+# built, so it is a build argument here (the compose file passes it) and changing it means building again.
+ARG NEXT_PUBLIC_SITE_URL=
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 # The build fetches the fonts the pages use, so it needs the network.
 ENV NEXT_TELEMETRY_DISABLED=1 NEXT_OUTPUT=standalone
 RUN npm run build

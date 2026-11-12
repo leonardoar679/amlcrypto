@@ -24,7 +24,7 @@ limit_req_zone $binary_remote_addr zone=aml_login:10m rate=5r/m;   # guessing a 
 limit_req_zone $binary_remote_addr zone=aml_web:10m rate=20r/s;    # pages and the web app's calls
 limit_req_zone $binary_remote_addr zone=aml_api:10m rate=10r/s;    # programs with an API key
 limit_req_zone $binary_remote_addr zone=aml_hook:10m rate=5r/s;    # the provider's webhook
-limit_req_zone $binary_remote_addr zone=aml_public:10m rate=10r/s; # published incidents, for anybody
+limit_req_zone $binary_remote_addr zone=aml_public:10m rate=10r/s; # published incidents, profiles, news and ranking, for anybody
 limit_conn_zone $binary_remote_addr zone=aml_conn:10m;
 limit_req_status 429;
 limit_conn_status 429;

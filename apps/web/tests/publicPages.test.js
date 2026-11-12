@@ -25,7 +25,15 @@ function filesUnder(path) {
 
 const INCIDENT_FILES = [...filesUnder('app/incidents'), ...filesUnder('src/components/incidents')];
 const WALLET_FILES = [...filesUnder('app/wallets'), ...filesUnder('src/components/wallets')];
-const PUBLIC_FILES = [...INCIDENT_FILES, ...WALLET_FILES];
+// the news page, the ranking and the Atom feed made from the same news (a route handler, not a page)
+const NEWS_FILES = [
+  ...filesUnder('app/news'),
+  ...filesUnder('app/hot'),
+  ...filesUnder('app/feed.xml'),
+  ...filesUnder('src/components/news'),
+  ...filesUnder('src/components/hot')
+];
+const PUBLIC_FILES = [...INCIDENT_FILES, ...WALLET_FILES, ...NEWS_FILES];
 const EDITOR_FILES = filesUnder('src/components/editor');
 
 test('the pages that anybody can read are not behind sign-in, and the editor is', () => {
@@ -34,8 +42,16 @@ test('the pages that anybody can read are not behind sign-in, and the editor is'
   assert.ok(prefixes.includes("'/editor'"), 'the editor needs a session');
   assert.ok(!/'\/incidents/.test(prefixes), 'the incidents are public');
   assert.ok(!/'\/wallets/.test(prefixes), 'the wallet profiles are public');
+  assert.ok(!/'\/(news|hot|feed)/.test(prefixes), 'the news, the ranking and the feed are public');
   assert.ok(INCIDENT_FILES.length >= 5, `only ${INCIDENT_FILES.length} incident files found`);
   assert.ok(WALLET_FILES.length >= 4, `only ${WALLET_FILES.length} wallet profile files found`);
+  assert.deepEqual(NEWS_FILES.sort(), [
+    'app/feed.xml/route.js',
+    'app/hot/page.js',
+    'app/news/page.js',
+    'src/components/hot/HotList.js',
+    'src/components/news/NewsList.js'
+  ]);
 });
 
 test('the public pages are made on the server and read the platform only through the public reader', () => {
@@ -52,8 +68,11 @@ test('the public pages are made on the server and read the platform only through
   assert.deepEqual(inBrowser, ['src/components/incidents/IncidentTrail.js']);
   const reads = PUBLIC_FILES.filter((file) => /publicFetch/.test(read(file)));
   assert.deepEqual(reads.sort(), [
+    'app/feed.xml/route.js',
+    'app/hot/page.js',
     'app/incidents/[slug]/page.js',
     'app/incidents/page.js',
+    'app/news/page.js',
     'app/wallets/[slug]/page.js',
     'app/wallets/page.js'
   ]);
@@ -68,6 +87,51 @@ test('what the public pages show of an incident or a profile is shown as text, a
     assert.ok(detail.includes("from '../../lib/links'") && detail.includes('safeHref('), `${file}: the links of sources are not checked`);
     const anchors = [...detail.matchAll(/<a [^>]*target="_blank"[^>]*>/g)].map((m) => m[0]);
     assert.ok(anchors.length >= 1 && anchors.every((tag) => tag.includes('rel="noopener noreferrer"')), `${file}: a link out of the site leaks where it came from`);
+  }
+});
+
+test('the news pages show what the platform sent as text, and every link out of the site opens safely', () => {
+  for (const file of ['src/components/news/NewsList.js', 'src/components/hot/HotList.js']) {
+    const text = read(file);
+    // the only links out are block explorers, which this site builds from a chain it knows, never from data
+    const anchors = [...text.matchAll(/<a [^>]*target="_blank"[^>]*>/g)].map((m) => m[0]);
+    assert.ok(anchors.length >= 1 && anchors.every((tag) => tag.includes('rel="noopener noreferrer"')), `${file}: a link out of the site leaks where it came from`);
+    assert.ok(/explorer(Tx|Address)Url\(/.test(text), `${file}: a link out of the site is not an explorer's`);
+  }
+  // the pages never put an address the platform sent into a link, only the names they have checked
+  for (const file of ['app/news/page.js', 'app/hot/page.js']) {
+    const text = read(file);
+    assert.ok(!/href=\{item\.|href=\{result\./.test(text), `${file} links to what the platform sent`);
+    assert.ok(text.includes("from '@/lib/links'") && text.includes('firstParam('), `${file} reads its query without the checks`);
+  }
+});
+
+test('the Atom feed is made from what the news page reads, says so when the platform is away, and never answers empty', () => {
+  const handler = read('app/feed.xml/route.js');
+  assert.ok(handler.includes("publicFetch('feed?limit=50')"));
+  // with the platform away a feed reader is told to try again: 503 with a time, and nothing cached
+  assert.ok(/plain\(503,[^)]*\{\s*'Retry-After': '60' \}\)/.test(handler));
+  assert.ok(handler.includes("'Content-Type': 'application/atom+xml; charset=utf-8'"));
+  // shared caches may keep it only when the address in it is the operator's: one made from what the request said
+  // (which a visitor writes) is private
+  assert.ok(handler.includes("configured ? 'public, max-age=60' : 'private, max-age=60'"));
+  assert.ok(!handler.includes("'Cache-Control': 'public, max-age=60'"));
+  assert.ok(handler.includes('const configured = originOf({ configured: brand.siteUrl })'));
+  // the feed is signed by the platform's name (RFC 4287 wants an author)
+  assert.ok(handler.includes('author: brand.name'));
+  assert.ok(/configured \|\|\s+originOf\(\{/.test(handler), 'the request is asked only when nothing is configured');
+  // the news page announces it
+  assert.ok(read('app/news/page.js').includes("'application/atom+xml': '/feed.xml'"));
+});
+
+test('what the news and the ranking say when the platform cannot be read still says what they are', () => {
+  // the platform's own notice is shown when it answers; this is the one the pages carry for when it does not
+  assert.ok(read('app/news/page.js').includes('the platform has not verified them'));
+  assert.ok(read('app/news/page.js').includes('A correction is an item of its own'));
+  assert.ok(read('app/hot/page.js').includes('not because of any attention they draw and not as a finding about their owners'));
+  // and neither page says that an address is anybody's or that anybody did anything
+  for (const file of ['app/news/page.js', 'app/hot/page.js', 'src/components/hot/HotList.js', 'src/components/news/NewsList.js']) {
+    assert.ok(!/the (attacker|hacker|thief|criminal)'?s? /i.test(read(file)), file);
   }
 });
 
@@ -90,6 +154,7 @@ test('the home page does not ask the platform for anything, so the image can be 
   assert.ok(!/publicFetch|useApi|apiFetch|fetch\(/.test(home));
   assert.ok(home.includes('href="/incidents"'));
   assert.ok(home.includes('href="/wallets"'));
+  assert.ok(home.includes('href="/news"') && home.includes('href="/hot"'));
 });
 
 test('every view of the editor is only mounted for an editor', () => {

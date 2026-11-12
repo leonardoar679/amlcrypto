@@ -173,6 +173,26 @@ export default function HomePage() {
           </div>
         </section>
 
+        <section className="section">
+          <div className="container">
+            <div className="section-heading center">
+              <h2>
+                What was <strong>published</strong>, and what happened next
+              </h2>
+              <p>
+                New incidents, the developments that followed, corrections, and the addresses that sources report most firmly and
+                recently. Open to everyone, with an Atom feed to follow it.
+              </p>
+              <Link className="btn btn-dark" href="/news">
+                Read the news
+              </Link>{' '}
+              <Link className="btn btn-secondary" href="/hot">
+                Hot addresses
+              </Link>
+            </div>
+          </div>
+        </section>
+
         <section className="home-screening-strip">
           <div className="container home-screening-strip-grid">
             <div>

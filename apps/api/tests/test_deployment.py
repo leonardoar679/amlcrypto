@@ -80,6 +80,21 @@ def test_the_web_image_is_built_from_the_web_app_and_runs_as_nobody_special():
     assert {"node_modules", ".next", ".env"} <= set(ignored)
 
 
+def test_the_public_address_of_the_site_reaches_the_web_build():
+    # the Atom feed's links and ids are made from NEXT_PUBLIC_SITE_URL, which the framework reads
+    # when the app is built: without a build argument an operator could not set it
+    dockerfile = (WEB / "Dockerfile").read_text(encoding="utf-8")
+    build, final = dockerfile.split("AS build", 1)[1].split("FROM node:22-slim", 1)
+
+    assert "ARG NEXT_PUBLIC_SITE_URL=" in build
+    assert "ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL" in build
+    assert build.index("ARG NEXT_PUBLIC_SITE_URL") < build.index("RUN npm run build")
+    assert "NEXT_PUBLIC_SITE_URL" not in final, (
+        "it is inlined when the app is built, not read again"
+    )
+    assert "NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}" in service_block("web")
+
+
 def test_the_example_proxy_does_what_the_api_and_the_web_app_count_on():
     config = (NGINX / "aml.conf.example").read_text(encoding="utf-8")
     headers = (NGINX / "proxy-headers.conf").read_text(encoding="utf-8")

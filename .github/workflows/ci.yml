@@ -151,6 +151,13 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/wallets)" = "200"
           curl -fsS http://127.0.0.1:3000/wallets | grep -q "The list is not available right now"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/wallets/Not_A_Slug)" = "404"
+          # So do the news and the ranking. The feed, which a reader waits on, says to try again.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/news)" = "200"
+          curl -fsS http://127.0.0.1:3000/news | grep -q "The news is not available right now"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/hot)" = "200"
+          curl -fsS http://127.0.0.1:3000/hot | grep -q "The ranking is not available right now"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/feed.xml)" = "503"
+          curl -sI http://127.0.0.1:3000/feed.xml | grep -qi "^retry-after: 60"
           test "$(docker exec aml-web id -u)" != "0"
       - name: Web container logs on failure
         if: failure()

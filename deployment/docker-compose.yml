@@ -51,6 +51,11 @@ services:
   web:
     build:
       context: ../apps/web
+      args:
+        # The public address of the site once there is one (https://example.org): the Atom feed's links and
+        # ids are made from it. The framework reads it when the app is built, so changing it means building
+        # the image again. Blank: the feed is made on the address it is asked on, and is not shared by caches.
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
     image: aml-web
     environment:
       BACKEND_URL: http://api:8000
